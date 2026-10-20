@@ -129,7 +129,7 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m '[update] 更新专题研究结果与论文清单' -m 'Co-Authored-By: xixi <3495302215@qq.com>'
           git fetch origin "$GITHUB_REF_NAME"
-          git rebase "origin/$GITHUB_REF_NAME"
+          git rebase -X theirs "origin/$GITHUB_REF_NAME"
           git push origin HEAD:"$GITHUB_REF_NAME"
       - name: Verify Pages publication
         if: success() && github.repository != 'ziwenhahaha/daily-paper-reader'

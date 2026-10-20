@@ -211,6 +211,7 @@ def test_workflow_safe_inputs_and_saved_checkpoints():
         "scripts/request_pages_build.py" in text
         and "include-hidden-files: true" in text
     )
+    assert 'git rebase -X theirs "origin/$GITHUB_REF_NAME"' in text
 
 
 def test_legacy_90_365_dispatch_to_budgeted_engine_without_local_models(monkeypatch):
