@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-11 ~ 2026-10-20</span>
+      <span class="dpr-home-dashboard-kicker">2026-09-21 ~ 2026-10-20</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 0 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 25 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>25</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-20 07:29:39 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-20 09:16:26 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日无新推荐，系统未产出可展示论文。</p>
+<p>2026-09-21至10-20共速读25篇论文，其中三篇MoE分布式训练研究均获满分。最值得关注的是专家并行负载均衡与专家共激活优化，前者用拓扑感知调度降低通信瓶颈，后者利用共激活模式提升训练效率。普通读者可优先从TopoEP和Cobalt入手，理解MoE训练中“专家放置与通信开销”这一核心矛盾。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">25 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="TopoEP: Topology-Aware Load Balancing for Expert-Parallel MoE Training">TopoEP: Topology-Aware Load Balancing for Expert-Parallel MoE Training</span></li><li><span class="dpr-home-dashboard-paper-title" title="Cobalt: Leveraging Expert Co-activation for Efficient Distributed MoE Training">Cobalt: Leveraging Expert Co-activation for Efficient Distributed MoE Training</span></li><li><span class="dpr-home-dashboard-paper-title" title="Expert Coupling in MoE Pretraining: Reducing All-to-All Overhead with Correlated Placement and Token Shuffling">Expert Coupling in MoE Pretraining: Reducing All-to-All Overhead with Correlated Placement and Token Shuffling</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">lcc <strong>25</strong></span></div>
 </section>
 </div>
 
