@@ -1,0 +1,583 @@
+{
+  "mode": "standard",
+  "generated_at": "2026-10-20T21:52:47.564409+00:00",
+  "stats": {
+    "mode": "standard",
+    "tag_count": 1,
+    "deep_divecandidates": 8,
+    "deep_cap": 6,
+    "deep_selected": 6,
+    "quick_candidates": 8,
+    "quick_skim_target": 11,
+    "quick_selected": 8
+  },
+  "deep_dive": [
+    {
+      "id": "2610.16387v1",
+      "source": "arxiv",
+      "title": "SP-Allreduce: Symmetric Tree Schedules for Tori and Beyond",
+      "abstract": "Allreduce is a fundamental communication primitive in large-scale distributed training, and torus interconnects remain widely deployed in high-performance systems. We introduce SP-allreduce, a new allreduce algorithm for $d$-dimensional tori that exploits the symmetry of the topology and routes only along shortest paths.   We call an allreduce algorithm \\emph{fully bandwidth-optimal} if it incurs no bandwidth overhead, no multihop-induced traffic inflation, and achieves perfect per-round load balance. SP-allreduce is based on a family of carefully symmetrized shortest-path trees that guarantees full bandwidth optimality in the $α$--$β$ model. We prove that it uses the minimum possible number of rounds among all fully bandwidth-optimal allreduce algorithms on $d$-dimensional tori, and therefore the minimum running time in this class. In this sense, SP-allreduce refines Bucket allreduce: it preserves Bucket's key strengths while reducing the number of rounds by a factor of two.   We further extend our approach to broader symmetric topologies and to communication trees of prescribed depths. Experimentally, the resulting algorithms improve over the best compared state-of-the-art algorithms for tori by up to $1.19\\times$ on square tori and $1.65\\times$ on rectangular tori across the tested configurations. On HyperX and spine-leaf networks, we demonstrate gains of up to $14.82\\times$ and $1.72\\times$, respectively, over the best evaluated baselines.",
+      "authors": [
+        "Mikhail Cherniavskii",
+        "Andrey Kupavskii",
+        "Georgy Mironov",
+        "Stanislav Moiseev"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-12T08:36:57+00:00",
+      "link": "https://arxiv.org/pdf/2610.16387v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "topology-aware allreduce algorithm exploiting torus symmetry with shortest paths",
+      "llm_evidence_cn": "利用环面拓扑对称性的拓扑感知Allreduce算法",
+      "llm_evidence": "利用环面拓扑对称性的拓扑感知Allreduce算法",
+      "canonical_evidence": "利用环面拓扑对称性的拓扑感知Allreduce算法",
+      "llm_tldr_en": "SP-Allreduce exploits torus symmetry with symmetrized shortest-path trees to achieve fully bandwidth-optimal allreduce with minimal rounds for large-scale distributed training.",
+      "llm_tldr_cn": "Allreduce是大规模分布式训练的基础通信原语，环面互连在高性能系统中广泛部署。作者提出SP-allreduce，利用环面拓扑对称性并只走最短路径，基于对称化最短路径树家族在α-β模型下保证完全带宽最优。论文证明其在所有完全带宽最优Allreduce算法中使用最少轮数。该结果为环面及其他拓扑上的集合通信优化提供了理论与实践支撑。",
+      "llm_tldr": "Allreduce是大规模分布式训练的基础通信原语，环面互连在高性能系统中广泛部署。作者提出SP-allreduce，利用环面拓扑对称性并只走最短路径，基于对称化最短路径树家族在α-β模型下保证完全带宽最优。论文证明其在所有完全带宽最优Allreduce算法中使用最少轮数。该结果为环面及其他拓扑上的集合通信优化提供了理论与实践支撑。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.17091v1",
+      "source": "arxiv",
+      "title": "MCCL: Measurement-based Collective Communication Library",
+      "abstract": "Collective communication is a critical performance bottleneck in large-scale distributed training. Existing libraries and synthesis frameworks compute open-loop schedules once, assuming a static topology and peak link capacities. In production, however, persistent gray failures can silently degrade link throughput and latency for hours, causing pre-computed schedules to lose much of their efficiency during execution. In this paper, we present Measurement-based Collective Communication Library (MCCL), a collective communication library that closes the loop between runtime network measurement and dynamic schedule synthesis. MCCL passively measures GPU-to-GPU throughput, detects persistent degradation, re-synthesizes the affected communication-intensive schedules with warm-started synthesizers, and hot-swaps them without interrupting training. We validate the complete loop on a multi-node hardware prototype and use simulations to evaluate cluster-scale scenarios. In our experiments, MCCL incurs negligible overhead (<2%) while maintaining high measurement accuracy (<1.2% error) and low schedule hot-swap time (about 12 ms). Notably, under gray failures, MCCL reduces training time by up to 4.99x over static schedules on simulated training workloads for state-of-the-art LLMs such as Llama and DeepSeek.",
+      "authors": [
+        "Michele Ferrero",
+        "Gabriele Castellano",
+        "Paolo Medagliani",
+        "Sebastien Martin",
+        "Roberto Morabito",
+        "Massimo Gallo"
+      ],
+      "primary_category": "cs.NI",
+      "categories": [
+        "cs.NI",
+        "cs.DC"
+      ],
+      "published": "2026-10-12T16:50:16+00:00",
+      "link": "https://arxiv.org/pdf/2610.17091v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "collective communication library with runtime measurement and dynamic schedule synthesis",
+      "llm_evidence_cn": "基于运行时测量动态重合成调度的集合通信库",
+      "llm_evidence": "基于运行时测量动态重合成调度的集合通信库",
+      "canonical_evidence": "基于运行时测量动态重合成调度的集合通信库",
+      "llm_tldr_en": "MCCL closes the loop between runtime network measurement and dynamic schedule synthesis, detecting degraded links and re-synthesizing collective schedules to sustain distributed training performance.",
+      "llm_tldr_cn": "集合通信是大规模分布式训练的关键瓶颈，现有库按静态拓扑一次性生成开环调度，难以应对生产中持续存在的链路性能退化。作者提出MCCL，被动测量GPU间吞吐并检测持久性退化，针对受影响的高通信密集调度进行动态重合成。该闭环方法使调度能适应运行时网络状态，保持集合通信效率，为分布式训练通信优化提供了新机制。",
+      "llm_tldr": "集合通信是大规模分布式训练的关键瓶颈，现有库按静态拓扑一次性生成开环调度，难以应对生产中持续存在的链路性能退化。作者提出MCCL，被动测量GPU间吞吐并检测持久性退化，针对受影响的高通信密集调度进行动态重合成。该闭环方法使调度能适应运行时网络状态，保持集合通信效率，为分布式训练通信优化提供了新机制。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.23064v1",
+      "source": "arxiv",
+      "title": "BaGuaLu-2: Taming Dynamic Memory Fluctuation for Efficient MoE Model Training over 10,000 GPUs",
+      "abstract": "Fine-grained Mixture-of-Experts (MoE) is the de facto architecture for scaling large language models. However, dynamic expert load imbalance causes severe memory fluctuations that degrade training efficiency. Existing systems rely on static memory provisioning: they either over-provision, leaving GPU memory idle during normal execution, or under- provision, inviting out-of-memory crashes and costly manual rollbacks when load spikes occur. To address these challenges, we propose BaGuaLu-2, a large-scale MoE training system that eliminates this dilemma through flexible provisioning. By transforming memory allocation from a static, one-time tuning choice into a continuous and fine-grained control. BaGuaLu-2 grants exact activation memory on demand for each training batch. Furthermore, it offsets any dynamic management overhead through system optimizations. BaGuaLu-2 demonstrates exceptional scalability, training a model with 1040 billion parameters across 12,288 GPUs while sustaining over 2 EFlops at 35% MFU. Compared with state-of-the-art systems, BaGuaLu-2 delivers 1.14x and 1.13x average throughput improvements over Megatron-Kuai and AdaPipe, respectively.",
+      "authors": [
+        "Mingshu Zhai",
+        "Minkun Guo",
+        "Hongrui Lian",
+        "Shuangyu Li",
+        "Qi Zhang",
+        "Chen Hu",
+        "Xiawei Du",
+        "Yuyang Jin",
+        "Zan Zong",
+        "Jidong Zhai"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-16T07:40:24+00:00",
+      "link": "https://arxiv.org/pdf/2610.23064v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "dynamic expert load imbalance and memory fluctuation in large-scale MoE training",
+      "llm_evidence_cn": "大规模MoE训练中的动态专家负载失衡与显存波动",
+      "llm_evidence": "大规模MoE训练中的动态专家负载失衡与显存波动",
+      "canonical_evidence": "大规模MoE训练中的动态专家负载失衡与显存波动",
+      "llm_tldr_en": "BaGuaLu-2 replaces static memory provisioning in MoE training with continuous fine-grained control, absorbing dynamic expert load imbalance to avoid OOM crashes and idle GPU memory across 10,000+ GPUs.",
+      "llm_tldr_cn": "细粒度MoE训练中专家负载动态失衡会引起显存剧烈波动，现有系统只能静态预留显存，要么闲置浪费，要么在负载尖峰时显存溢出并被迫回滚。BaGuaLu-2 将显存分配从一次性静态调参转为持续细粒度控制，精确管理激活内存以适配负载变化。在万卡规模 MoE 训练中，该系统显著降低显存浪费与回滚开销，提升训练效率，为大模型专家并行训练提供了弹性显存管理方案。",
+      "llm_tldr": "细粒度MoE训练中专家负载动态失衡会引起显存剧烈波动，现有系统只能静态预留显存，要么闲置浪费，要么在负载尖峰时显存溢出并被迫回滚。BaGuaLu-2 将显存分配从一次性静态调参转为持续细粒度控制，精确管理激活内存以适配负载变化。在万卡规模 MoE 训练中，该系统显著降低显存浪费与回滚开销，提升训练效率，为大模型专家并行训练提供了弹性显存管理方案。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "expert load balancing",
+      "matched_requirement_id": "req-1",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.16890v1",
+      "source": "arxiv",
+      "title": "FORGE: Procedural Weight Generation for Sparse MoE Inference",
+      "abstract": "We introduce FORGE (Fast On-chip Rotor Generation for Experts), a procedural weight generation system for Sparse Mixture-of-Experts (MoE) inference. Rather than storing and loading every expert weight tensor from HBM, we show how a compact accelerator inside each Streaming Multiprocessor can regenerate them on-the-fly from $O(\\log^2 d)$ rotor parameters per projection. Per replaced layer, gigabytes of stored expert weights are approximated with under a megabyte of seeds. This addresses the dual memory bottleneck of autoregressive Sparse MoE decode, where per-expert FFN operations are HBM-bandwidth-bound at small routed-token counts and the aggregate expert footprint forces multi-node Expert Parallelism (EP) with all-to-all traffic. We realize the approach as the Rotor Generation Unit (RGU), a fixed-function datapath that generates FFN weight tiles without competing with Tensor Core execution. With 30% of the MoE FFN layers replaced across five Sparse MoE models, we estimate 1.3-2.8x higher system throughput at matched GPU count and 1.10-1.15x lower per-user decode latency at short context. In exchange, downstream accuracy on three model families falls below that of the same model fine-tuned without rotor replacement, and the replacement ratio controls this tradeoff. FORGE also expands KV cache capacity by 1.2-2.6x. It is agnostic to the bit width at which weights are stored, so it can compose with quantization. The RGU is fully implemented/verified in SystemVerilog at ~0.9% SM area overhead (0.032 mm^2/SM, 7nm).",
+      "authors": [
+        "Chanyoung Moon",
+        "Travis Pence",
+        "Daisuke Yamada",
+        "Jiaqi Mo",
+        "Yanxin Zhang",
+        "Vikas Singh",
+        "Karthikeyan Sankaralingam"
+      ],
+      "primary_category": "cs.AR",
+      "categories": [
+        "cs.AR",
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-10-12T14:47:04+00:00",
+      "link": "https://arxiv.org/pdf/2610.16890v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "sparse MoE inference addressing expert parallelism all-to-all traffic",
+      "llm_evidence_cn": "稀疏MoE推理并缓解专家并行的all-to-all通信",
+      "llm_evidence": "稀疏MoE推理并缓解专家并行的all-to-all通信",
+      "canonical_evidence": "稀疏MoE推理并缓解专家并行的all-to-all通信",
+      "llm_tldr_en": "Sparse MoE decode is HBM-bandwidth-bound and huge expert footprints force multi-node expert parallelism with all-to-all traffic. FORGE regenerates expert weights on-chip from compact rotor seeds instead of loading them, shrinking gigabytes of weights to under a megabyte per layer.",
+      "llm_tldr_cn": "稀疏MoE自回归解码在小批量路由下受HBM带宽限制，庞大的专家权重总量又迫使采用多节点专家并行并产生all-to-all通信开销。作者提出FORGE，在每个流式多处理器内集成紧凑加速器，用O(log²d)转子参数按需重建专家投影权重，而非从HBM加载。结果显示每层数GB的专家权重可由不足1MB的种子近似，显著降低显存占用与跨节点通信需求。该工作为MoE推理提供了以计算换带宽、缓解专家并行通信压力的新路径。",
+      "llm_tldr": "稀疏MoE自回归解码在小批量路由下受HBM带宽限制，庞大的专家权重总量又迫使采用多节点专家并行并产生all-to-all通信开销。作者提出FORGE，在每个流式多处理器内集成紧凑加速器，用O(log²d)转子参数按需重建专家投影权重，而非从HBM加载。结果显示每层数GB的专家权重可由不足1MB的种子近似，显著降低显存占用与跨节点通信需求。该工作为MoE推理提供了以计算换带宽、缓解专家并行通信压力的新路径。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "MoE expert parallelism",
+      "matched_requirement_id": "req-5",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.19423v1",
+      "source": "arxiv",
+      "title": "Beyond the Trial-and-Error Loop: Hybrid Projection and Automated Tuning for Distributed Training",
+      "abstract": "Configuring distributed LLM training across hundreds of GPUs requires jointly optimizing tensor, pipeline, expert, context, and data parallelism alongside micro-batch size, recomputation, sharding, and overlap, a combinatorial space where memory legality can hinge on a single byte of activation accounting. Today, teams navigate it through expensive multi-node trial and error, burning GPU-hours on crashes and suboptimal recipes. We present Primus Projection, which closes this loop with two coupled components. First, a hybrid projection engine that measures what it can and simulates what it cannot: GPU microbenchmarks on as few as a single device capture compute kernels and any in-scope communication; a sub-node downscale-measure-upscale workflow analytically restores out-of-scope collectives, FSDP overlap, and the full pipeline schedule at the multi-node target. A pure simulation mode runs entirely on CPU, enabling pre-silicon planning without any GPU. Second, the Primus Tuning Agent treats the projection engine as a fast scoring oracle (seconds per candidate instead of tens of minutes) and uses it to drive an intelligent search over the configuration space. A deterministic seed planner sweeps single axes; an LLM investigation loop proposes cross-axis combinations the planner cannot reach, with an analytic memory pre-filter that rejects infeasible candidates before any GPU time is spent. Validated on Llama 3.1 (dense) and Mixtral 8x22B (MoE) across two GPU generations, all projections stay within ~10% of measured multi-node throughput, and fidelity holds at production scale: 4.7% error on DeepSeek V3 671B at 1,024 GPUs and 1.9% on Qwen3-235B-A22B at 256 GPUs. In a Mixtral 8x22B case study, the Primus Tuning Agent discovers a configuration delivering +27% throughput over the published 4-node BF16 reference at the same scale, in under 30 minutes of single-node exploration.",
+      "authors": [
+        "Anshu Raina",
+        "Peyman Razaghi",
+        "Yuankai Chen",
+        "Cheng Yao",
+        "Yao Fu",
+        "Vidushi Goyal",
+        "Devang Patel",
+        "Wen Xie",
+        "Zhenyu Gu",
+        "Emad Barsoum"
+      ],
+      "primary_category": "cs.AI",
+      "categories": [
+        "cs.AI",
+        "cs.DC"
+      ],
+      "published": "2026-10-14T02:15:28+00:00",
+      "link": "https://arxiv.org/pdf/2610.19423v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "jointly optimizes expert parallelism and communication-computation overlap for distributed LLM training",
+      "llm_evidence_cn": "联合优化专家并行与计算通信重叠的分布式LLM训练配置",
+      "llm_evidence": "联合优化专家并行与计算通信重叠的分布式LLM训练配置",
+      "canonical_evidence": "联合优化专家并行与计算通信重叠的分布式LLM训练配置",
+      "llm_tldr_en": "Primus Projection combines a hybrid projection engine (microbenchmarks plus downscale measurement and simulation) with automated tuning to jointly search parallelism including expert parallelism and overlap for distributed LLM training.",
+      "llm_tldr_cn": "针对在数百GPU上配置分布式LLM训练需联合优化张量、流水线、专家、上下文与数据并行以及重叠策略、依赖昂贵试错的问题，本文提出Primus Projection，结合混合投影引擎与自动调优：用单卡微基准测量可测的计算与通信内核，再用降尺度测量与模拟补足无法实测的部分。系统据此自动搜索合法且高效的并行配置，减少多机试错带来的GPU机时浪费。该工作把分布式训练配置从人工试错转为可投影、可自动调优的流程。",
+      "llm_tldr": "针对在数百GPU上配置分布式LLM训练需联合优化张量、流水线、专家、上下文与数据并行以及重叠策略、依赖昂贵试错的问题，本文提出Primus Projection，结合混合投影引擎与自动调优：用单卡微基准测量可测的计算与通信内核，再用降尺度测量与模拟补足无法实测的部分。系统据此自动搜索合法且高效的并行配置，减少多机试错带来的GPU机时浪费。该工作把分布式训练配置从人工试错转为可投影、可自动调优的流程。",
+      "llm_tags": [
+        "query:ccl:composite"
+      ],
+      "matched_query_tag": "query:ccl:composite",
+      "matched_query_text": "Papers central to 分布式 LLM 集合通信、MoE 专家并行与计算通信协同, especially work that connects or combines: expert load balancing; topology-aware scheduling; communication computation overlap; all-to-all optimization; MoE expert parallelism; collective communication; How to overlap communication with computation and optimize expert placement?; How to reduce all to all communication overhead in MoE expert parallelism?; How to optimize collective communication for distributed LLM training and inference?.",
+      "matched_requirement_id": "req-composite-ccl",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.18451v1",
+      "source": "arxiv",
+      "title": "FastEEP: Fast Intra-Instance Elastic Scaling for Expert-Parallel MoE Serving",
+      "abstract": "Large-scale expert parallelism (EP) has become the standard deployment configuration for Mixture-of-Experts (MoE) models in production. Meanwhile, the highly dynamic nature of LLM workloads requires providers to continuously adjust serving capacity to match fluctuating demand. Scaling MoE serving cannot be efficiently achieved by simply adding or removing serving instances; instead, it often requires resizing the EP group within an existing instance, which we refer to as intra-instance scaling.Existing inference engines primarily rely on instance-level scaling, which destroys and reconstructs entire serving instances, incurring substantial scaling overhead.   We present FastEEP (Fast Elastic Expert Parallel), a fast intra-instance scaling system for MoE serving based on the principle of Partial Reuse. FastEEP reuses existing runtime state across worker execution, GPU memory, and communication by separating reusable execution structures from the resources activated by the current EP configuration. This separation enables coordinated resource reclamation and reconfiguration while preserving costly-to-reconstruct state, allowing fast EP scaling without full instance teardown and reconstruction. Our evaluation shows that FastEEP achieves 4.5x--11.7x faster scaling than the existing vLLM-based approach across different models, enabling efficient, fine-grained scaling of MoE serving.",
+      "authors": [
+        "Yunfei Feng",
+        "Jingkai He",
+        "Shiqi Liu",
+        "Cheng Zhang",
+        "Dong Du",
+        "Erhu Feng"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-10-13T14:22:00+00:00",
+      "link": "https://arxiv.org/pdf/2610.18451v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "elastic intra-instance scaling of expert-parallel MoE serving",
+      "llm_evidence_cn": "专家并行MoE服务的实例内弹性伸缩",
+      "llm_evidence": "专家并行MoE服务的实例内弹性伸缩",
+      "canonical_evidence": "专家并行MoE服务的实例内弹性伸缩",
+      "llm_tldr_en": "Large-scale expert parallelism is the standard MoE serving setup, yet dynamic workloads require frequent capacity changes and instance-level scaling destroys and rebuilds whole instances. FastEEP instead resizes the EP group inside an existing instance with low overhead.",
+      "llm_tldr_cn": "大规模专家并行已成为MoE模型生产部署的标准配置，而LLM负载高度动态，需要持续调整服务容量。现有推理引擎多采用实例级伸缩，必须销毁并重建整个服务实例，开销巨大。FastEEP提出实例内伸缩，在既有实例内部调整专家并行组的规模以匹配负载。该工作显著降低MoE专家并行服务的伸缩开销，为在线弹性扩缩容提供了实用机制。",
+      "llm_tldr": "大规模专家并行已成为MoE模型生产部署的标准配置，而LLM负载高度动态，需要持续调整服务容量。现有推理引擎多采用实例级伸缩，必须销毁并重建整个服务实例，开销巨大。FastEEP提出实例内伸缩，在既有实例内部调整专家并行组的规模以匹配负载。该工作显著降低MoE专家并行服务的伸缩开销，为在线弹性扩缩容提供了实用机制。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "MoE expert parallelism",
+      "matched_requirement_id": "req-5",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "quick_skim": [
+    {
+      "id": "2610.23006v1",
+      "source": "arxiv",
+      "title": "Efficient CPU-GPU collaborative MoE inference via Adaptive Expert Assignment",
+      "abstract": "Mixture-of-Experts (MoE) models reduce inference computation through sparse expert activation, but their large expert memory footprint often exceeds GPU capacity, making expert offloading necessary for memory-constrained inference. However, existing systems typically handle GPU-missed experts by either transferring them to the GPU, incurring substantial PCIe transfer latency, or executing them on the CPU, making the slower CPU computation the bottleneck. To address these limitations, we present \\method, a CPU-GPU collaborative MoE inference system that adaptively assigns these missed experts to the CPU or GPU for efficient execution. By exploiting differences in expert token-loads, \\method selectively transfers high-load experts to the GPU while executing low-load experts on the CPU. To minimize inference latency, \\method adaptively adjusts expert assignments to balance the CPU computation path against the GPU transfer-and-computation path, allowing both execution paths to complete as early as possible. Extensive experiments on three representative MoE LLMs show that \\method improves prefill speed by up to 51.9\\% and decode throughput by up to 39.5\\% over the strongest baseline across the evaluated batch sizes, with consistent gains under different GPU-memory budgets.",
+      "authors": [
+        "Wenhui Lv",
+        "Yunming Liao",
+        "Hongli Xu",
+        "Yang Xu",
+        "Junhao Cheng"
+      ],
+      "primary_category": "cs.AI",
+      "categories": [
+        "cs.AI"
+      ],
+      "published": "2026-10-16T06:31:43+00:00",
+      "link": "https://arxiv.org/pdf/2610.23006v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "adaptive expert assignment to CPU or GPU by expert token load",
+      "llm_evidence_cn": "按专家token负载自适应分配到CPU或GPU",
+      "llm_evidence": "按专家token负载自适应分配到CPU或GPU",
+      "canonical_evidence": "按专家token负载自适应分配到CPU或GPU",
+      "llm_tldr_en": "A CPU-GPU collaborative MoE inference system adaptively assigns GPU-missed experts to CPU or GPU by token load, cutting PCIe transfers and CPU-side bottlenecks under limited memory.",
+      "llm_tldr_cn": "MoE模型专家内存占用常超出GPU容量，现有卸载方案要么把未命中专家搬回GPU带来大量PCIe传输，要么放在CPU上执行成为慢速瓶颈。论文提出CPU-GPU协同MoE推理系统，依据各专家的token负载差异，把高负载专家选择性迁移至GPU、其余留在CPU执行。实验表明该自适应专家分配显著降低传输与计算开销，提升受限显存下的推理效率，为专家放置提供细粒度调度思路。",
+      "llm_tldr": "MoE模型专家内存占用常超出GPU容量，现有卸载方案要么把未命中专家搬回GPU带来大量PCIe传输，要么放在CPU上执行成为慢速瓶颈。论文提出CPU-GPU协同MoE推理系统，依据各专家的token负载差异，把高负载专家选择性迁移至GPU、其余留在CPU执行。实验表明该自适应专家分配显著降低传输与计算开销，提升受限显存下的推理效率，为专家放置提供细粒度调度思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to overlap communication with computation and optimize expert placement?",
+      "matched_requirement_id": "req-7",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "8plus"
+    },
+    {
+      "id": "2610.22890v1",
+      "source": "arxiv",
+      "title": "MailRail: Mitigating Incast Congestion with User-Space, Node-Based Flow Control",
+      "abstract": "Irregular workloads, such as those stemming from Graph Neural Networks (GNNs) and Mixture-of-Experts (MoE) models, frequently induce severe incast congestion in large-scale parallel environments. Existing fabric-level congestion control mechanisms rely on reactive, link-level rate limiting that degrades overall throughput. While receiver-driven, credit-based flow control offers a proactive alternative, as process counts scale memory slots per rank fall below usable thresholds, rendering traditional rank-based accounting untenable. To address this challenge, we introduce MailRail, an out-of-order, asynchronous messaging framework, along with a novel user-space, node-based credit flow control system. By shifting credit accounting from individual processes to shared per-node pools, our proactive, fabric-agnostic approach maintains sufficient credit availability even as process density grows, enabling processes to dynamically utilize freed credits without waiting for receiver-side redistribution. Experimental evaluations demonstrate that node-based flow control achieves up to a 1132x speedup over unconstrained execution at an adversarial incast ratio of 4096:1 while adding minimal overhead on uniform workloads.",
+      "authors": [
+        "Noel Gomillion",
+        "Lance Fletcher",
+        "Trevor Steil",
+        "Eun Jung Kim",
+        "Roger Pearce"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-16T03:44:43+00:00",
+      "link": "https://arxiv.org/pdf/2610.22890v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 7.0,
+      "llm_evidence_en": "node-based credit flow control to mitigate MoE-induced incast congestion at scale",
+      "llm_evidence_cn": "节点级信用流控缓解MoE等不规则负载引发的大规模incast拥塞",
+      "llm_evidence": "节点级信用流控缓解MoE等不规则负载引发的大规模incast拥塞",
+      "canonical_evidence": "节点级信用流控缓解MoE等不规则负载引发的大规模incast拥塞",
+      "llm_tldr_en": "MailRail mitigates MoE and GNN induced incast congestion with an out-of-order asynchronous messaging framework and user-space node-based credit flow control that stays effective as process counts scale.",
+      "llm_tldr_cn": "GNN、MoE等不规则负载在大规模并行环境中会引发严重incast拥塞，现有链路级反应式限速会损害整体吞吐，而传统基于rank的信用流控在进程数增大后失效。MailRail 提出乱序异步消息框架与用户态、基于节点的信用流控，将信用记账从单rank上移到节点级。实验表明该方案在超大规模下仍能主动缓解incast并保持吞吐，为MoE等不规则并行通信提供可扩展的拥塞控制手段。",
+      "llm_tldr": "GNN、MoE等不规则负载在大规模并行环境中会引发严重incast拥塞，现有链路级反应式限速会损害整体吞吐，而传统基于rank的信用流控在进程数增大后失效。MailRail 提出乱序异步消息框架与用户态、基于节点的信用流控，将信用记账从单rank上移到节点级。实验表明该方案在超大规模下仍能主动缓解incast并保持吞吐，为MoE等不规则并行通信提供可扩展的拥塞控制手段。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "7"
+    },
+    {
+      "id": "2610.16190v1",
+      "source": "arxiv",
+      "title": "A New Lens on Multi-GPU Communication: API-Level Memory Models for Portable Optimization",
+      "abstract": "As network communication increasingly becomes a performance bottleneck for ML and HPC workloads, it is more important than ever to optimize multi-GPU data transfers. Recently, low-level device APIs have emerged that allow programmers to perform fine-grain optimizations via one-sided put/get operations triggered directly from the device. However, the communication libraries providing these device APIs (e.g., rocSHMEM, MSCCL++, and NCCL/RCCL GIN) currently lack a rigorous memory model defining how their primitives interact with the underlying memory systems. Without this, emerging HPC and ML workloads aggressively optimizing network communication via device APIs can be brittle, error-prone, and face compatibility and inter-operability challenges.   This paper proposes the use of API-level memory models for these emerging device communication APIs. An API-level memory model defines the memory semantics of communication API calls in a way that abstracts lower-level details from the API user and simplifies development. This work defines one such model for device-side communication (implemented in AMD's recently open sourced rocSHMEM library) and demonstrates how formal relaxations to such a model can enable low-level LLM performance optimizations while retaining a well-defined standardized interface. Specifically, we describe how updating the SHMEM API implemented by rocSHMEM can properly support cache bypassing for network data, improving performance of a collective communication workload by up to 2.48x, a fused compute+communication workload by up to 1.77x, and a state-of-the-art expert-parallel communication workload by up to 1.18x.",
+      "authors": [
+        "Johnathan Alsop",
+        "Bradford Beckmann",
+        "Brandon Potter",
+        "Jiakun Yan",
+        "Aurelien Bouteiller",
+        "Omri Mor",
+        "Tony Tye",
+        "Sameer Sahasrabuddhe"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-12T05:11:03+00:00",
+      "link": "https://arxiv.org/pdf/2610.16190v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "memory models for multi-GPU communication libraries such as NCCL and MSCCL++",
+      "llm_evidence_cn": "为NCCL、MSCCL++等多GPU通信库定义内存模型",
+      "llm_evidence": "为NCCL、MSCCL++等多GPU通信库定义内存模型",
+      "canonical_evidence": "为NCCL、MSCCL++等多GPU通信库定义内存模型",
+      "llm_tldr_en": "Defines API-level memory models for device-triggered one-sided put/get primitives in rocSHMEM, MSCCL++ and NCCL/RCCL GIN, making fine-grain multi-GPU network optimizations portable and correct.",
+      "llm_tldr_cn": "网络通信日益成为机器学习与HPC工作负载的性能瓶颈，但rocSHMEM、MSCCL++、NCCL/RCCL GIN等库提供的设备端单向put/get原语缺乏严格内存模型，使激进的通信优化脆弱易错且难以互操作。论文提出API级内存模型，形式化这些原语与底层内存系统的交互语义，并给出可移植优化方案。分析表明该模型能消除语义歧义、支撑跨库兼容，为多GPU集合通信的可靠性能优化奠定基础。",
+      "llm_tldr": "网络通信日益成为机器学习与HPC工作负载的性能瓶颈，但rocSHMEM、MSCCL++、NCCL/RCCL GIN等库提供的设备端单向put/get原语缺乏严格内存模型，使激进的通信优化脆弱易错且难以互操作。论文提出API级内存模型，形式化这些原语与底层内存系统的交互语义，并给出可移植优化方案。分析表明该模型能消除语义歧义、支撑跨库兼容，为多GPU集合通信的可靠性能优化奠定基础。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.25058v1",
+      "source": "arxiv",
+      "title": "Triple Overlap in Pipelined Krylov Methods on Multi-GPU Systems",
+      "abstract": "We introduce a novel triple-overlap implementation of the pipelined preconditioned conjugate gradient (Pipe-PCG) and pipelined stabilized biconjugate gradient (Pipe-BiCGStab) solvers, methods widely used in scientific applications. By leveraging a collective communication library, our approach extends conventional computation-communication overlap to concurrently execute collective operations, irregular P2P communication, and compute kernels, enabling computation-communication-communication overlap across multiple GPUs. We evaluate the design on the MareNostrum 5 (H100) and Leonardo (A100) supercomputers, comparing against PETSc and the state-of-the-art two-stream NCCL implementation using SuiteSparse matrices and three massive instances scaled up to 512 GPUs. The three-stream design outperforms the two-stream baseline on every instance, with the margin widening from 2-6% at 4 GPUs to 18-47% at 64 GPUs. At 64 GPUs, the geometric-mean speedup over the two-stream baseline is 1.33x on MareNostrum 5 and 1.23x on Leonardo for Pipe-PCG, and reaches 1.30x for Pipe-BiCGStab. In large-scale experiments, we observed a speedup up to 35% in Pipe-PCG and up to 33% in Pipe-BiCGStab compared to the two-stream design. For PETSc, the margin is even wider, up to 3.27x speedup in both Pipe-PCG and Pipe-BiCGStab. Related code for the proposed method is available online: https://github.com/ParCoreLab/aCG",
+      "authors": [
+        "Sinan Ekmekçibaşı",
+        "James D. Trotter",
+        "Johannes Langguth",
+        "Xing Cai",
+        "Didem Unat"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-18T06:55:36+00:00",
+      "link": "https://arxiv.org/pdf/2610.25058v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "extends computation-communication overlap to concurrent collective, P2P and compute on multi-GPU",
+      "llm_evidence_cn": "将计算通信重叠扩展为集合通信、点对点与计算的并发执行",
+      "llm_evidence": "将计算通信重叠扩展为集合通信、点对点与计算的并发执行",
+      "canonical_evidence": "将计算通信重叠扩展为集合通信、点对点与计算的并发执行",
+      "llm_tldr_en": "Pipelined Krylov solvers on multi-GPU systems suffer from non-overlapped communication. The authors present a triple-overlap design that concurrently runs collective ops, irregular P2P, and compute kernels, evaluated up to 512 GPUs on H100/A100 against PETSc and two-stream NCCL.",
+      "llm_tldr_cn": "流水线预条件共轭梯度等求解器在多GPU上常因集合通信与点对点通信无法与计算充分重叠而受限。作者基于集合通信库提出三重重叠实现，使集合通信、非规则点对点通信与计算内核并发执行。在H100与A100超算上对比PETSc和两流NCCL实现，矩阵规模扩展至512块GPU。该工作将传统计算-通信重叠拓展为计算-通信-通信协同，为多GPU科学计算提供新思路。",
+      "llm_tldr": "流水线预条件共轭梯度等求解器在多GPU上常因集合通信与点对点通信无法与计算充分重叠而受限。作者基于集合通信库提出三重重叠实现，使集合通信、非规则点对点通信与计算内核并发执行。在H100与A100超算上对比PETSc和两流NCCL实现，矩阵规模扩展至512块GPU。该工作将传统计算-通信重叠拓展为计算-通信-通信协同，为多GPU科学计算提供新思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "communication computation overlap",
+      "matched_requirement_id": "req-3",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "8plus"
+    },
+    {
+      "id": "2610.18565v1",
+      "source": "arxiv",
+      "title": "Orrery: Modeling and Simulation of GPU-direct MPI Communication with SimGrid",
+      "abstract": "Simulation of HPC applications is an essential tool for analyzing system design trade-offs and enabling effective hardware--software co-design. As modern supercomputers increasingly rely on GPU acceleration, MPI implementations have evolved to support GPU-aware communication, enabling direct GPU data transfers. Modeling these mechanisms is therefore critical for simulating HPC applications on current systems. In this paper, we introduce Orrery, an interposition layer built on SimGrid's SMPI to model GPU-aware MPI communication using existing collective implementations and flow-based simulation. Orrery intercepts GPU memory allocations, kernel launches, data transfers, and MPI operations, and models their execution in SimGrid according to target system specifications, enabling simulation without requiring physical GPUs. We validate Orrery using CUDA-aware MPI microbenchmarks and a Jacobi solver on up to 32 nodes of the MUSICA supercomputer and demonstrate that it reproduces key GPU-aware MPI mechanisms.",
+      "authors": [
+        "Ahmad Moh'd Saleh A. Belbeisi",
+        "Amir Raoofy",
+        "Josef Weidendorfer",
+        "Majid Salimi Beni"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.PF"
+      ],
+      "published": "2026-10-13T15:33:31+00:00",
+      "link": "https://arxiv.org/pdf/2610.18565v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "models GPU-aware MPI collective communication in simulation",
+      "llm_evidence_cn": "在仿真中建模GPU直连MPI集合通信",
+      "llm_evidence": "在仿真中建模GPU直连MPI集合通信",
+      "canonical_evidence": "在仿真中建模GPU直连MPI集合通信",
+      "llm_tldr_en": "Orrery is an interposition layer on SimGrid SMPI that intercepts GPU memory allocations, kernel launches, transfers and MPI calls to model GPU-aware MPI collective communication via flow-based simulation.",
+      "llm_tldr_cn": "针对现代超算广泛使用GPU加速、MPI支持GPU直接通信却缺乏准确仿真建模的问题，本文提出Orrery，一个构建在SimGrid SMPI之上的插桩层。它拦截GPU内存分配、内核启动、数据传输与MPI操作，并基于已有集合通信实现与流级仿真在SimGrid中建模其执行。该工作使含GPU直连通信的HPC应用可在模拟环境中评估系统设计权衡并支撑软硬件协同设计。",
+      "llm_tldr": "针对现代超算广泛使用GPU加速、MPI支持GPU直接通信却缺乏准确仿真建模的问题，本文提出Orrery，一个构建在SimGrid SMPI之上的插桩层。它拦截GPU内存分配、内核启动、数据传输与MPI操作，并基于已有集合通信实现与流级仿真在SimGrid中建模其执行。该工作使含GPU直连通信的HPC应用可在模拟环境中评估系统设计权衡并支撑软硬件协同设计。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.21815v1",
+      "source": "arxiv",
+      "title": "Exact Makespan Bounds and the GPipe Homogeneity Bias for Heterogeneous LLM Inference Pipelines",
+      "abstract": "We give an exact critical-path characterization of the makespan of micro-batch pipelines serving LLMs on heterogeneous GPU clusters, quantifying how the classic homogeneous GPipe formula errs. In the pure-forward, communication-free, infinite-buffer setting, T(M) = (M-1)tau_max + Sum_j tau_j, where tau_j is stage j's per-micro-batch service time and M the micro-batch count (Theorem 1). Under asynchronous communication -- modern NCCL-based serving -- it extends to T(M) = Sum_j tau_j + Sum_j d_j + (M-1)tau_max, with Sum_j d_j a purely additive constant (Theorem 2); under blocking communication, T(M) = (M-1)sigma_max + Sum_s sigma_s with sigma_s = tau_s + d_s, so communication enters the steady-state slope iff some d_s > tau_max - tau_s (Theorem 3). These results quantify the GPipe overestimate, decompose the bias into a homogeneity term Sum_j (tau_max - tau_j) and a communication-ignoring term Sum_j d_j, and imply that balancing per-stage compute dominates communication reduction for steady-state throughput. A real system with partial overlap is sandwiched between Theorems 2 and 3, with a closed-form bound on the overlap throughput gain. All claims are validated pointwise (error < 10^-9) on eleven configurations and a 1.6x10^5-point fuzz, including a mixed RTX 5090/3090/GTX 1070 partition. We situate the results in flow-shop scheduling and list open extensions: bandwidth-limited communication, bounded buffers, prefill-decode interleaving.",
+      "authors": [
+        "Zhu Wenbo"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-15T13:03:06+00:00",
+      "link": "https://arxiv.org/pdf/2610.21815v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "exact makespan analysis of pipelined LLM inference distinguishing asynchronous versus blocking communication",
+      "llm_evidence_cn": "流水线LLM推理的精确makespan分析，区分异步与阻塞通信",
+      "llm_evidence": "流水线LLM推理的精确makespan分析，区分异步与阻塞通信",
+      "canonical_evidence": "流水线LLM推理的精确makespan分析，区分异步与阻塞通信",
+      "llm_tldr_en": "This paper derives exact critical-path makespan bounds for micro-batch LLM inference pipelines on heterogeneous GPUs, showing when communication enters the steady-state slope versus acting as an additive constant.",
+      "llm_tldr_cn": "在异构GPU集群上服务LLM的微批流水线中，经典GPipe公式假设同构并忽略通信，导致完成时间估计出现偏差。本文给出流水线makespan的精确关键路径刻画，分别推导无通信、异步通信与阻塞通信三种情形的闭式表达式。结果表明异步NCCL通信下通信项仅为可加常数，而阻塞通信时通信会进入稳态斜率。该分析量化了同质性偏差，为异构推理流水线的调度与通信重叠设计提供理论依据。",
+      "llm_tldr": "在异构GPU集群上服务LLM的微批流水线中，经典GPipe公式假设同构并忽略通信，导致完成时间估计出现偏差。本文给出流水线makespan的精确关键路径刻画，分别推导无通信、异步通信与阻塞通信三种情形的闭式表达式。结果表明异步NCCL通信下通信项仅为可加常数，而阻塞通信时通信会进入稳态斜率。该分析量化了同质性偏差，为异构推理流水线的调度与通信重叠设计提供理论依据。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "communication computation overlap",
+      "matched_requirement_id": "req-3",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.22035v2",
+      "source": "arxiv",
+      "title": "ETH: Data-Balanced Heterogeneous Pipeline Parallelism for Training Large Models",
+      "abstract": "Current heterogeneity-aware training systems for large models balance workloads by assigning unequal numbers of layers across pipeline stages, a strategy aimed at equalizing execution time through a unique pipeline configuration. However, this approach fails to address critical memory constraints and suffers from inherently coarse balancing granularity. In this paper, we propose Heterogeneous Pipeline Parallelism (HPP), a novel approach enabling efficient and fine-grained data balance across heterogeneous pipelines. To address HPP's key challenges, prohibitive search overhead for optimal configurations and high communication overhead from asymmetric All-Reduce, we design the ETH training system. ETH employs a hierarchical workload balance framework that jointly optimizes balance across heterogeneous pipelines and within individual pipeline stages. To mitigate asymmetric communication costs, ETH implements block-wise gradient aggregation. Furthermore, it integrates specialized optimizations that dramatically reduce HPP configuration search overhead. Evaluations demonstrate ETH achieves up to 2x training speedup while reducing configuration generation overhead by up to 56x compared to state-of-the-art systems. The code is available at https://github.com/YuMJie/ETH.",
+      "authors": [
+        "Mianjie Yu",
+        "Zhongmin Zhao",
+        "Zizhao Mo",
+        "Jianxiong Liao",
+        "Wenxuan Li",
+        "Yulin Qiao",
+        "Huanle Xu",
+        "Wenquan Yang",
+        "Yongqiang Yang",
+        "Zeren Li",
+        "Ruifeng Tang",
+        "Chengzhong Xu"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-10-15T15:10:27+00:00",
+      "link": "https://arxiv.org/pdf/2610.22035v2",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "balances pipeline workloads and tackles asymmetric All-Reduce communication overhead",
+      "llm_evidence_cn": "平衡流水线负载并缓解非对称All-Reduce通信开销",
+      "llm_evidence": "平衡流水线负载并缓解非对称All-Reduce通信开销",
+      "canonical_evidence": "平衡流水线负载并缓解非对称All-Reduce通信开销",
+      "llm_tldr_en": "ETH proposes heterogeneous pipeline parallelism that finely balances data across stages and mitigates asymmetric All-Reduce cost, improving training efficiency under heterogeneous clusters.",
+      "llm_tldr_cn": "现有异构训练系统通过给流水线各阶段分配不同层数来均衡负载，但粒度粗糙且忽略显存约束。作者提出异构流水线并行HPP，实现细粒度数据均衡，并设计ETH训练系统，用分层负载均衡框架降低最优配置搜索开销、缓解非对称All-Reduce通信开销。实验表明该方法在异构集群上提升训练效率与可扩展性，为大模型训练负载均衡提供了新思路。",
+      "llm_tldr": "现有异构训练系统通过给流水线各阶段分配不同层数来均衡负载，但粒度粗糙且忽略显存约束。作者提出异构流水线并行HPP，实现细粒度数据均衡，并设计ETH训练系统，用分层负载均衡框架降低最优配置搜索开销、缓解非对称All-Reduce通信开销。实验表明该方法在异构集群上提升训练效率与可扩展性，为大模型训练负载均衡提供了新思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.22435v1",
+      "source": "arxiv",
+      "title": "TRACE: Transformer Residual Activation Codebook Encoding for Communication-efficient Distributed Edge Inference",
+      "abstract": "Distributed Transformer inference across co-located edge devices is fundamentally communication-bound, as exchanging activations between sequence-parallel partitions dominates inference latency under commodity edge bandwidths. Existing compression schemes reduce this cost but retain a structural bottleneck: the received data must still undergo key/value projection before attention can proceed, serializing computation behind communication. This paper presents Transformer Residual Activation Codebook Encoding (Trace), a framework that addresses these limitations. Trace places a Vector Quantizer (VQ) at the post-attention residual of every Transformer layer and precomputes codebook-indexed key/value representations. During inference, exchanged activations are encoded into compact codebook indices, allowing receivers to directly recover keys and values through table lookup instead of executing the downstream computations required to derive them. By eliminating the received data downstream computation, Trace enables communication--computation overlap and reduces a key latency bottleneck in distributed Transformer inference. A hierarchical clustering further structures the learned codebook into a multi-resolution hierarchy, enabling runtime adaptation of the communication bitrate without retraining. The framework supports two operating variants: one prioritizing accuracy and the other balancing accuracy and efficiency through buffer-compatible quantization. Experiments on ViT-Base (ImageNet-1K and CIFAR-100) and ViViT-B (UCF-101) show that Trace achieves up to 1.89% higher accuracy and up to 1.27x end-to-end inference speedup compared with the state-of-the-art VQ-based distributed inference framework. Compared with uncompressed sequence-parallel inference, Trace reduces communication overhead by up to 22,624x.",
+      "authors": [
+        "Muhammad Azlan Qazi",
+        "Alexandros Iosifidis",
+        "Qi Zhang"
+      ],
+      "primary_category": "cs.LG",
+      "categories": [
+        "cs.LG",
+        "cs.AI",
+        "cs.DC"
+      ],
+      "published": "2026-10-15T09:57:04+00:00",
+      "link": "https://arxiv.org/pdf/2610.22435v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "compresses activations and removes KV-projection serialization in distributed Transformer inference",
+      "llm_evidence_cn": "压缩激活并消除分布式推理中KV投影的串行等待",
+      "llm_evidence": "压缩激活并消除分布式推理中KV投影的串行等待",
+      "canonical_evidence": "压缩激活并消除分布式推理中KV投影的串行等待",
+      "llm_tldr_en": "TRACE places a vector quantizer at each Transformer layer post-attention residual and precomputes codebook-indexed key/value representations, cutting activation traffic and removing the KV-projection serialization in distributed edge inference.",
+      "llm_tldr_cn": "针对边缘设备上分布式Transformer推理受通信带宽限制、且接收数据仍需先做键值投影而串行化计算的问题，TRACE在每层后注意力残差处引入向量量化器，并预计算由码本索引的键值表示以减少传输量。该方法使注意力可直接基于接收到的编码推进，缓解计算等待通信的结构性瓶颈。实验表明其在商品级带宽下有效降低推理延迟。整体为带宽受限场景提供了通信高效的表征编码思路。",
+      "llm_tldr": "针对边缘设备上分布式Transformer推理受通信带宽限制、且接收数据仍需先做键值投影而串行化计算的问题，TRACE在每层后注意力残差处引入向量量化器，并预计算由码本索引的键值表示以减少传输量。该方法使注意力可直接基于接收到的编码推进，缓解计算等待通信的结构性瓶颈。实验表明其在商品级带宽下有效降低推理延迟。整体为带宽受限场景提供了通信高效的表征编码思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to optimize collective communication for distributed LLM training and inference?",
+      "matched_requirement_id": "req-9",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    }
+  ]
+}

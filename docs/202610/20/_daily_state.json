@@ -1,0 +1,233 @@
+{
+  "date": "20261020",
+  "date_label": "",
+  "generated_at": "2026-10-20 21:56:45 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.16387v1",
+      "route": "202610/20/2610.16387v1-sp-allreduce-symmetric-tree-schedules-for-tori-and-beyond",
+      "title": "SP-Allreduce: Symmetric Tree Schedules for Tori and Beyond",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "利用环面拓扑对称性的拓扑感知Allreduce算法",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.17091v1",
+      "route": "202610/20/2610.17091v1-mccl-measurement-based-collective-communication-library",
+      "title": "MCCL: Measurement-based Collective Communication Library",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "基于运行时测量动态重合成调度的集合通信库",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.23064v1",
+      "route": "202610/20/2610.23064v1-bagualu-2-taming-dynamic-memory-fluctuation-for-efficient-moe-model-training-over-10000-gpus",
+      "title": "BaGuaLu-2: Taming Dynamic Memory Fluctuation for Efficient MoE Model Training over 10,000 GPUs",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "大规模MoE训练中的动态专家负载失衡与显存波动",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.16890v1",
+      "route": "202610/20/2610.16890v1-forge-procedural-weight-generation-for-sparse-moe-inference",
+      "title": "FORGE: Procedural Weight Generation for Sparse MoE Inference",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "稀疏MoE推理并缓解专家并行的all-to-all通信",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.18451v1",
+      "route": "202610/20/2610.18451v1-fasteep-fast-intra-instance-elastic-scaling-for-expert-parallel-moe-serving",
+      "title": "FastEEP: Fast Intra-Instance Elastic Scaling for Expert-Parallel MoE Serving",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "专家并行MoE服务的实例内弹性伸缩",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.19423v1",
+      "route": "202610/20/2610.19423v1-beyond-the-trial-and-error-loop-hybrid-projection-and-automated-tuning-for-distributed-training",
+      "title": "Beyond the Trial-and-Error Loop: Hybrid Projection and Automated Tuning for Distributed Training",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "联合优化专家并行与计算通信重叠的分布式LLM训练配置",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.23006v1",
+      "route": "202610/20/2610.23006v1-efficient-cpu-gpu-collaborative-moe-inference-via-adaptive-expert-assignment",
+      "title": "Efficient CPU-GPU collaborative MoE inference via Adaptive Expert Assignment",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "按专家token负载自适应分配到CPU或GPU",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.25058v1",
+      "route": "202610/20/2610.25058v1-triple-overlap-in-pipelined-krylov-methods-on-multi-gpu-systems",
+      "title": "Triple Overlap in Pipelined Krylov Methods on Multi-GPU Systems",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "将计算通信重叠扩展为集合通信、点对点与计算的并发执行",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.22890v1",
+      "route": "202610/20/2610.22890v1-mailrail-mitigating-incast-congestion-with-user-space-node-based-flow-control",
+      "title": "MailRail: Mitigating Incast Congestion with User-Space, Node-Based Flow Control",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 7.0,
+      "evidence": "节点级信用流控缓解MoE等不规则负载引发的大规模incast拥塞",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.16190v1",
+      "route": "202610/20/2610.16190v1-a-new-lens-on-multi-gpu-communication-api-level-memory-models-for-portable-optimization",
+      "title": "A New Lens on Multi-GPU Communication: API-Level Memory Models for Portable Optimization",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "为NCCL、MSCCL++等多GPU通信库定义内存模型",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.18565v1",
+      "route": "202610/20/2610.18565v1-orrery-modeling-and-simulation-of-gpu-direct-mpi-communication-with-simgrid",
+      "title": "Orrery: Modeling and Simulation of GPU-direct MPI Communication with SimGrid",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "在仿真中建模GPU直连MPI集合通信",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.21815v1",
+      "route": "202610/20/2610.21815v1-exact-makespan-bounds-and-the-gpipe-homogeneity-bias-for-heterogeneous-llm-inference-pipelines",
+      "title": "Exact Makespan Bounds and the GPipe Homogeneity Bias for Heterogeneous LLM Inference Pipelines",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "流水线LLM推理的精确makespan分析，区分异步与阻塞通信",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.22035v2",
+      "route": "202610/20/2610.22035v2-eth-data-balanced-heterogeneous-pipeline-parallelism-for-training-large-models",
+      "title": "ETH: Data-Balanced Heterogeneous Pipeline Parallelism for Training Large Models",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "平衡流水线负载并缓解非对称All-Reduce通信开销",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    },
+    {
+      "paper_id": "2610.22435v1",
+      "route": "202610/20/2610.22435v1-trace-transformer-residual-activation-codebook-encoding-for-communication-efficient-distributed-edge-inference",
+      "title": "TRACE: Transformer Residual Activation Codebook Encoding for Communication-efficient Distributed Edge Inference",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "压缩激活并消除分布式推理中KV投影的串行等待",
+      "first_seen_at": "2026-10-20 21:56:45 UTC",
+      "updated_at": "2026-10-20 21:56:45 UTC"
+    }
+  ]
+}

@@ -1,0 +1,903 @@
+Title: FORGE: Procedural Weight Generation for Sparse MoE Inference
+
+URL Source: https://arxiv.org/pdf/2610.16890v1
+
+Published Time: Wed, 14 Oct 2026 03:39:16 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# FORGE: Procedural Weight Generation for Sparse MoE Inference 
+
+## Chanyoung Moon 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA Korea University Seoul, Republic of Korea rchan02@korea.ac.kr 
+
+## Travis Pence 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA tnpence@wisc.edu 
+
+## Daisuke Yamada 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA dyamada2@wisc.edu 
+
+## Jiaqi Mo 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA mo29@wisc.edu 
+
+## Yanxin Zhang 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA NVIDIA Santa Clara, California, USA yanxinz@nvidia.com 
+
+## Vikas Singh 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA vsingh@biostat.wisc.edu 
+
+## Karthikeyan Sankaralingam 
+
+University of Wisconsin-Madison Madison, Wisconsin, USA NVIDIA Santa Clara, California, USA karu@cs.wisc.edu 
+
+## Abstract 
+
+We introduce FORGE (Fast On-chip Rotor Generation for Experts), a procedural weight generation system for Sparse Mixture-of-Experts (MoE) inference. Rather than storing and loading every expert weight tensor from HBM, we show how a compact accelerator inside each Streaming Multipro-cessor can regenerate them on-the-fly from 𝑂 (log 2 𝑑 ) ro-tor parameters per projection. Per replaced layer, gigabytes of stored expert weights are approximated with under a megabyte of seeds. This addresses the dual memory bottle-neck of autoregressive Sparse MoE decode, where per-expert FFN operations are HBM-bandwidth-bound at small routed-token counts and the aggregate expert footprint forces multi-node Expert Parallelism (EP) with all-to-all traffic. We realize the approach as the Rotor Generation Unit (RGU), a fixed-function datapath that generates FFN weight tiles without competing with Tensor Core execution. With 30% of the MoE FFN layers replaced across five Sparse MoE models, we estimate 1 .3–2 .8× higher system throughput at matched GPU count and 1 .10–1 .15 × lower per-user decode latency at short context. In exchange, downstream accuracy on three 
+
+> This work is licensed under a Creative Commons Attribution 4.0 Interna-tional License.
+> ASPLOS ’27, Heraklion, Greece.
+> © 2027 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-3012-2/2027/04
+> https://doi.org/10.1145/3845814.3850033
+
+model families falls below that of the same model fine-tuned without rotor replacement, and the replacement ratio con-trols this tradeoff. FORGE also expands KV cache capacity by 1 .2–2 .6×. It is agnostic to the bit width at which weights are stored, so it can compose with quantization. The RGU is fully implemented/verified in SystemVerilog at ∼0.9% SM area overhead (0.032 mm 2/SM, 7nm). 
+
+CCS Concepts: • Computer systems organization →
+
+Neural networks ; Heterogeneous (hybrid) systems ; • Com-puting methodologies → Machine learning .
+
+Keywords: Mixture of Experts, LLM Inference, Procedural Weight Generation, GPU Architecture, Hardware Accelera-tors 
+
+ACM Reference Format: 
+
+Chanyoung Moon, Travis Pence, Daisuke Yamada, Jiaqi Mo, Yanxin Zhang, Vikas Singh, and Karthikeyan Sankaralingam. 2027. FORGE: Procedural Weight Generation for Sparse MoE Inference. In Pro-ceedings of the 32nd ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1 (ASPLOS ’27), April 11–15, 2027, Heraklion, Greece. ACM, New York, NY, USA, 16 pages. https://doi.org/10.1145/3845814.3850033 
+
+## 1 Introduction 
+
+Short-context autoregressive decode, e.g., agentic tool-use chains, short-prompt chat, and single-user serving, is the regime where per-token latency is bottlenecked by the cost of moving weights out of HBM. This is because each de-code step produces a single token, leading FFN projections arXiv:2610.16890v1 [cs.AR] 12 Oct 2026 ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. Baseline MoE  FORGE    
+
+> MoE
+> Weight
+> Seeds
+> Tensor Cores
+> GPU Inference
+> Training
+> Pre-train Fine-tune Pre-train Fine-tune
+> Rotor
+> Fitting
+> Expert
+> Weights
+> KV cache
+> Activation
+> Attention
+> Weight
+
+θ
+
+> MoE
+> Dense
+> Weight
+> HBM
+> Weight Seeds
+> KV cache
+> Activation
+> Attention
+> Weight
+> Expert
+> Weights
+> RGU
+> Memory-Bound
+> Compute-Bound
+> Tensor Cores
+> More
+> Users
+
+Figure 1. FORGE replaces HBM-resident expert weights with on-chip procedural regeneration. (Top) Training adds an offline rotor-fitting step that compresses each dense ex-pert into a rotor-parameter seed 𝜃 . (Bottom) At inference, the RGU inside each SM materializes weight tiles on-the-fly from seeds alone, reclaiming HBM capacity for an expanded KV cache. to collapse to low-arithmetic-intensity operations (GEMVs) whose wall-clock is set by weight transfer rather than arith-metic [52]. For long context or large batches, other bottle-necks (KV cache, Attention FLOPs) take over. There is broad consensus that sparse Mixture-of-Experts (MoE) architectures [18, 38, 58] are now the dominant design for frontier open-weight LLMs. It turns out that this archi-tecture amplifies the bottlenecks of short-context decode along three distinct axes. All three lead back to one architec-tural fact: expert weights are the overwhelming majority of the parameter footprint, i.e., 94–98% across the five frontier MoEs in Table 1, and constantly occupy HBM capacity. 
+
+(P1) HBM bandwidth bottleneck at small effective batch. We know that MoE top-𝐾 routing assigns each token to 𝐾 of 𝐸 total experts, e.g., 𝐾 =8 of 𝐸 =256 for DeepSeek-v3.2 [15]; 𝐾 =10 of 𝐸 =512 for Qwen3-Coder-Next [4]. But a serving batch of 𝐵 tokens therefore yields only 𝐵𝐾 /𝐸 tokens per expert under uniform routing. At 𝐵 =32 on DeepSeek-v3.2, each expert sees a single token, collapsing its Up/Gate/Down projections to GEMVs. Per-token decode latency then be-comes dominated by HBM weight transfer, leaving the Ten-sor Cores idle [52]. 
+
+(P2) HBM capacity bottleneck. At FP8, total MoE weight footprints range from 31GB (Qwen3-30B [54]) to 742GB (GLM-5 [24]). All but the smallest exceed the 80GB HBM of a single H100. While offloading weights to host memory is an alternative, it severely bottlenecks decode performance to PCIe bandwidth limits [14]. This forces Expert Parallelism (EP) [30, 38, 55] across multiple GPUs and across multiple nodes for large models—paying a cross-node all-to-all for every decode step. Now, within each GPU, weights also con-sume HBM that would otherwise serve KV cache, capping the number of concurrent users per GPU. The capacity prob-lem thus has two consequences: deployment topology (how many GPUs, how much interconnect) and serving concur-rency (how many users per GPU). 
+
+(P3) Compression does not change the access pattern. 
+
+Quantization [20, 40, 45] (FP8 on Hopper, INT4 variants) is the standard response to address both pressures. It does shrink per-parameter bytes, but the GPU must still fetch every activated weight from HBM on each decode step and reserve HBM capacity for the weights. Quantization thus reduces the bandwidth bottleneck and lowers the capacity ceiling, but we observe it eliminates neither. More aggressive schemes (e.g., INT4) push this further along the same axis without changing the underlying access pattern. We observe that (P1), (P2), and (P3) all derive from a single architectural assumption that is rarely challenged: expert weights are a static payload resident in HBM. 
+
+Our approach. The main idea is to instead treat each expert projection as approximately procedurally synthesiz-able (i.e., the end product of a recipe rather than a stored tensor) so that, in principle, all three problems can be ad-dressed at once . Concretely, recent work by Pence et al. [51] on a Clifford-algebra object, rotors, offers the theoretical feasibility: 𝑂 (𝑑 2) linear projections can be approximated by 𝑂 (log 2 𝑑 ) rotor parameters. Operationally, those parame-ters are angles, and the projection is rebuilt by applying the corresponding rotations in a fixed sequence. We take this, with appropriate adjustments, from a theo-retical formalism to hardware. Under our construction, each pre-trained expert in a replaced MoE layer is fit offline to a rotor-parameter seed, and at inference the seed stands in for the dense expert tensor for that layer. A fixed-function 
+
+Rotor Generation Unit (RGU) inside each Streaming Mul-tiprocessor materializes weight tiles on demand for those to-be-replaced layers and writes them directly into Shared Memory, feeding the Tensor Core pipeline without an HBM weight load on the replaced path (Figure 1). Against (P1), on replaced layers this swaps the HBM weight-loading path for a dedicated on-chip generator, shifting the per-expert MoE FFN kernel from bandwidth-bound to compute-bound. Against (P2), replaced-layer expert storage collapses by more than three orders of magnitude, to under a megabyte of parameter seeds per layer (Table 1), freeing close to a third of the weight HBM for expanded KV cache and shrinking the minimum-fit GPU count for the largest models enough to eliminate cross-node deployment. Against (P3), the gains are orthogonal to quantization, as we remove the transfer rather than compress it. The net effect is higher system throughput without giving up per-user latency, which normally trade off against each other, at a cost in downstream accuracy. FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. 
+
+The substitution is tunable. With 30% of the MoE FFN lay-ers replaced, accuracy falls below that of the same model fine-tuned without rotor replacement (Section 5.7); higher ratios promise larger system gains (Figure 11), and keeping accuracy at those ratios is future work. 
+
+Scope. The throughput gain holds across context lengths, since it rests on freed HBM capacity (Section 5.5). The per-user latency gain is largest at short context and narrows to 1 .07–1 .11 × at 𝑇 =128K, where KV cache and attention dominate execution time (Section 5.4). Specifically, our con-tributions are as follows. 
+
+Contributions. (a) We adapt the Clifford-algebra rotor framework [51] from attention layers to MoE FFN decode, and develop a parallel execution model (column, row-pair, and 𝑘 -block independence with precomputed conflict-free pair scheduling) suited to hardware realization. (b) We iden-tify why a software-only path fails: SIMT-based genera-tion saturates instruction issue and incurs pervasive shared-memory bank conflicts, reducing Tensor Core utilization. 
+
+(c) We design, implement in SystemVerilog, and verify the Rotor Generation Unit, a 0 .032 𝑚𝑚 2/SM ( ∼0.9% of a modern SM [43]; 7 nm ASAP7 + CACTI) fixed-function accelerator that generates weight tiles directly into Shared Memory. (d) 
+
+We evaluate five Sparse MoE models with 30% of the MoE FFN layers replaced and measure accuracy on three model families (Section 5.7). At this point we estimate 1 .3–2 .8×
+
+higher system throughput at matched GPU count and 1 .10– 1.15 × lower per-user decode latency at short context, at a cost in downstream accuracy relative to the same model fine-tuned without rotor replacement. (e) The gains rest on measured and RTL-backed inputs: a 2 .3–3 .2× per-expert FP8 kernel speedup independent of 𝑟 , 1 .2–2 .6× more KV cache capacity, and a 28–29% reduction in total parameter memory. The remainder of this paper is organized as follows. Sec-tion 2 provides background on Sparse MoE bottlenecks and introduces the rotor projection framework. Section 3 devel-ops the parallel execution model and the rotor generation architecture. Section 4 details the hardware microarchitec-ture of the RGU. Section 5 evaluates the proposed design. Section 6 discusses related work, and Section 7 concludes. 
+
+## 2 Background and Motivation 
+
+2.1 Sparse MoE Architecture 
+
+Sparse Mixture-of-Experts (MoE) architectures [18, 38, 58] replace the single dense FFN in each transformer block with a set of 𝐸 expert FFN modules and a learned gating net-work. At each MoE layer, the gating network routes each token to a small subset of experts—typically 8 out of 256 (DeepSeek-v3.2 [15], GLM-5 [24]) or 10 out of 512 (Qwen3-Coder-Next [4]). Each activated expert executes a standard SwiGLU FFN [57]: three linear projections (Up, Gate, Down) mapping between the model’s hidden dimension 𝑑 and the per-expert intermediate dimension 𝑑 𝑚𝑜𝑒 . Only the activated experts contribute to the forward pass, keeping per-token FLOPs comparable to a dense model of equivalent depth. While each expert is compact (small 𝑑 𝑚𝑜𝑒 ), the total ex-pert count drives aggregate parameter volume: MoE weight parameters constitute the dominant share of total model footprint across frontier architectures. Table 1 summarizes the five target models evaluated in this work. At FP8 pre-cision, MoE parameters account for 94–98% of total model size, ranging from 29 GB (Qwen3-30B [54], 128 experts) to 728 GB (GLM-5, 256 experts across 75 MoE layers). This pa-rameter concentration is the source of both the bandwidth and capacity bottlenecks analyzed in Section 2.2. 
+
+Table 1. Target Sparse MoE model configurations. 𝐸 , 𝐾 : total and activated experts; Seed: the FORGE parameters that replace one layer’s experts.                               
+
+> Model 𝐸 𝐾 MoE% Seed/layer Comp. DeepSeek-v3.2 256 894.5 594 KB 19 ,065 ×
+> GLM-5 256 898.2 509 KB 19 ,065 ×
+> Qwen3-235B 128 896.6 276 KB 8,738 ×
+> Qwen3-30B 128 895.0 221 KB 2,731 ×
+> Qwen3-Coder-Next 512 10 98.0 776 KB 2,081 ×
+
+2.2 Inference Bottleneck and Limits of Compression 
+
+In autoregressive decode, each token generates a single out-put, reducing linear projections to GEMV-class operations with arithmetic intensity [65] proportional to batch size [52]. Sparse MoE architectures compound this through expert routing: each token activates 𝐾 experts out of 𝐸 total, so under uniform routing a serving batch of 𝐵 tokens yields an effective per-expert batch size of 
+
+𝑏 expert = 𝐵 · 𝐾 𝐸 (1) For DeepSeek-v3.2 ( 𝐾 =8, 𝐸 =256), a serving batch of 𝐵 =32 yields 𝑏 expert =1, i.e., each expert processes a single token, reducing its FFN projections to GEMVs. This pushes each expert’s FFN execution into the memory-bandwidth-bound regime: HBM bandwidth is saturated while Tensor Cores remain underutilized. The bottleneck is most acute in inter-active decode but persists at moderate serving batch sizes where per-expert token counts remain low. Profiling per-expert FFN GEMMs with cuBLAS-Lt FP8 on an H100 quantifies how big this memory-bound regime is. The largest per-expert projections (DeepSeek-v3.2 and GLM-5 UpGate) reach 50% SM compute utilization only at 
+
+𝑏 expert ≈ 512, and the smaller Qwen3-30B projection requires 
+
+𝑏 expert ≈ 4,096 to cross the same point. Inverting (1) gives the corresponding serving batches: 𝐵 ≈ 16 ,384 tokens for DeepSeek-v3.2 and GLM-5, and 𝐵 ≈ 65 ,536 for Qwen3-30B. Realistic interactive-decode batches are orders of magnitude ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. 
+
+below. So, the common operating regime is squarely in the bandwidth-bound region that FORGE targets. While Sparse MoE reduces active FLOPs per token, it in-creases total parameter capacity—often exceeding 600 GB for frontier models. Fitting these parameters in HBM forces multi-node Expert Parallelism (EP) [30, 38, 55], where each decode step incurs cross-node all-to-all token routing. This communication overhead scales with EP degree and persists even with high-bandwidth interconnects (NVLink within a node, InfiniBand across nodes). The resulting deployment topology simultaneously consumes HBM capacity that could otherwise serve KV cache scaling and introduces per-token networking latency that compounds across MoE layers. 
+
+Alternatives? Quantization (FP8, FP4, INT4) [20, 40, 45] reduces per-parameter storage/transfer cost. It does not change the core access pattern: the GPU must still load every weight from HBM for every token. Our FP8 baseline already uses the narrowest weight format which the H100’s Tensor Cores support natively. FORGE is orthogonal to this axis rather than competing with it: it synthesizes the weights of a lin-ear map and is agnostic to the bit resolution at which those weights are stored, so it composes on top of whatever quan-tization a deployment already uses. The question shifts from how much smaller a weight can be made, to whether it has to be fetched at all. 
+
+2.3 Rotor Projection: Decouple Storage and Compute Intuition. Consider the transformation of a vector via a linear map. The de facto approach is to represent this weight matrix explicitly. If we instead view the global transform as a composition of elementary simpler transformations (e.g., rotations), then we only need to store the specific angles that define them. Pence et al. [51] established that standard linear projections can be replaced and approximated by ro-tors, structured transformations built from Clifford algebra, achieving competitive downstream performance in LLM at-tention layers with only 𝑂 (log 2 𝑑 ) learned parameters com-pared to the 𝑂 (𝑑 2) of dense matrices. 
+
+Rotors and Multivectors. We know that a rotation ma-trix acts on vectors. A rotor simply extends this action to the full multivector space of the algebra, naturally lifting the rotation to operate on the higher-order components. For a more complete introduction, see [51]. The rotor construction replaces a dense 2 𝑛 × 2𝑛 weight matrix with a block-diagonal structured matrix, where 𝑑 = 2𝑛 is the input dimension. For an integer 𝑛 , this matrix decomposes into 𝑛 + 1 independent blocks along the diagonal, indexed by 𝑘 ∈ { 0, . . . , 𝑛 }. The 
+
+𝑘 -th block has dimension  𝑛 𝑘 
+
+ ×  𝑛 𝑘 
+
+, and the block sizes sum to the total dimension, as Í𝑛 𝑘 =0
+
+ 𝑛 𝑘 
+
+ = 2𝑛 . The blocks at 𝑘 = 0and 𝑘 = 𝑛 are trivially the scalar identity. The remaining blocks are dense and must be generated. 
+
+Building with Blocks. To handle arbitrary dimensions, the projection is tiled using multiple 2 𝑛 × 2𝑛 block-diagonal matrices, which are called chunks . Each chunk is an inde-pendent instance of the block-diagonal structure with its own learned parameters. A single linear projection then maps to a 3-stage pipeline preserving the original dimen-sions ( 𝑑 in → 𝑑 out ): stage 1 projects from 𝑑 in to the chunk size 
+
+𝑐 = 2𝑛 via ⌈𝑑 in /𝑐 ⌉ chunks, stage 2 applies 𝑚 rotor maps, each producing a 𝑐 × 𝑐 block-diagonal matrix, and stage 3 projects back from 𝑐 to 𝑑 out via ⌈𝑑 out /𝑐 ⌉ chunks. We adopt 𝑚 = 2 for all projections in this work. The total number of chunks per pro-jection is ⌈𝑑 in /𝑐 ⌉ + 𝑚 + ⌈ 𝑑 out /𝑐 ⌉, each requiring independent generation. In this work we set 𝑛 = ⌊log 2 (min (𝑑 in , 𝑑 out ))⌋ 
+
+per projection, yielding 𝑛 ∈ { 9, 10 , 11 } across the five target MoE models evaluated in Section 5. Figure 2 illustrates the resulting 3-stage structure. Each chunk is parameterized by  𝑛 
+
+> 2
+
+ learned scalar angles, the bivector coefficients in [51]. A rearrangement of the orig-inal construction yields the following generation procedure for each  𝑛 𝑘 
+
+ ×  𝑛 𝑘 
+
+ block within a chunk. Starting from the iden-tity matrix, perform  𝑛 
+
+> 2
+
+ in-place updates, indexing by 𝑡 . Pass 
+
+𝑡 corresponds to rotation axis (𝑝, 𝑞 ) with 0 ≤ 𝑝 < 𝑞 ≤ 𝑛 −1, and updates a set of disjoint row pairs (𝑖, 𝑗 ) via 
+
+𝑊 𝑖 
+
+𝑊 𝑗 
+
+
+
+←
+
+ cos (𝜃 𝑡 ) −𝜎 𝑡 sin (𝜃 𝑡 )
+
+𝜎 𝑡 sin (𝜃 𝑡 ) cos (𝜃 𝑡 )
+
+  𝑊 𝑖 
+
+𝑊 𝑗 
+
+
+
+(2) where 𝑊 𝑖 ,𝑊 𝑗 ∈ R(𝑛 𝑘 ) are the row vectors of the block at indices 𝑖 and 𝑗 , and (cos 𝜃 𝑡 , sin 𝜃 𝑡 ) are precomputed from the learned parameters. The row-pair set and the sign 𝜎 𝑡 ∈{+ 1, −1} are determined by (𝑛, 𝑘, 𝑝, 𝑞 ).
+
+## 3 Rotor Generation Architecture 
+
+Pence et al. [51] showed the theoretical viability of rotor-structured linear projections, but their study was limited to attention layers. We redirect this construction to Sparse MoE FFN decode, where the capacity and bandwidth bot-tlenecks are most acute. As MoE parameters dominate the total model footprint, the small per-expert batch sizes re-duce arithmetic intensity to memory-bound levels. To make procedural generation viable at this scale, their construction must be restructured to expose parallelism for fast, on-the-fly execution during autoregressive decoding. din 
+
+> Stage 1 x
+> din
+> c
+> K=2
+> K=3
+> K=1
+> c
+> c
+> Stage 2 ( m=2)
+> y
+> dout
+> Stage 3
+> c
+> dout
+
+Figure 2. Rotor 3-stage projection pipeline ( 𝑛 =4, 𝑐 =16). FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. 
+
+Challenge. Even after we bound the theoretical workload by adopting 𝑚 =2 for all rotor projections (Section 5.7 evalu-ates its effect on accuracy), we find that systems performance is still bottlenecked. Generating these parallelized weights on-the-fly via standard pipelines ends up starving the Tensor Cores and also creates difficulties for the GPU’s instruction scheduler. To adjust the theory to a performant systems ar-chitecture, this section derives the parallel execution model from the initial inherently sequential generation concept (Section 2.3). Then, we discuss the hardware mandate it im-plies: why a software-only generation approach hurts the Tensor Cores it is meant to supply. Algorithm 1 states the execution model this section arrives at, and Figure 3 works one iteration of it through a small block. 
+
+Key Architectural Insight: While the mathematical ro-tor formulation is inherently sequential in its outer loop, its inner combinatorial updates exhibit strict, static data independence. Our fundamental insight is that this static independence can be mapped to a dedicated, collision-free hardware scheduler. This allows us to bypass the massive dynamic scheduling overhead that makes a software-only (SIMT) approach not viable, enabling on-chip weight gener-ation that perfectly overlaps with Tensor Core execution. 
+
+3.1 Extracting Hardware-Friendly Parallelism from Algebraic Structure 
+
+Problem: The baseline rotor update (Eq. 2) is formulated as a sequential loop over rotation axes, which is fundamentally incompatible with high-throughput hardware generation. 
+
+Solution: We expose three orthogonal axes of parallelism by decomposing the mathematical structure, mapping it directly to hardware execution units. All three lie inside a single map, not across the 𝑚 maps where [51] discusses parallelism. We develop a parallel execution model for the procedure of Section 2.3 by observing that the row-vector update of Eq. 2 decomposes into independent scalar operations along the column dimension. For any column index 𝑐 ∈ 0,  𝑛 𝑘 
+
+ , the up-date to the scalar pair (𝑊 𝑖,𝑐 ,𝑊 𝑗,𝑐 ) depends only on (𝑊 𝑖,𝑐 ,𝑊 𝑗,𝑐 )
+
+and the shared parameters (cos 𝜃 𝑡 , 𝜎 𝑡 sin 𝜃 𝑡 ). While the outer loop over rotation axes 𝑡 remains sequential, this per-column decomposition—combined with the structural independence of disjoint row pairs within each pass—yields three orthog-onal axes of parallelism that the RGU exploits: (1) column independence within a row-pair update, (2) row-pair indepen-dence within a rotation axis, and (3) 𝑘 -block independence 
+
+within a chunk. We develop each axis below, then show how they combine into the unit of work the RGU generates per request: the Supertile .
+
+Column independence. The per-column decomposition maps onto a SIMD datapath of width 𝑊 𝑐𝑜𝑙 =64, matching stan-dard GPU vector widths and tiled-GEMM tile dimensions. 
+
+Row-pair independence. Within iteration 𝑡 , the rotation axis (𝑝, 𝑞 ) induces  𝑛 −2 
+
+> 𝑘 −1
+
+ independent row pairs: each pair 
+
+Algorithm 1 Parallel Rotor Generation for single (𝑛, 𝑘 ) Block                                                              
+
+> Require: Parameters {( cos 𝜃 𝑡 ,sin 𝜃 𝑡 )} (𝑛
+> 2)
+> 𝑡 =1, index maps I𝑡 ,J𝑡 , signs
+> 𝜎 𝑡
+> Ensure: 𝑊 ∈R(𝑛 𝑘 )×(𝑛 𝑘 )
+> 1: 𝑊 ←𝐼 (𝑛 𝑘 )⊲Identity initialization
+> 2: for 𝑡 =1to  𝑛
+> 2
+> do ⊲Sequential : rotation axes
+> 3: for all columns 𝑐 in [0, 𝑛 𝑘
+> )do ⊲SIMD-parallel : 64-wide
+> 4: for all row pairs 𝑙 in [0, 𝑛 −2
+> 𝑘 −1
+> )do ⊲Pair-parallel :scheduled
+> 5: (𝑖, 𝑗 ) ← (I 𝑡 [𝑙 ],J𝑡 [𝑙 ])
+> 6: Apply Eq. (2) to (𝑊 𝑖,𝑐 ,𝑊 𝑗,𝑐 )
+> 7: end for
+> 8: end for
+> 9: end for
+
+(𝑖, 𝑗 ) is determined by a distinct (𝑘 −1)-element subset of the 𝑛 −2 invariant positions (those other than 𝑝 and 𝑞 ), so row indices across pairs are disjoint by construction. These pairs carry no intra-iteration data dependencies—only the boundary between consecutive iterations 𝑡 and 𝑡 +1 is se-quential, as the same rows may reappear under a new axis. Because all pair indices are statically determined by the com-binatorial structure of (𝑛, 𝑘, 𝑡 ), the pair processing order is a free parameter—a property the microarchitecture exploits for conflict-free multi-pair throughput (Section 4.3). 
+
+𝑘 -block independence and the Supertile. The 𝑘 -block in-dependence (each of the 𝑛 +1 blocks within a chunk is gener-ated independently) and the column independence together define a natural generation unit: the Supertile (Figure 4). A Supertile spans the full  𝑛 𝑘 
+
+ rows of one 𝑘 -block and a column width matching the GEMM thread-block tile (64 elements in our configuration)—it is the intersection of the algebraic block-diagonal structure and the tiled-GEMM tile granularity. This alignment means each SM consumes one weight tile per K-dimension iteration, and a single Supertile provides exactly one such tile. Because  𝑛 𝑘 
+
+ rows typically exceed the GEMM tile’s K-dimension (BlockItemsK [48], typically 128 for FP8), the same Supertile feeds 𝑛 stile = ⌈ 𝑛 𝑘 
+
+/BlockItemsK ⌉ consecu-tive GEMM iterations along the K-dimension without regen-eration. This Supertile reuse factor amortizes the generation latency: the effective per-iteration cost is 𝑇 supertile_gen /𝑛 stile .Figure 3 makes the row-pair parallelism concrete for an 
+
+(𝑛 =4, 𝑘 =2) block. At iteration 𝑡 =0, the axis (𝑝, 𝑞 ) induces  𝑛 −2 
+
+> 𝑘 −1
+
+ =  21
+
+ = 2 independent row pairs (light and dark shading), each updated via Eq. (2) with shared parameters 
+
+(𝑐 𝑡 , 𝜎 𝑡 𝑠 𝑡 )=(0.8, 0.6) applied across every column of the block. The two pairs share no source or destination rows, so they execute concurrently without synchronization—the pair-parallel axis the RGU exploits. Algorithm 1 formalizes the parallel execution model. The outer loop over 𝑡 is sequential; within each iteration, column updates and row-pair updates execute in parallel. ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. 1   
+
+> 1
+> 1
+> 1
+> 1
+> 1
+> k=2
+> s0=0.6 c0=0.8
+> # row pair = (4-2) C(2-1) = 2
+> ri
+> rj
+> n=4 chunk
+> 1
+> 0.8
+> 0.8
+> 0.8
+> 0.8
+> 1
+> 0.6
+> -0.6
+> -0.6
+> 0.6
+> t=0
+> x
+> x
+> ct
+> ss t
+
+- 
+
+> rj
+> Columns
+> (SIMD)
+> ri
+> x
+> x
+> ss t
+> ct
+> +
+> rj
+> ri
+> ri
+> rj
+> rj
+> ri
+> rj
+> ri
+> Row pair parallel : row pair
+> θ0=0.6435
+
+Figure 3. (𝑛 =4, 𝑘 =2) block, iteration 𝑡 =0. Light/dark shading marks the two independent row pairs induced by axis (𝑝, 𝑞 ).
+
+3.2 Hardware Mandate and SM Integration The SIMT Bottleneck: A natural first approach is to imple-ment this parallel generation algorithm as a software GPU kernel. We built such a kernel, exploiting the same three axes of parallelism the RGU exploits. Table 2 reports it against the baseline expert GEMM, which includes both the HBM weight load and the GEMM itself. Generation alone takes 25 .8× to 45 .1× longer than that entire baseline operation. Because the comparison places generation time against the baseline total, it already credits the software path with perfect overlap between generation and the GEMM that consumes it, so no scheduling policy can close this gap. Two mechanisms are mainly responsible. Instruction issue saturates: the SIMT kernel executes 76 × to 149 × more in-structions than the baseline to deliver the same tiles, instruction-issue rate rather than arithmetic throughput bounds the gen-eration. Shared-memory access is irregular: every update of Eq. (2) reads and writes a pair of rows per column, a shape that does not align with the shared-memory bank structure, din  x d out   
+
+> Thread Block Tile (1 SM)
+> batch x d in
+> Supertile
+> (nCkrows) Row pair
+> Eq(2)
+
+Figure 4. Mapping an on-chip generated Supertile to a stan-dard GEMM Thread Block Tile. 
+
+Table 2. SIMT weight generation against the baseline expert GEMM. 
+
+Model Slowdown Bank conflicts Instr. (gen / base) 
+
+DeepSeek-v3.2 38.8 × 1,314,929 / 15,165 148.7 ×
+
+GLM-5 33.8 × 1,026,936 / 10,981 147.5 ×
+
+Qwen3-235B 45.1 × 868,634 / 2,919 116.9 ×
+
+Qwen3-30B 33.7 × 644,941 / 5 76.3 ×
+
+Qwen3-Coder-Next 25.8 × 124,711 / 1 80.3 ×
+
+and bank conflicts rise by two to five orders of magnitude. Across the five models, warp-cycle attribution assigns 49% to 64% of generation time to these two causes together, against 9% to 14% for the baseline. Neither of the two mechanisms is a tuning gap. A SIMT lane must issue every update of Eq. (2) explicitly, so a hundred-fold instruction count is a property of expressing this algo-rithm on SIMT rather than of the kernel that expresses it, and the paired-row access shape is fixed by Eq. (2) while shared memory’s banking is fixed by the hardware. Crucially, this starves the Tensor Cores it is meant to feed; co-residency with wgmma [47] instructions destroys pipeline overlap, de-generating execution time toward 𝑇 ≈ 𝑇 𝑐𝑜𝑚𝑝𝑢𝑡𝑒 + 𝑇 𝑔𝑒𝑛 . The slowdowns in Table 2 are therefore a lower bound on what a software path actually costs. 
+
+The RGU Solution: To eliminate this contention, we decouple the generation workload from the SIMT pipeline entirely. We introduce the Rotor Generation Unit (RGU), a compact, fixed-function accelerator embedded within each Streaming Multiprocessor. By utilizing a dedicated pipelined FMA datapath and a local SRAM with a precomputed conflict-free schedule, the RGU bypasses dynamic scheduling bot-tlenecks and requires no shared SIMT resources. Upon re-ceiving a command with the target (𝑛, 𝑘 ) configuration and rotor seeds, the RGU generates a complete weight Supertile directly into SMEM. This on-chip generation replaces the conventional HBM weight-loading path while remaining fully transparent to the Tensor Cores (Figure 5). 
+
+3.3 Rotor Tiled-GEMM Pipeline 
+
+The defining system-level integration insight of FORGE is dimensional alignment: the algebraic “ 𝑘 -block” inherently matches the standard GEMM thread-block tile granularity (the Supertile). This alignment dictates our pipeline design. As shown in Figure 6a, the baseline pipeline shares HBM bandwidth between weights and activations, compounding per-iteration latency: 
+
+𝑇 𝑏𝑎𝑠𝑒𝑙𝑖𝑛𝑒 = max  𝑇 𝑐𝑜𝑚𝑝𝑢𝑡𝑒 , 𝑇 𝑚𝑒𝑚 _𝑖𝑛𝑝𝑢𝑡 + 𝑇 𝑚𝑒𝑚 _𝑤𝑒𝑖𝑔ℎ𝑡 
+
+ (3) RGU replaces HBM weight-loading with on-chip Supertile generation via a dedicated datapath. This decouples weight delivery from the memory subsystem, allowing generation, activation streaming, and Tensor Core execution to overlap FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Global Memory 
+
+(HBM/L2) 
+
+L1 Cache / SMEM    
+
+> TC TC TC TC
+> SIMT SIMT SIMT SIMT
+
+RGU 
+
+> Register File
+> Generated
+> weight
+> Weight path
+> (eliminated)
+> Activation
+> GPU Streaming Multiprocessor (SM)
+> Weight seeds
+
+Figure 5. SM integration. The RGU bypasses HBM by gen-erating weight tiles directly into SMEM. fully (Figure 6b): 
+
+𝑇 𝑟𝑜𝑡𝑜𝑟 = max 
+
+
+
+𝑇 𝑐𝑜𝑚𝑝𝑢𝑡𝑒 , 𝑇 𝑚𝑒𝑚 _𝑖𝑛𝑝𝑢𝑡 , 𝑇 supertile_gen 
+
+𝑛 stile 
+
+
+
+(4) When amortized generation latency falls below the HBM transfer time it replaces, execution transitions from bandwidth-bound to compute-bound. Within each expert, the RGU generates Supertiles on-demand following the standard SwiGLU FFN dataflow (Up/Gate 
+
+→ Down). The total generation workload per expert sums the chunks across all three projections, each independently requiring 𝑚 = 2 Stage-2 Rotor maps (Section 2.3). 
+
+## 4 RGU Microarchitecture 
+
+We recall notation from Section 2.3 and Section 3.1 (Equa-tion 2, Algorithm 1). A chunk is one 2 𝑛 × 2𝑛 block-diagonal matrix ( 𝑛 = 9. . . 11 for MoE workloads), which the RGU materializes one Supertile at a time: 𝑛 +1 blocks indexed by 𝑘 , each  𝑛 𝑘 
+
+ ×  𝑛 𝑘 
+
+. Generation proceeds through  𝑛 
+
+> 2
+
+ iter-ations indexed by 𝑡 . Iteration 𝑡 selects rotation axis (𝑝, 𝑞 )
+
+(0 ≤ 𝑝 < 𝑞 ≤ 𝑛 −1) and updates  𝑛 −2 
+
+> 𝑘 −1
+
+ independent row pairs Weight  Act GMEM-SMEM       
+
+> stage 123
+> mma mma mma TC Exec
+> Weight Act Weight
+
+(a) Baseline RGU-SMEM                    
+
+> 12345678
+> GMEM-SMEM
+> mma mma mma TC Exec
+> Act
+> mma mma mma mma mma
+> Act Act Act Act Act Act Act
+> Supertile Reuse Gen
+
+(b) FORGE 
+
+Figure 6. Baseline vs. FORGE Tiled-GEMM pipelines. 
+
+(𝑟 𝑖 , 𝑟 𝑗 ) using learned parameters cos 𝜃 𝑡 and 𝜎 𝑡 sin 𝜃 𝑡 , where 
+
+𝜎 𝑡 ∈ {+ 1, −1} is a combinatorial sign parity. Columns are independent; the datapath processes 64 elements in parallel. We present the 64 ×2 dual-pair design. 
+
+4.1 Datapath Overview 
+
+The RGU must generate a full FP8 Supertile—28.875 KB covering up to  11 5
+
+=462 rows × 64 elements from a com-pact 0.43 KB parameters, completing before the Tensor Core pipeline demands the next weight tile (Section 3.3). The dat-apath addresses this throughput constraint through a tightly interleaved pipeline (Fig. 7): the Supertile Address Generator (SAG) synthesizes physical row-pair addresses from com-pact ROMs ( ❶; Section 4.2), and operand rows 𝑟 𝑖 , 𝑟 𝑗 are read from a 4-bank interleaved Supertile SRAM ( ❷) that gives 2R2W effective bandwidth from simple 1R1W banks. Station-ary (cos 𝜃 𝑡 , sin 𝜃 𝑡 ) parameters broadcast from the parameter buffer ( ❸) to dual 64-wide PE lanes ( ❹), which process two independent row pairs per 2-cycle slot. Updated rows 𝑊 [𝑖 ],
+
+𝑊 [ 𝑗 ] write back to SRAM ( ❺), with a delay queue synchro-nizing write-back addresses with the pipelined FMA latency, yielding 100% PE utilization (under per-bank 1R1W port constraint). A compact 1R1W parameter buffer stores  𝑛 max 
+
+> 2
+
+ × 4 =
+
+220 precomputed (cos 𝜃 𝑡 , sin 𝜃 𝑡 ) pairs (one per rotation axis, replicated across up to 4 vertically stacked chunks for multi-chunk projections in Stages 1 and 3), totaling 220 × 2 = 440 B (≈0.43 KB). Storing all chunks’ parameters avoids HBM re-fetching between consecutive Supertile generations. Param-eters are latched once at each axis boundary 𝑡 and broadcast to the PE array across the hundreds of cycles in which  𝑛 −2 
+
+> 𝑘 −1
+
+
+
+row pairs are processed, eliminating redundant SRAM reads. Upon generation, the Output Streamer transfers the com-pleted Supertile into GPU Shared Memory ( ❻), applying the Phase-XOR swizzle required by Tensor Core instruc-tions directly during write-out. Unaligned  𝑛 𝑘 
+
+ heights are zero-padded to the nearest multiple of 16. For trivial iden-tity blocks ( 𝑘 =0 and 𝑘 =𝑛 ), the streamer bypasses generation entirely and injects explicit 1.0 scalars directly into SMEM, incurring zero generation cycles. 
+
+4.2 Supertile Address Generator 
+
+Problem: Generating the (𝑖, 𝑗 ) row-pair traces dynamically requires complex control logic, but explicitly storing the trace for an 𝑛 =11 configuration requires tens of thousands of entries—far exceeding practical on-chip SRAM limits. So-lution: The SAG exploits the symmetric algebraic properties of the rotor groups to dynamically synthesize physical ad-dresses from a highly compressed state. A naive scheme would store the full (𝑖, 𝑗 ) row-pair trace for each (𝑛, 𝑘 ) configuration—tens of thousands of entries for ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. Parameter Buffer 
+
+> cos/sin pairs
+> 0.43KB
+> Delay Queue
+> Supertile SRAM
+> 1R1W 4-bank interleaved
+> 28.875 KB
+> PE Array
+> 64 SIMD x 2
+> Output Streamer
+> Phase-XOR swizzle
+> ri, r j
+> Write-Back W[i], W[j]
+> Read
+> Addr Supertile Address Generator
+> Base ROM, mask expansion,
+> mapping ROM
+> Swizzled
+> Data
+> GPU Shared Memory
+
+Rotor Generation Unit (RGU) 
+
+> Write
+> Addr
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> from HBM,
+> once per kernel
+
+Figure 7. RGU microarchitecture datapath. 
+
+𝑛 =11 alone. The SAG eliminates this by exploiting the alge-braic structure: all  𝑛 −2 
+
+> 𝑘 −1
+
+ independent row pairs within a sin-gle rotation axis (𝑝, 𝑞 ) share a common (𝑛 −2)-bit base combi-nation pattern. A 0.5 KB Base ROM stores all 2 𝑛 max −2=512 pos-sible base patterns, organized by Hamming weight. A com-binational expansion network injects the current axis bits 
+
+𝑝 and 𝑞 into each base pattern to produce the two operand-row masks ( 𝑀 𝑖 with a 1 at position 𝑝 , 𝑀 𝑗 with a 1 at 𝑞 ) on consecutive cycles, time-multiplexing both addresses onto a single ROM port and aligning with the 2-cycle FMA cadence under the 1R1W SRAM constraint. A 9 KB Mapping ROM translates the expanded 11-bit row masks into dense physical SRAM indices [0,  𝑛 𝑘 
+
+−1], jointly keyed by an 𝑛 -mode tag so that a single table serves all 
+
+𝑛 ∈ { 9, 10 , 11 }. The sign 𝜎 𝑡 is computed combinationally from a parity reduction over the base-pattern bits between positions 𝑝 and 𝑞 , requiring no stored sign tables. A delay queue synchronizes translated write-back addresses with the PE pipeline, ensuring addresses arrive when pipelined FMA results are ready for commit. 
+
+4.3 Supertile SRAM & Processing Element 
+
+Problem: Sustaining dual-pair processing throughput requires four simultaneous SRAM accesses (2 reads, 2 writes) per cy-cle slot. Implementing this with multi-ported SRAM would severely bloat the SM area overhead. Solution: We achieve 4-port performance using compact 1R1W banks by exploiting the static predictability of the rotor accesses. Rather than employing expensive multi-ported SRAM, the design uses 4-bank interleaving (depth 116 per bank) to synthesize 2R2W effective bandwidth from four simple 1R1W banks. Total capacity: 462 × 512-bit = 28 .875 KB (FP8), sized for the largest 𝑘 -block (  11 5
+
+=462 rows). Collision freedom is guaranteed by a precomputed pair schedule (described below), eliminating dynamic bank arbitration entirely. Each of the two 64-wide SIMD datapaths implements a 3-cycle pipelined FMA split as two multiply stages followed by an add, halving the critical combinational depth. The two multiply stages read 𝑟 𝑖 and 𝑟 𝑗 from SRAM on successive cy-cles and compute the four cross-products required by Eq. (2); the add stage commits the rotated row pair 𝑊 [𝑖 ], 𝑊 [ 𝑗 ]. The add of the previous row pair overlaps with the first multiply of the current pair, sustaining 2-cycle pair throughput from the 3-cycle pipeline (Figure 8). 
+
+Static Collision-Free Scheduling: The dual-pair datap-ath requires two independent row-pair indices per 2-cycle slot, which would otherwise demand dynamic bank arbitra-tion with cycle-level conflict detection. Instead, a precom-puted Schedule ROM stores collision-free pair orderings for all (𝑛, 𝑘 ) configurations with 𝑛 =9. . . 11, generated offline via maximum matching over the bank-conflict graph. A single table serves every configuration, eliminating runtime arbi-tration entirely. 
+
+4.4 Global Control Logic 
+
+A global FSM sequences through all  𝑛 
+
+> 2
+
+ rotation axes (𝑝, 𝑞 )
+
+in reversed lexicographic order (e.g., for 𝑛 =11: (9, 10 ) → (8, 10 ) → ( 8, 9) → · · · → ( 0, 1)). Within each axis, the FSM counts through  𝑛 −2 
+
+> 𝑘 −1
+
+ independent row pairs via the 
+
+𝑐 _𝑖𝑑𝑥 counter, driving the SAG and Schedule ROM in lock-step. Inter-𝑘 -block transitions are managed as contiguous P0  ri P0  rj P2  riP1  ri P1  rj P2  rj P3  ri P3  rjSRAM read                    
+
+> cycle
+> 12345678
+> P0 M1 P1 M2 P0 M2 P1 M1 P2 M1 P2 M2 P3 M1 MUL
+> P0 A P1 A P2 A ADD
+> P0 W[ i]P0 W[ j]P1 W[i]P1 W[j]SRAM write
+> 2-cycle pair throughput
+> 6-cycle latency
+
+Figure 8. Steady-state PE pipeline timing. FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. 
+
+horizontal sweeps across the block-diagonal structure. Zero-initializing the Supertile SRAM prior to generation leaves off-diagonal regions structurally correct without an explicit zero-fill pass. For trivial identity blocks ( 𝑘 =0 and 𝑘 =𝑛 ), the FSM bypasses PE execution entirely. At rotation axis boundaries—when the FSM advances from axis 𝑡 to 𝑡 +1 with potentially overlap-ping rows—in-flight writes from axis 𝑡 may conflict with the first reads of axis 𝑡 +1, creating RAW hazards. Rather than a dynamic scoreboard, the FSM injects a static 5-cycle stall bubble at each boundary, guaranteeing all pending writes drain before the next axis begins (Section 5). 
+
+## 5 Evaluation 
+
+5.1 Methodology 
+
+Baseline per-expert MoE FFN execution times are obtained from NVIDIA Nsight Compute (NCU) profiling of cuBLASLt FP8 GEMMs on an H100 SXM5 GPU (132 SMs, 3.35 TB/s HBM3, CUDA 13.2). For each model, we profile the three expert projections (Up, Gate, Down) at their native dimen-sions and extract per-tile compute time, memory transfer time, and achieved bandwidth utilization. Rotor execution times are derived from the RTL-verified cycle model of the RGU (Section 4), converting generation cycles to wall-clock time at the achieved synthesis frequency. We do not evaluate a narrower weight format: FP8 is the narrowest the H100’s Tensor Cores support natively (Section 2.2). We evaluate five Sparse MoE architectures spanning three chunk dimensions: DeepSeek-v3.2 and GLM-5 ( 𝑛 =11, 256 ex-perts), Qwen3-235B ( 𝑛 =10, 128 experts), and Qwen3-30B and Qwen3-Coder-Next ( 𝑛 =9, 128/512 experts). Kernel-level eval-uation targets the memory-bound decode regime; system-level analysis (Section 5.5) extends to higher serving batch sizes where freed HBM capacity drives throughput gains independent of per-kernel speedup. We report all system re-sults at 𝑟 =0.3, chosen as a conservative point on the accuracy-performance tradeoff (Section 5.7). The RGU is implemented in SystemVerilog as an FP8 dual-pair architecture processing two independent row pairs per 2-cycle slot. Standard cells are synthesized using Synopsys Design Compiler (DC X-2025.06) with the ASAP7 [8] predic-tive 7nm finFET library (RVT, TT corner, 0.7 V/25°C). SRAM area, energy, and leakage are modeled with CACTI [3] at 32 nm and scaled to 7 nm via the polynomial factors of Still-maker and Baas [62]. Cross-check (45 nm) agrees within 11%. Full-model decode latency and system throughput are evaluated using the LIMINAL [14] analytical decode simu-lator. LIMINAL is an externally published framework vali-dated against real-hardware LLM execution to within 7 .6% mean absolute error [14]; it composes independently mod-eled components—Attention weight loading, KV cache ac-cess, MoE FFN execution, TP allreduce, EP all-to-all, and per-MoE-layer kernel launch overhead (symmetrically ap-plied to both baseline and rotor paths). We reproduce its per-primitive cost formulas unchanged and supply only the per-expert MoE FFN cost, itself anchored in measured inputs: NCU-profiled cuBLASLt FP8 GEMMs for the baseline path and the RTL-verified RGU cycle model for the rotor path. The baseline topology uses TP+EP with the minimum GPU count to hold model weights in HBM under a 0 .9× safety mar-gin, leaving headroom for KV cache and activation tensors on the baseline deployment; the FORGE topology replicates seeds across GPUs rather than sharding them. Three context lengths are evaluated: 𝑇 ∈ { 4096 , 32768 , 131072 }.
+
+Table 3. System Configuration and Analyzed Workloads. Details baseline GPU parameters (H100), Target LLMs, and RTL synthesis environments.          
+
+> Component Specification
+> Baseline GPU H100 SXM5 (132 SMs, 3.35 TB/s HBM3) Kernel Profiling cuBLASLt FP8, CUDA 13.2, NCU Target Models DeepSeek-v3.2, GLM-5, Qwen3-235B, Qwen3-30B, Qwen3-Coder-Next Logic Synthesis Synopsys DC + ASAP7 [8] (7nm finFET, RVT, TT) SRAM Modeling CACTI [3] 32 nm scaled to 7 nm via [62] System-Level Sim LIMINAL [14] analytical per-layer com-pose (Attn + KV + MoE + Comm + kernel launch)
+
+5.2 Organization of Results 
+
+We systematically examine the following questions in our empirical evaluation. 
+
+• First we look at what speedup is possible compared to “native MoE” at the operator/kernel simply considering the MoE layer in isolation (Section 5.3). 
+
+• Second, we look at end-to-end performance: both de-code latency per user (user tok/sec) and full system performance (system tok/sec) (Section 5.4). 
+
+• We then look at the detailed hardware implementation efficiency of RGU by examining its RTL implementa-tion (Section 5.6). 
+
+• Finally, we look at the “model-level” impact of FORGE, measuring perplexity and downstream accuracy on the models and benchmarks introduced above (Sec-tion 5.7). 
+
+5.3 Kernel-Level MoE FFN Speedup 
+
+Highlight. Replacing the HBM weight-load path with on-chip generation, the measured FP8 baseline and the RTL-verified generation latency give a 2.3–3.2× per-expert kernel speedup at 8 tokens/expert, marking the transition from memory-bound to compute-bound execution on replaced layers. ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. 
+
+Table 4 presents the per-expert MoE FFN kernel speedup for all five target models under the 𝑚 =2 configuration at two operating points: 8 and 16 routed tokens per expert. At 8 tokens/expert, the speedup is 2 .3× to 3 .2× (FP8), combining the measured baseline with the RTL-verified generation la-tency through Eq. (4). Speedup peaks at 𝑛 =10 (Qwen3-235B, 3.23 ×), where the ratio of HBM access time to generation time is most favorable. At 𝑛 =11 (DeepSeek-v3.2, GLM-5), the  𝑛 
+
+> 2
+
+=55 rotation steps increase generation time, yielding 2 .3– 2.5×. At 𝑛 =9 (Qwen3-30B, Qwen3-Coder-Next), the baseline matrices are small enough that fixed cuBLASLt launch over-head limits the memory-bound advantage, yielding 2 .3×.At 16 tokens/expert, speedups narrow to 1 .13 ×–1 .67 × as compute time dominates, confirming that the RGU targets the memory-bound regime where per-expert token counts are small. Even at these moderate per-kernel speedups, the capacity-driven throughput gains remain substantial (Sec-tion 5.5). In absolute terms, the RGU reduces per-expert MoE FFN latency from 23 .48 𝜇𝑠 to 10 .06 𝜇𝑠 for DeepSeek-v3.2 and from 14 .58 𝜇𝑠 to 4 .52 𝜇𝑠 for Qwen3-235B (FP8, 8 tokens/expert). 
+
+5.4 Full-Model Decode Latency 
+
+Highlight. With 30% of the MoE layers replaced, FORGE is projected to reduce end-to-end single-token decode latency by 
+
+1.10 –1.15 × at short context ( 𝑇 =4096 ). The advantage persists at 1.07 –1.11 × through 𝑇 =128 K as KV cache access becomes the dominant cost. 
+
+Table 5 presents the full-model single-token decode la-tency speedup across five models and three context lengths, with rotors configured at the conservative 𝑟 =0.3 partial-replacement point evaluated for accuracy in Section 5.7. At 𝑇 =4096, the projected decode speedup runs from 1 .10 ×
+
+(DeepSeek-v3.2) to 1 .15 × (Qwen3-30B). The gain comes from faster MoE FFN execution on the rotor-replaced layers (2 .3– 3.2× per-expert kernel speedup, Tab. 4); the kept baseline MoE layers still pay HBM weight loads and EP all-to-all, charged separately in the per-layer decode model. At longer context ( 𝑇 =131072), speedups narrow to 1 .07–1 .11 × because KV cache access time grows linearly with context length and is identical across configurations, diluting the MoE FFN 
+
+Table 4. Per-MoE-FFN Kernel Speedup (FP8, RGU, 𝑚 =2). Baseline: cuBLASLt FP8 GEMM on H100.                        
+
+> Model 𝑛 8 tok/expert 16 tok/expert
+> DeepSeek-v3.2 11 2.33 ×1.29 ×
+> GLM-5 11 2.47 ×1.40 ×
+> Qwen3-235B 10 3.23 ×1.67 ×
+> Qwen3-30B 92.28 ×1.13 ×
+> Qwen3-Coder-Next 92.34 ×1.19 ×DeepSeek v3.2 GLM-5 Qwen3 235B Qwen3 30B Qwen3 Coder 01,000 2,000 3,000 4,000 5,000
+> Decode Step Latency (μs)
+> 1.10× 1.12× 1.15× 1.15× 1.15×
+> Other MoE FFN MoE FFN (FORGE)
+
+Figure 9. Full-model decode latency (FP8, B=1, T=4096, r=0.3). contribution. This is inherent to any MoE-FFN-focused opti-mization and does not diminish the capacity and throughput advantages analyzed in Section 5.5. Fig. 9 shows the per-layer time decomposition at 𝑇 =4096. For Qwen3-30B, MoE FFN dominates baseline per-layer time on a single GPU, so even at 𝑟 =0.3 the 2 .28 × kernel speedup on the replaced layers translates into 1 .15 × full-model de-code reduction. For DeepSeek-v3.2, the MoE FFN fraction is smaller due to larger Attention weights and per-token EP all-to-all cost, yielding 1 .10 × decode. The replacement-ratio ablation (Fig. 11) quantifies how this gap closes as 𝑟 grows. At 𝑟 =0.3, the minimum-fit GPU count for DeepSeek-v3.2 and GLM-5 drops from 10/11 to 7/8, fitting both models in a single NVLink-connected node and removing cross-node all-to-all from the decode path. Under a hypothetical 𝑟 =1.0extrapolation—reported only as a design-knob upper bound— both models collapse to a single device. 
+
+5.5 System-Level Throughput and Capacity 
+
+Highlight. Freed HBM from the replaced layers expands KV cache capacity by 1.2–2.6×, which compounds with faster de-code to give a projected 1.3–2.8× system throughput at matched 
+
+Table 5. Full-Model Decode Latency Speedup (FP8, RGU, 
+
+𝐵 =1, 𝑟 =0.3). Baseline: TP+EP with minimum GPUs to fit weights. FORGE replaces 30% of the MoE layers; kept base-line MoE layers still pay EP all-to-all.                         
+
+> Model 𝑇 =4K 𝑇 =32K 𝑇 =128K DeepSeek-v3.2 1.10 ×1.09 ×1.07 ×
+> GLM-5 1.12 ×1.11 ×1.08 ×
+> Qwen3-235B 1.15 ×1.12 ×1.08 ×
+> Qwen3-30B 1.15 ×1.14 ×1.11 ×
+> Qwen3-Coder-Next 1.15 ×1.13 ×1.09 ×FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. DeepSeek GLM-5 Qwen3-235B Qwen3-30B Qwen3-Coder 0.0 0.5 1.0
+> Gain ( ×)(a) Decode speedup
+> DeepSeek GLM-5 Qwen3-235B Qwen3-30B Qwen3-Coder 0123
+> (b) Max concurrent users
+> DeepSeek GLM-5 Qwen3-235B Qwen3-30B Qwen3-Coder 024
+> (c) System throughput
+> T=4K T=32K T=128K
+
+Figure 10. Context-length ablation (matched GPU count). (a) Decode speedup narrows as KV cache access dilutes the MoE FFN contribution. (b) Freed HBM grows max concurrent users per GPU sharply at long context. (c) The user-count gain offsets the narrowing decode speedup, so TPS gains hold or widen. 
+
+GPU count, with the largest gains landing on the heaviest MoE models (DeepSeek-v3.2, GLM-5). 
+
+System throughput (matched GPU count) compounds two gains: System TPS = 𝑁 GPUs × 𝑈 max × 1
+
+𝑡 decode 
+
+(5) At 𝑟 =0.3, FORGE improves both terms. First, faster MoE FFN execution is projected to cut per-token latency 𝑡 decode by 1.10–1 .15 × (Table 5). Second, the freed weight HBM, 28–29% of total parameter memory, expands maximum concurrent users 𝑈 max (computed as available memory divided by per-user KV size, under a 0 .9× safety margin) by 1 .2–2 .6× at 
+
+𝑇 =4096. Together, these yield the throughput gains shown in Figure 10c. At longer contexts ( 𝑇 =131072), individual users consume more KV memory, making the freed HBM even more impact-ful. The 𝑈 max advantage grows to 1 .1–3 .5×, directly counter-ing the per-token latency degradation observed in Table 5 and ensuring throughput gains persist or widen (Figure 10b). Finally, FORGE allows graduated substitution (Figure 11). While 𝑟 =0.3 delivers up to 2 .8× throughput over the base-line, increasing the replacement fraction to 𝑟 =0.7 pushes this to 2 .0–6 .1×. Larger models benefit disproportionately, as even partial replacement frees enough HBM to meaning-fully expand user capacity while simultaneously cutting the memory-bound weight-load path. We have not evaluated accuracy at 𝑟 =0.7, so this point is a what-if: it shows the throughput available to future models or recovery methods that sustain higher replacement without substantial accuracy loss. 
+
+5.6 Microarchitectural PPA 
+
+Highlight. At ∼4.2 𝑚𝑚 2 (0.5% of the H100 die) and ∼5.1 W(0.7% of its TDP) aggregated across 132 SMs, the RGU is a negligible on-chip overhead that removes hundreds of gigabytes of HBM expert-weight storage. 
+
+Table 6 summarizes the 7 nm PPA for the FP8 dual-pair RGU. Because the datapath relies on compact 4-bit mantissa multipliers (dominating the logic area), the full unit occupies just 0 .032 𝑚𝑚 2 per SM. Aggregated across the 132 SMs of an H100 SXM5, the RGU array requires only ∼4.2 𝑚𝑚 2—roughly 0.5% of the 814 𝑚𝑚 2 H100 die [47]—yet entirely removes hun-dreds of gigabytes of HBM expert-weight storage. ASAP7 is a predictive academic node, while the H100 baseline is built on a commercial 4 nm process, so these figures are conserva-tive: a commercial process (e.g., TSMC N4/N5) would yield a smaller footprint and a higher clock. The pipeline closes timing at 1.80 GHz, safely reaching 91% of the H100’s boost clock. Total steady-state power is 
+
+∼39 mW per SM, aggregating to ∼5.1 W system-wide—a negligible 0 .7% of the H100’s 700 W TDP. (RTL behavior is fully verified against a reference rotor model across all 27 valid (𝑛, 𝑘 ) configurations.) DeepSeek v3.2 GLM-5 Qwen3 235B Qwen3 30B Qwen3 Coder 0500 1000 1500 2000    
+
+> System Throughput (K tok/s)
+> 2.8× 6.1× 2.8× 6.1× 1.9× 3.5× 1.3× 2.0× 1.4× 2.3×
+> Baseline FORGE (r=0.3) FORGE (r=0.7)
+
+Figure 11. System throughput scaling across replacement ratios (r) (T=4096). Accuracy is evaluated at 𝑟 =0.3 only; 𝑟 =0.7is a what-if point (Section 5.5). ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. 
+
+Table 6. 7 nm PPA Summary for the FP8 dual-pair RGU.                      
+
+> Component Value Notes
+> Logic Area 0.017 𝑚𝑚 2PE array ∼69% SRAM Area 0.015 𝑚𝑚 228.875 KB, 4-bank
+> Total / SM 0.032 𝑚𝑚 2
+> vs one SM (3.475 𝑚𝑚 2[43]) ∼0.9% Clock (ASAP7) 1.80 GHz WNS −65 ps @ 2 GHz Logic Power (0.7 V) 35.9 mW 3.4 switch + 32.5 internal SRAM Leakage (7 nm) ∼3 mW CACTI 32 nm scaled
+
+5.7 Model Quality Validation 
+
+Highlight. Across three model families, FORGE at 𝑟 =0.3 falls short of the same model fine-tuned with LoRA and no rotor replacement. This accuracy cost is what FORGE trades for the system gains of Sections 5.4–5.5. 
+
+FORGE replaces dense expert weights with a structured approximation, so the natural question is whether the result-ing model still behaves well on downstream tasks. To this end, we evaluate model quality across three MoE models (ERNIE-21B, Qwen3-30B, Qwen3-Coder-Next) on WikiText perplexity, HellaSwag accuracy, and ARC-C accuracy. For each model, we show three configurations: the original pre-trained baseline, the same model fine-tuned with LoRA rank-8 (no rotor replacement), and FORGE at 𝑟 =0.3 with the same LoRA setup applied. The results are shown in Table 7. The LoRA-only model is the reference for FORGE, since the two share the same recovery and differ only in rotor replacement. 
+
+Evaluation protocol. All downstream numbers are pro-duced with the EleutherAI Language Model Evaluation Har-ness [23]. Every model is wrapped in the harness’s Hugging-Face backend and scored with the harness’s built-in task defi-nitions. HellaSwag (full validation split) and ARC-Challenge (full test split) are scored zero-shot as a log-likelihood rank-ing over the candidate answers, and we report accuracy as the fraction of examples whose correct answer receives the highest log-likelihood. WikiText-2 perplexity uses the raw test split tokenized with each model’s native tokenizer, cut into 512-token windows with stride 256, and is the expo-nential of the mean token negative log-likelihood. Every reported number is a single, deterministic full pass over the evaluation set, so there is no randomness at evaluation time. FORGE falls short of the LoRA-only model (Table 7). Under an identical rank-8 LoRA budget, the dense model reaches 6.53 perplexity on Qwen3-30B and FORGE reaches 7.65. This is an expected behavior, as rotor replacement is a structured but lossy approximation, so it necessarily consumes part of the quality headroom that LoRA provides. This gap is the explicit quality cost of procedural weight generation, traded for the memory and bandwidth gains. The size of this gap is set by 𝑟 , which a deployer selects against a memory budget rather than a fixed property of the parameterization. 
+
+Table 7. Model performance with 𝑟 =0.3 on ERNIE-21B ,
+
+Qwen3-30B , and Qwen3-Coder-Next on WikiText, ARC-C, and HellaSwag. Baseline + LoRA is the reference for FORGE. The gap between the two is the accuracy cost of rotor re-placement.                               
+
+> Config WikiText ↓ARC-C ↑HellaSwag ↑
+> ERNIE-21B
+> Baseline 8.37 58.00 61.10 Baseline + LoRA 5.93 58.96 62.50 FORGE 7.16 57.25 59.30
+> Qwen3-30B
+> Baseline 9.40 52.60 59.50 Baseline + LoRA 6.53 55.72 60.88 FORGE 7.65 51.36 57.10
+> Qwen3-Coder-Next
+> Baseline 8.55 60.32 64.06 Baseline + LoRA 5.99 61.86 63.99 FORGE 6.88 60.41 60.52
+
+5.8 Limitations 
+
+Our baseline is measured and our design is simulated, so the two sides of every speedup rest on different evidence. The numbers fall into three classes. The FP8 baselines come from cuBLASLt on an H100. The RGU numbers come from its RTL. Generation latency comes from a cycle model ver-ified bit-exact against a golden reference, and area, power, and frequency come from synthesis. The kernel speedups in Table 4 combine the first two through Equation (4). Ev-erything downstream passes through the analytical decode simulator of Section 5.1: the decode latencies in Table 5 and Figure 9, and the capacity and throughput results in Fig-ures 10 and 11. It resolves per-primitive cost and does not capture contention or occupancy effects inside a modified SM. Our synthesis covers the RGU alone. The reported area and power are the unit’s and exclude the cost of wiring it into an SM. They also come from a predictive 7 nm node, while the H100 baseline is built on a commercial 4 nm pro-cess (Section 5.6). We expect the integration cost to be small. FORGE replaces the weight-load path and leaves the rest of the pipeline untouched. The Tensor Core consumes activa-tion and weight tiles exactly as before, and the ISA gains one instruction family parameterized by tile shape. Neither change touches the SIMD execution model. 
+
+## 6 Related Work 
+
+Weight Compression. Post-training quantization [5, 16, 20, 21, 40, 41, 44, 45, 66] and pruning [19, 27, 46, 63] shrink the per-weight payload but still fetch every activated weight from HBM. QuaRot [2] and SpinQuant [42] rotate weights to flatten outliers before quantization, but the rotated tensor is FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. 
+
+still materialized and stored. Ecco [7] applies entropy-aware compression to cache-resident data, reducing what crosses the memory hierarchy rather than removing the fetch. We 
+
+synthesize the tile on demand from a compact seed, removing the HBM transfer. 
+
+Structured Parameterization. Low-rank and structured factorizations such as LoRA [17, 29], Monarch [11], butter-fly [13], HashedNets [6], and Fastfood [35] all reduce the effective parameter count, and HyperNetworks [26] gener-ate a larger network’s weights from a smaller one. While these methods reduce parameters, their compressed repre-sentations remain too large for on-chip storage and store the compressed factors in HBM before use. The 𝑂 (log 2 𝑑 )
+
+parametrization of rotors approximates each 𝑂 (𝑑 2) projec-tion [51] and is small enough for the regeneration of the tile directly into on-chip SMEM, bypassing HBM. 
+
+Sparse MoE Systems and Scheduling. Top-𝑘 routing [18, 38, 58] drives frontier MoE designs [4, 9, 15, 24, 32, 54], and systems stacks optimize expert-parallel execution [22, 30, 55] or orchestrate across CPU-GPU memory tiers [31, 33, 59, 60]. All take the per-expert HBM footprint as fixed and schedule around it; FORGE instead eliminates that footprint on replaced layers, collapsing the minimum-fit fleet into a single node and removing cross-node all-to-all from decode. 
+
+LLM Serving and KV Cache Management. Serving frame-works schedule over fixed weight and KV-cache cost [1, 34, 39, 68, 71] or disaggregate prefill from decode [50, 53, 72], while KV-cache interventions shrink the dynamic state via attention sinks, heavy-hitter eviction, and transform cod-ing [61, 67, 69, 70]. These target Attention; FORGE targets the static MoE FFN weights that dominate the remaining decode pressure, and composes with disaggregation by de-ploying the RGU on decode nodes only. 
+
+Near-Data Processing and Transformer Accelerators. 
+
+Processing-in-Memory [28, 36, 37, 49] shortens the weight-movement path without reducing storage; attention acceler-ators [10, 12, 56, 64] and state-space models like Mamba [25] target layers whose volume is dwarfed by MoE FFN weights. FORGE removes the weight data from memory rather than moving computation closer to it, integrating with standard Tensor Core GEMM pipelines [47, 48] without requiring a new memory substrate or a separate accelerator chip. 
+
+## 7 Conclusion 
+
+FORGE replaces HBM weight loading with procedural on-the-fly generation for Sparse MoE FFN layers. The Rotor Generation Unit (fixed-function accelerator within each SM) executes rotor operations in a dedicated pipelined datapath and writes generated weights directly into Shared Memory, bypassing the HBM hierarchy without contending for SIMT resources. This converts the memory-bandwidth-bound MoE FFN decode into a compute-bound operation at ∼0.9% SM area overhead (0.032 𝑚𝑚 2/SM at 7 nm). Across five Sparse MoE models with 30% of the MoE FFN layers replaced, we estimate 1 .3–2 .8× higher system through-put at matched GPU count and 1 .10–1 .15 × lower per-user decode latency at short context, at a cost in downstream ac-curacy relative to the same model fine-tuned without rotor replacement (Section 5.7). Underneath, KV cache capacity grows by 1 .2–2 .6× and the per-expert FP8 kernel speeds up by 2 .3–3 .2× independent of 𝑟 . Higher ratios promise larger system gains; recovery methods that preserve accuracy at those ratios are future work. As MoE expert counts grow, stored weight volume scales linearly while rotor parame-ter seeds scale logarithmically, so the capacity advantage of procedural generation widens with model scale. 
+
+## Acknowledgments 
+
+We thank the anonymous reviewers for their feedback. 
+
+## References               
+
+> [1] Amey Agrawal, Nitin Kedia, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav S. Gulavani, Alexey Tumanov, and Ramachandran Ramjee. 2024. Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve. In 18th USENIX Symposium on Operating Systems Design and Implementation (OSDI ’24) . USENIX Association, Santa Clara, CA, USA, 117–134. https://www.usenix.org/conference/osdi24/ presentation/agrawal
+> [2] Saleh Ashkboos, Amirkeivan Mohtashami, Maximilian L. Croci, Bo Li, Pashmina Cameron, Martin Jaggi, Dan Alistarh, Torsten Hoefler, and James Hensman. 2024. QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs. In Advances in Neural Information Processing Systems 37 (NeurIPS ’24) .https://openreview.net/forum?id=dfqsW38v1X
+> [3] Rajeev Balasubramonian, Andrew B. Kahng, Naveen Muralimanohar, Ali Shafiee, and Vaishnav Srinivas. 2017. CACTI 7: New Tools for Interconnect Exploration in Innovative Off-Chip Memories. ACM Transactions on Architecture and Code Optimization 14, 2 (2017), 14:1– 14:25. doi: 10.1145/3085572
+> [4] Ruisheng Cao, Mouxiang Chen, Jiawei Chen, Zeyu Cui, Yunlong Feng, Binyuan Hui, Yuheng Jing, Kaixin Li, Mingze Li, Junyang Lin, Zeyao Ma, Kashun Shum, Xuwu Wang, Jinxi Wei, Jiaxi Yang, Jia-jun Zhang, Lei Zhang, Zongmeng Zhang, Wenting Zhao, and Fan Zhou. 2026. Qwen3-Coder-Next Technical Report. arXiv:2603.00729. arXiv:2603.00729 [cs.CL] https://arxiv.org/abs/2603.00729
+> [5] Jerry Chee, Yaohui Cai, Volodymyr Kuleshov, and Christopher M. De Sa. 2023. QuIP: 2-Bit Quantization of Large Language Models with Guarantees. In Advances in Neural Information Processing Systems 36 (NeurIPS ’23) .https://openreview.net/forum?id=xrk9g5vcXR
+> [6] Wenlin Chen, James T. Wilson, Stephen Tyree, Kilian Q. Weinberger, and Yixin Chen. 2015. Compressing Neural Networks with the Hashing Trick. In Proceedings of the 32nd International Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 37) .PMLR, 2285–2294. https://proceedings.mlr.press/v37/chenc15.html
+> [7] Feng Cheng, Cong Guo, Chiyue Wei, Junyao Zhang, Changchun Zhou, Edward Hanson, Jiaqi Zhang, Xiaoxiao Liu, Hai Li, and Yiran Chen. 2025. Ecco: Improving Memory Bandwidth and Capacity for LLMs via Entropy-Aware Cache Compression. In Proceedings of the 52nd Annual International Symposium on Computer Architecture (ISCA ’25) .Association for Computing Machinery, New York, NY, USA, 793–807. doi: 10.1145/3695053.3731024
+> [8] Lawrence T. Clark, Vinay Vashishtha, Lucian Shifren, Aditya Gujja, Saurabh Sinha, Brian Cline, Chandarasekaran Ramamurthy, and Greg Yeric. 2016. ASAP7: A 7-nm finFET Predictive Process Design Kit.
+
+ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. 
+
+Microelectronics Journal 53 (2016), 105–115. doi: 10.1016/j.mejo.2016. 04.006 
+
+[9] Damai Dai, Chengqi Deng, Chenggang Zhao, R. X. Xu, Huazuo Gao, Deli Chen, Jiashi Li, Wangding Zeng, Xingkai Yu, Y. Wu, Zhenda Xie, Y. K. Li, Panpan Huang, Fuli Luo, Chong Ruan, Zhifang Sui, and Wenfeng Liang. 2024. DeepSeekMoE: Towards Ultimate Expert Special-ization in Mixture-of-Experts Language Models. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (ACL), Volume 1: Long Papers . Association for Computational Linguis-tics, Bangkok, Thailand, 1280–1297. doi: 10.18653/v1/2024.acl-long.70 
+
+[10] Tri Dao. 2024. FlashAttention-2: Faster Attention with Better Paral-lelism and Work Partitioning. In Proceedings of the 12th International Conference on Learning Representations (ICLR) . https://openreview. net/forum?id=mZn2Xyh9Ec 
+
+[11] Tri Dao, Beidi Chen, Nimit S. Sohoni, Arjun Desai, Michael Poli, Jessica Grogan, Alexander Liu, Aniruddh Rao, Atri Rudra, and Christopher Ré. 2022. Monarch: Expressive Structured Matrices for Efficient and Accurate Training. In Proceedings of the 39th International Confer-ence on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 162) . PMLR, 4690–4721. https://proceedings.mlr.press/ v162/dao22a.html 
+
+[12] Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. 2022. FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. In Advances in Neural Information Processing Systems 35 (NeurIPS ’22) .
+
+https://proceedings.neurips.cc/paper_files/paper/2022/hash/ 67d57c32e20fd0a7a302cb81d36e40d5-Abstract-Conference.html 
+
+[13] Tri Dao, Albert Gu, Matthew Eichhorn, Atri Rudra, and Christopher Ré. 2019. Learning Fast Algorithms for Linear Transforms Using Butterfly Factorizations. In Proceedings of the 36th International Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 97) . PMLR, 1517–1527. https://proceedings.mlr.press/v97/dao19a. html 
+
+[14] Michael Davies, Neal Crago, Karthikeyan Sankaralingam, and Christos Kozyrakis. 2025. LIMINAL: Exploring The Frontiers of LLM Decode Performance. arXiv:2507.14397. arXiv:2507.14397 [cs.AR] https:// arxiv.org/abs/2507.14397 
+
+[15] DeepSeek-AI. 2025. DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models. arXiv:2512.02556. arXiv:2512.02556 [cs.CL] 
+
+https://arxiv.org/abs/2512.02556 
+
+[16] Tim Dettmers, Mike Lewis, Younes Belkada, and Luke Zettlemoyer. 2022. LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale. In Advances in Neural Information Processing Systems 35 (NeurIPS ’22) . https://proceedings.neurips.cc/paper_files/paper/2022/hash/ c3ba4962c05c49636d4c6206a97e9c8a-Abstract-Conference.html 
+
+[17] Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. 2023. QLoRA: Efficient Finetuning of Quantized LLMs. In Advances in Neural Information Processing Systems 36 (NeurIPS ’23) . https: //openreview.net/forum?id=OUIFPHEgJU 
+
+[18] William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch Trans-formers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. Journal of Machine Learning Research 23, 120 (2022), 1–39. 
+
+https://www.jmlr.org/papers/v23/21-0998.html 
+
+[19] Elias Frantar and Dan Alistarh. 2023. SparseGPT: Massive Language Models Can be Accurately Pruned in One-Shot. In Proceedings of the 40th International Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 202) . PMLR, 10323–10337. https: //proceedings.mlr.press/v202/frantar23a.html 
+
+[20] Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. 2023. GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. In Proceedings of the 11th International Con-ference on Learning Representations (ICLR) . https://openreview.net/ forum?id=tcbBPnfwxS 
+
+[21] Elias Frantar, Roberto L. Castro, Jiale Chen, Torsten Hoefler, and Dan Alistarh. 2025. MARLIN: Mixed-Precision Auto-Regressive Parallel Inference on Large Language Models. In Proceedings of the 30th ACM SIGPLAN Annual Symposium on Principles and Practice of Parallel Pro-gramming (PPoPP ’25) . Association for Computing Machinery, Las Vegas, NV, USA, 239–251. doi: 10.1145/3710848.3710871 
+
+[22] Trevor Gale, Deepak Narayanan, Cliff Young, and Matei Zaharia. 2023. MegaBlocks: Efficient Sparse Training with Mixture-of-Experts. In Proceedings of Machine Learning and Systems (MLSys) ,Vol. 5. https://proceedings.mlsys.org/paper_files/paper/2023/hash/ 5a54f79333768effe7e8927bcccffe40-Abstract-mlsys2023.html 
+
+[23] Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac’h, Haonan Li, Kyle McDonell, Niklas Muennighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. 2024. The Language Model Evaluation Harness. doi: 10.5281/zenodo.12608602 
+
+[24] GLM-5 Team. 2026. GLM-5: From Vibe Coding to Agentic Engineering. arXiv:2602.15763. arXiv:2602.15763 [cs.CL] https://arxiv.org/abs/2602. 15763 
+
+[25] Albert Gu and Tri Dao. 2023. Mamba: Linear-Time Sequence Modeling with Selective State Spaces. arXiv:2312.00752. arXiv:2312.00752 [cs.LG] 
+
+https://arxiv.org/abs/2312.00752 
+
+[26] David Ha, Andrew M. Dai, and Quoc V. Le. 2017. HyperNetworks. In 
+
+Proceedings of the 5th International Conference on Learning Representa-tions (ICLR) . https://openreview.net/forum?id=rkpACe1lx 
+
+[27] Song Han, Huizi Mao, and William J. Dally. 2016. Deep Compression: Compressing Deep Neural Networks with Pruning, Trained Quantiza-tion and Huffman Coding. In Proceedings of the 4th International Con-ference on Learning Representations (ICLR) . arXiv:1510.00149 [cs.CV] 
+
+https://arxiv.org/abs/1510.00149 
+
+[28] Guseul Heo, Sangyeop Lee, Jaehong Cho, Hyunmin Choi, Sanghyeon Lee, Hyungkyu Ham, Gwangsun Kim, Divya Mahajan, and Jongse Park. 2024. NeuPIMs: NPU-PIM Heterogeneous Acceleration for Batched LLM Inferencing. In Proceedings of the 29th ACM International Con-ference on Architectural Support for Programming Languages and Op-erating Systems, Volume 3 (ASPLOS ’24) . Association for Computing Machinery, La Jolla, CA, USA, 722–737. doi: 10.1145/3620666.3651380 
+
+[29] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In Proceedings of the 10th International Conference on Learning Representations (ICLR) . https: //openreview.net/forum?id=nZeVKeeFYf9 
+
+[30] Changho Hwang, Wei Cui, Yifan Xiong, Ziyue Yang, Ze Liu, Han Hu, Zilong Wang, Rafael Salas, Jithin Jose, Prabhat Ram, HoYuen Chau, Peng Cheng, Fan Yang, Mao Yang, and Yongqiang Xiong. 2023. Tutel: Adaptive Mixture-of-Experts at Scale. In 
+
+Proceedings of Machine Learning and Systems (MLSys) , Vol. 5. 
+
+https://proceedings.mlsys.org/paper_files/paper/2023/hash/ 5616d34cf8ff73942cfd5aa922842556-Abstract-mlsys2023.html 
+
+[31] Ranggi Hwang, Jianyu Wei, Shijie Cao, Changho Hwang, Xiaohu Tang, Ting Cao, and Mao Yang. 2024. Pre-gated MoE: An Algorithm-System Co-Design for Fast and Scalable Mixture-of-Expert Inference. In Pro-ceedings of the 51st Annual International Symposium on Computer Ar-chitecture (ISCA ’24) . IEEE Computer Society, Buenos Aires, Argentina, 1018–1031. doi: 10.1109/ISCA59077.2024.00078 
+
+[32] Albert Q. Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, Gianna Lengyel, Guil-laume Bour, Guillaume Lample, Lélio Renard Lavaud, Lucile Saulnier, Marie-Anne Lachaux, Pierre Stock, Sandeep Subramanian, Sophia Yang, Szymon Antoniak, Teven Le Scao, Théophile Gervet, Thibaut Lavril, Thomas Wang, Timothée Lacroix, and William El Sayed. 2024. Mixtral of Experts. arXiv:2401.04088. arXiv:2401.04088 [cs.LG] 
+
+https://arxiv.org/abs/2401.04088 FORGE: Procedural Weight Generation for Sparse MoE Inference ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. 
+
+[33] Keisuke Kamahori, Tian Tang, Yile Gu, Kan Zhu, and Baris Kasikci. 2025. Fiddler: CPU-GPU Orchestration for Fast Inference of Mixture-of-Experts Models. In Proceedings of the 13th International Conference on Learning Representations (ICLR) . https://openreview.net/forum?id= N5fVv6PZGz 
+
+[34] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, and Ion Sto-ica. 2023. Efficient Memory Management for Large Language Model Serving with PagedAttention. In Proceedings of the 29th Symposium on Operating Systems Principles (SOSP ’23) . Association for Computing Machinery, New York, NY, USA, 611–626. doi: 10.1145/3600006.3613165 
+
+[35] Quoc Le, Tamás Sarlós, and Alexander J. Smola. 2013. Fastfood — Computing Hilbert Space Expansions in Loglinear Time. In Proceed-ings of the 30th International Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 28) . PMLR, 244–252. 
+
+https://proceedings.mlr.press/v28/le13.html 
+
+[36] Sukhan Lee, Shin-haeng Kang, Jaehoon Lee, Hyeonsu Kim, Eojin Lee, Seungyoung Seo, Hosang Yoon, Seungwon Lee, Kyounghwan Lim, Hyunsung Shin, Jinhyun Kim, Seongil O, Anand Iyer, David Wang, Kyomin Sohn, and Nam Sung Kim. 2021. Hardware Archi-tecture and Software Stack for PIM Based on Commercial DRAM Technology: Industrial Product. In Proceedings of the 48th Annual International Symposium on Computer Architecture (ISCA) . 43–56. doi: 10.1109/ISCA52012.2021.00013 
+
+[37] Seongju Lee, Kyuyoung Kim, Sanghoon Oh, Joonhong Park, Gimoon Hong, Dongyoon Ka, Kyudong Hwang, Jeongje Park, Kyeongpyo Kang, Jungyeon Kim, Junyeol Jeon, Nahsung Kim, Yongkee Kwon, Korni-jcuk Vladimir, Woojae Shin, Jongsoon Won, Minkyu Lee, Hyunha Joo, Haerang Choi, Jaewook Lee, Donguc Ko, Younggun Jun, Keewon Cho, Ilwoong Kim, Choungki Song, Chunseok Jeong, Daehan Kwon, Jieun Jang, Il Park, Junhyun Chun, and Joohwan Cho. 2022. A 1ynm 1.25V 8Gb, 16Gb/s/pin GDDR6-based Accelerator-in-Memory Sup-porting 1TFLOPS MAC Operation and Various Activation Functions for Deep-Learning Applications. In 2022 IEEE International Solid-State Circuits Conference (ISSCC) , Vol. 65. IEEE, San Francisco, CA, USA, 1–3. doi: 10.1109/ISSCC42614.2022.9731711 
+
+[38] Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. 2021. GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding. In Proceedings of the 9th In-ternational Conference on Learning Representations (ICLR) . https: //openreview.net/forum?id=qrwe7XHTmYb 
+
+[39] Zhuohan Li, Lianmin Zheng, Yinmin Zhong, Vincent Liu, Ying Sheng, Xin Jin, Yanping Huang, Zhifeng Chen, Hao Zhang, Joseph E. Gonzalez, and Ion Stoica. 2023. AlpaServe: Statistical Multiplexing with Model Parallelism for Deep Learning Serving. In 17th USENIX Symposium on Operating Systems Design and Implementation (OSDI ’23) . USENIX Association, Boston, MA, USA, 663–679. https://www.usenix.org/ conference/osdi23/presentation/li-zhouhan 
+
+[40] Ji Lin, Jiaming Tang, Haotian Tang, Shang Yang, Wei-Ming Chen, Wei-Chen Wang, Guangxuan Xiao, Xingyu Dang, Chuang Gan, and Song Han. 2024. AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Accelera-tion. In Proceedings of Machine Learning and Systems (MLSys) ,Vol. 6. https://proceedings.mlsys.org/paper_files/paper/2024/hash/ 42a452cbafa9dd64e9ba4aa95cc1ef21-Abstract-Conference.html 
+
+[41] Yujun Lin, Haotian Tang, Shang Yang, Zhekai Zhang, Guangx-uan Xiao, Chuang Gan, and Song Han. 2025. QServe: W4A8KV4 Quantization and System Co-design for Efficient LLM Serv-ing. In Proceedings of Machine Learning and Systems (MLSys) ,Vol. 7. https://proceedings.mlsys.org/paper_files/paper/2025/hash/ fbe2b2f74a2ece8070d8fb073717bda6-Abstract-Conference.html 
+
+[42] Zechun Liu, Changsheng Zhao, Igor Fedorov, Bilge Soran, Dhruv Choudhary, Raghuraman Krishnamoorthi, Vikas Chandra, Yuandong Tian, and Tijmen Blankevoort. 2025. SpinQuant: LLM Quantization with Learned Rotations. In Proceedings of the 13th International Con-ference on Learning Representations (ICLR) . https://openreview.net/ forum?id=ogO6DGE6FZ 
+
+[43] Locuza. 2022. Nvidia’s Ada Lineup, Configurations, Estimated Die Sizes and a Comparison with Other Chips. https://locuza.substack. com/p/nvidias-ada-lineup-configurations . https://locuza.substack. com/p/nvidias-ada-lineup-configurations 
+
+[44] Shuming Ma, Hongyu Wang, Lingxiao Ma, Lei Wang, Wenhui Wang, Shaohan Huang, Li Dong, Ruiping Wang, Jilong Xue, and Furu Wei. 2024. The Era of 1-bit LLMs: All Large Language Models are in 1.58 Bits. arXiv:2402.17764. arXiv:2402.17764 [cs.CL] https://arxiv.org/abs/ 2402.17764 
+
+[45] Paulius Micikevicius, Dusan Stosic, Neil Burgess, Marius Cornea, Pradeep Dubey, Richard Grisenthwaite, Sangwon Ha, Alexander Hei-necke, Patrick Judd, John Kamalu, Naveen Mellempudi, Stuart Ober-man, Mohammad Shoeybi, Michael Siu, and Hao Wu. 2022. FP8 For-mats for Deep Learning. arXiv:2209.05433. arXiv:2209.05433 [cs.LG] 
+
+https://arxiv.org/abs/2209.05433 
+
+[46] Asit Mishra, Jorge Albericio Latorre, Jeff Pool, Darko Stosic, Du-san Stosic, Ganesh Venkatesh, Chong Yu, and Paulius Micikevicius. 2021. Accelerating Sparse Deep Neural Networks. arXiv:2104.08378. arXiv:2104.08378 [cs.LG] https://arxiv.org/abs/2104.08378 
+
+[47] NVIDIA Corporation. 2022. NVIDIA H100 Tensor Core GPU Archi-tecture. NVIDIA Whitepaper. https://resources.nvidia.com/en-us-hopper-architecture/nvidia-h100-tensor-c 
+
+[48] NVIDIA Corporation. 2026. CUTLASS: CUDA Templates for Linear Algebra Subroutines. https://github.com/NVIDIA/cutlass . Version 4.4.2. [49] Jaehyun Park, Jaewan Choi, Kwanhee Kyung, Michael Jaemin Kim, Yongsuk Kwon, Nam Sung Kim, and Jung Ho Ahn. 2024. AttAcc!: Unleashing the Power of PIM for Batched Transformer-Based Gener-ative Model Inference. In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 (ASPLOS ’24) . Association for Computing Machinery, La Jolla, CA, USA, 103–119. doi: 10.1145/3620665.3640422 
+
+[50] Pratyush Patel, Esha Choukse, Chaojie Zhang, Aashaka Shah, Íñigo Goiri, Saeed Maleki, and Ricardo Bianchini. 2024. Splitwise: Efficient Generative LLM Inference Using Phase Splitting. In Proceedings of the 51st Annual International Symposium on Computer Architecture (ISCA ’24) . IEEE Computer Society, Buenos Aires, Argentina, 118–132. doi: 10.1109/ISCA59077.2024.00019 
+
+[51] Travis Pence, Daisuke Yamada, and Vikas Singh. 2025. Composing Linear Layers from Irreducibles. In Advances in Neural Information Processing Systems 38 (NeurIPS ’25) , Vol. 38. https://openreview.net/ forum?id=z5FGi0vyCr 
+
+[52] Reiner Pope, Sholto Douglas, Aakanksha Chowdhery, Jacob De-vlin, James Bradbury, Jonathan Heek, Kefan Xiao, Shivani Agrawal, and Jeff Dean. 2023. Efficiently Scaling Transformer Infer-ence. In Proceedings of Machine Learning and Systems (MLSys) ,Vol. 5. https://proceedings.mlsys.org/paper_files/paper/2023/hash/ c4be71ab8d24cdfb45e3d06dbfca2780-Abstract-mlsys2023.html 
+
+[53] Ruoyu Qin, Zheming Li, Weiran He, Jialei Cui, Feng Ren, Mingxing Zhang, Yongwei Wu, Weimin Zheng, and Xinran Xu. 2025. Mooncake: Trading More Storage for Less Computation — A KVCache-Centric Architecture for Serving LLM Chatbot. In 23rd USENIX Conference on File and Storage Technologies (FAST ’25) . USENIX Association, Santa Clara, CA, USA, 155–170. https://www.usenix.org/conference/fast25/ presentation/qin 
+
+[54] Qwen Team. 2025. Qwen3 Technical Report. arXiv:2505.09388. arXiv:2505.09388 [cs.CL] https://arxiv.org/abs/2505.09388 
+
+[55] Samyam Rajbhandari, Conglong Li, Zhewei Yao, Minjia Zhang, Reza Yazdani Aminabadi, Ammar Ahmad Awan, Jeff Rasley, and Yux-iong He. 2022. DeepSpeed-MoE: Advancing Mixture-of-Experts Infer-ence and Training to Power Next-Generation AI Scale. In Proceedings ASPLOS ’27, April 11–15, 2027, Heraklion, Greece. Moon et al. 
+
+of the 39th International Conference on Machine Learning (ICML) (Pro-ceedings of Machine Learning Research, Vol. 162) . PMLR, 18332–18346. 
+
+https://proceedings.mlr.press/v162/rajbhandari22a.html 
+
+[56] Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, and Tri Dao. 2024. FlashAttention-3: Fast and Accurate At-tention with Asynchrony and Low-Precision. In Advances in Neural Information Processing Systems 37 (NeurIPS ’24) . https://openreview. net/forum?id=tVConYid20 
+
+[57] Noam Shazeer. 2020. GLU Variants Improve Transformer. arXiv:2002.05202. arXiv:2002.05202 [cs.LG] https://arxiv.org/abs/2002. 05202 
+
+[58] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc V. Le, Geoffrey E. Hinton, and Jeff Dean. 2017. Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. In Proceedings of the 5th International Conference on Learning Repre-sentations (ICLR) . https://openreview.net/forum?id=B1ckMDqlg 
+
+[59] Ying Sheng, Lianmin Zheng, Binhang Yuan, Zhuohan Li, Max Ryabinin, Beidi Chen, Percy Liang, Christopher Ré, Ion Stoica, and Ce Zhang. 2023. FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU. In Proceedings of the 40th In-ternational Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 202) . PMLR, 31094–31116. https: //proceedings.mlr.press/v202/sheng23a.html 
+
+[60] Yixin Song, Zeyu Mi, Haotong Xie, and Haibo Chen. 2024. PowerInfer: Fast Large Language Model Serving with a Consumer-grade GPU. In 
+
+Proceedings of the 30th Symposium on Operating Systems Principles (SOSP ’24) . Association for Computing Machinery, Austin, TX, USA, 590–606. doi: 10.1145/3694715.3695964 
+
+[61] Konrad Staniszewski and Adrian Łańcucki. 2026. KV Cache Transform Coding for Compact Storage in LLM Inference. In Proceedings of the 14th International Conference on Learning Representations (ICLR) . https: //openreview.net/forum?id=aNVKROYpLB 
+
+[62] Aaron Stillmaker and Bevan Baas. 2017. Scaling equations for the accurate prediction of CMOS device performance from 180 nm to 7 nm. 
+
+Integration, the VLSI Journal 58 (2017), 74–81. doi: 10.1016/j.vlsi.2017. 02.002 
+
+[63] Mingjie Sun, Zhuang Liu, Anna Bair, and J. Zico Kolter. 2024. A Sim-ple and Effective Pruning Approach for Large Language Models. In 
+
+Proceedings of the 12th International Conference on Learning Represen-tations (ICLR) . https://openreview.net/forum?id=PxoFut3dWW 
+
+[64] Hanrui Wang, Zhekai Zhang, and Song Han. 2021. SpAtten: Efficient Sparse Attention Architecture with Cascade Token and Head Pruning. In 2021 IEEE International Symposium on High-Performance Computer Architecture (HPCA) . IEEE, Seoul, South Korea, 97–110. doi: 10.1109/ HPCA51647.2021.00018 
+
+[65] Samuel Williams, Andrew Waterman, and David Patterson. 2009. Roofline: An Insightful Visual Performance Model for Multicore Ar-chitectures. Commun. ACM 52, 4 (2009), 65–76. doi: 10.1145/1498765. 1498785 
+
+[66] Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, and Song Han. 2023. SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models. In Proceedings of the 40th International Conference on Machine Learning (ICML) (Proceedings of Machine Learning Research, Vol. 202) . PMLR, 38087–38099. https: //proceedings.mlr.press/v202/xiao23c.html 
+
+[67] Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song Han, and Mike Lewis. 2024. Efficient Streaming Language Models with Attention Sinks. In Proceedings of the 12th International Conference on Learning Representations (ICLR) . https://openreview.net/forum?id=NG7sS51zVF 
+
+[68] Gyeong-In Yu, Joo Seong Jeong, Geon-Woo Kim, Soojeong Kim, and Byung-Gon Chun. 2022. Orca: A Distributed Serving System for Transformer-Based Generative Models. In 16th USENIX Symposium on Operating Systems Design and Implementation (OSDI ’22) . USENIX Association, Carlsbad, CA, USA, 521–538. https://www.usenix.org/ conference/osdi22/presentation/yu 
+
+[69] Amir Zandieh, Majid Daliri, Majid Hadian, and Vahab Mirrokni. 2026. TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate. In Proceedings of the 14th International Conference on Learning Representations (ICLR) . https://openreview.net/forum?id=tO3ASKZlok 
+
+[70] Zhenyu Zhang, Ying Sheng, Tianyi Zhou, Tianlong Chen, Lianmin Zheng, Ruisi Cai, Zhao Song, Yuandong Tian, Christopher Ré, Clark Barrett, Zhangyang Wang, and Beidi Chen. 2023. H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models. In Advances in Neural Information Processing Systems 36 (NeurIPS ’23) .
+
+https://openreview.net/forum?id=RkRrPp7GKO 
+
+[71] Lianmin Zheng, Liangsheng Yin, Zhiqiang Xie, Chuyue Sun, Jeff Huang, Cody Hao Yu, Shiyi Cao, Christos Kozyrakis, Ion Stoica, Joseph E. Gonzalez, Clark Barrett, and Ying Sheng. 2024. SGLang: Efficient Execution of Structured Language Model Programs. In Ad-vances in Neural Information Processing Systems 37 (NeurIPS ’24) .
+
+https://openreview.net/forum?id=VqkAKQibpq 
+
+[72] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xu-anzhe Liu, Xin Jin, and Hao Zhang. 2024. DistServe: Disaggregating Prefill and Decoding for Goodput-optimized Large Language Model Serving. In 18th USENIX Symposium on Operating Systems Design and Implementation (OSDI ’24) . USENIX Association, Santa Clara, CA, USA, 193–210. https://www.usenix.org/conference/osdi24/presentation/ zhong-yinmin

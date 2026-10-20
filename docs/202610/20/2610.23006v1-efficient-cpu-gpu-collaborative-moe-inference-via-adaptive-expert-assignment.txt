@@ -1,0 +1,830 @@
+Title: Efficient CPU-GPU collaborative MoE inference via Adaptive Expert Assignment
+
+URL Source: https://arxiv.org/pdf/2610.23006v1
+
+Published Time: Mon, 19 Oct 2026 00:46:22 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Efficient CPU-GPU collaborative MoE inference via Adaptive Expert Assignment 
+
+## Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng 
+
+## Abstract 
+
+Mixture-of-Experts (MoE) models reduce inference computa-tion through sparse expert activation, but their large expert memory footprint often exceeds GPU capacity, making ex-pert offloading necessary for memory-constrained inference. However, existing systems typically handle GPU-missed ex-perts by either transferring them to the GPU, incurring sub-stantial PCIe transfer latency, or executing them on the CPU, making the slower CPU computation the bottleneck. To ad-dress these limitations, we present Apex , a CPU-GPU collab-orative MoE inference system that adaptively assigns these missed experts to the CPU or GPU for efficient execution. By exploiting differences in expert token-loads, Apex selec-tively transfers high-load experts to the GPU while execut-ing low-load experts on the CPU. To minimize inference la-tency, Apex adaptively adjusts expert assignments to balance the CPU computation path against the GPU transfer-and-computation path, allowing both execution paths to complete as early as possible. Extensive experiments on three repre-sentative MoE LLMs show that Apex improves prefill speed by up to 51.9% and decode throughput by up to 39.5% over the strongest baseline across the evaluated batch sizes, with consistent gains under different GPU-memory budgets. 
+
+## 1 Introduction 
+
+Mixture-of-Experts (MoE) [8, 12, 18, 28, 39] architectures have emerged as an effective way to scale the capacity of Large Language Models (LLMs) [3, 27, 38, 40, 46] without pro-portionally increasing inference computation. Instead of ap-plying the same dense feed-forward network to every token, an MoE module contains many specialized expert networks and routes each token to only a small subset of them [4]. De-spite this computational advantage, MoE models still impose a substantial memory footprint [36, 42]. Sparse activation cannot reduce storage requirements, as all expert parameters must remain accessible during inference [32]. Consequently, storing the entire model in limited and expensive GPU mem-ory poses difficulties for private and on-premises deploy-ment [6, 25, 26, 34]. Expert offloading [17, 35, 48] provides a practical solution by storing expert weights in high-capacity CPU host memory. In this context, some activated experts are inevitably absent from GPU memory at runtime, referred to as GPU-missed experts . A fundamental question for of-floaded MoE inference is therefore how to process these missed experts. One option is to execute GPU-missed experts on the GPU ,where the missed experts must first be transferred from host memory over PCI Express (PCIe) before execution. However, GPU misses occur frequently, and each miss incurs an expen-sive expert transfer that is much slower than GPU execution. Even with half of the experts retained on the GPU, over 50% of the required experts frequently miss GPU residency [9, 43]. Prior work [36] shows that on-demand expert transfers slow inference by more than 17 ×. Existing systems commonly employ speculative prefetching [9] to hide part of this cost. They predict the experts required by the next layer from the current layer’s hidden states and transfer the predicted experts in parallel with ongoing computation. However, the available overlap is bounded by approximately one Trans-former layer of computation. Our preliminary experiments in Sec. 2.3 show that transferring the required experts takes at least 5.2 × as long as GPU computation, leaving most of the transfer latency exposed even with prefetching. Pure GPU execution therefore remains transfer-bound. The other option is to execute GPU-missed experts on the CPU . Instead of transferring the expert weights, the GPU sends the much smaller expert inputs to the CPU, which computes the missed experts using weights already in host memory and returns their outputs to the GPU. Meanwhile, the GPU computes its resident experts and then merges the outputs from both devices. This approach transfers only the much smaller inputs and outputs rather than entire ex-perts. However, CPUs provide far lower expert-computation throughput than GPUs, commonly delivering more than 10 ×
+
+lower bfloat16 compute throughput [20, 24, 29]. The GPU must wait for CPU results at each layer, placing CPU exe-cution on the critical path. This bottleneck becomes more severe at the larger batch sizes as the CPU processes a grow-ing expert workload. Existing systems attempt to reduce GPU misses and thereby limit the workload assigned to the CPU. For example, they profile expert popularity offline and keep globally popular experts resident in GPU memory [19], or transfer GPU-missed experts after each inference step to improve subsequent GPU hit rates [15]. Nevertheless, GPU memory remains limited, and the activated experts vary across inference requests, so the CPU inevitably processes part of the expert workload. Its much longer execution time (e.g. , more than 5 .4× the GPU time in our preliminary study in Sec. 2.3) continues to slow down overall inference latency. We argue that the key challenge lies in deciding where to execute GPU-missed experts. Executing them on the GPU incurs transfer latency, whereas executing them on the CPU incurs computation latency. To this end, we propose Apex ,an efficient CPU-GPU collaborative MoE inference system 
+
+> 1arXiv:2610.23006v1 [cs.AI] 16 Oct 2026 Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng
+
+Figure 1. MoE stage latency under different inference paradigms. Dashed-outlined experts are transferred from the CPU to the GPU for execution. with adaptive expert assignment. Rather than treating all GPU-missed experts uniformly, Apex adaptively determines which experts should be transferred to the GPU for execu-tion and which should remain on the CPU. We observe that tokens processed together in a serving batch are routed inde-pendently, producing highly variable numbers of tokens, i.e. ,
+
+token-loads , across activated experts. An expert’s token-load determines its computation cost, whereas the amount of ex-pert weights that must be transferred remains unchanged. Consequently, transferring a high-load expert to the GPU is more worthwhile because the faster GPU computation off-sets the transfer cost, whereas transferring a low-load expert introduces more transfer overhead than the computation time it saves. Apex exploits this insight by transferring high-load experts to the GPU for faster execution while directly executing low-load experts on the CPU to avoid unnecessary weight transfers. Through this adaptive execution assign-ment, Apex substantially reduce the CPU workload while keeping GPU-side transfer latency under control. As illus-trated in Figure 1, it avoids both excessive transfer latency and prolonged CPU computation, minimizing pipeline bub-bles and reducing end-to-end inference latency. However, realizing this adaptive assignment poses a sig-nificant challenge. Under CPU-GPU collaborative execution, overall latency is determined by the slower of two concur-rent paths. The CPU path consists of computing the experts assigned to the CPU, whereas the GPU path includes both transferring selected experts and executing all GPU-assigned experts. The number of transferred experts directly shapes both paths. Transferring too many experts exposes exces-sive transfer latency and makes the GPU path the bottle-neck. Transferring too few leaves the CPU with excessive computation, making the CPU path the bottleneck. An effec-tive assignment must therefore reduce enough CPU work to shorten the CPU path without introducing excessive trans-fer overhead on the GPU path. The goal is to minimize the maximum latency of the two concurrent paths. In summary, this paper makes the following contributions: 
+
+• We propose Apex , a CPU-GPU collaborative MoE in-ference system that adaptively assigns GPU-missed experts between CPU and GPU execution to balance the two paths and reduce inference latency. 
+
+• To minimize inference latency, Apex combines specu-lative and exact assignment. Speculative assignment predicts high-load experts one layer ahead and starts their transfers early, extending the transfer window. Exact assignment uses an online, rate-driven algo-rithm to determine the remaining CPU/GPU assign-ments that minimize the layer latency. 
+
+• We implement Apex and evaluate it on three repre-sentative MoE models across different batch sizes and GPU memory budgets. Compared with the strongest baselines, Apex improves prefill speed by up to 51.9% and decode throughput by up to 39.5%, with average gains of 31.2% and 31.1%, respectively. 
+
+## 2 Background and Motivation 
+
+2.1 MoE Inference 
+
+Both dense and MoE-based LLMs stack 𝐿 Transformer lay-ers with the same basic attention module [41]. Their key difference lies in the feed-forward network (FFN). A dense Transformer applies one FFN to every token, whereas an MoE Transformer replaces it with a Mixture-of-Experts mod-ule containing 𝐸 smaller FFNs, referred to as experts [18, 33]. During inference, a router selects only the top-𝐾 experts for each token, where 𝐾 ≪ 𝐸 , and combines their outputs using the corresponding routing scores [7, 23]. The sparse activation allows an MoE model to increase its capacity with sub-linear computational scaling [10, 50]. 
+
+Inference workflow. We first describe the forward pass of a single token. Let x𝑖 denote its input hidden state at layer 
+
+𝑖 . The attention module produces the state passed to the MoE router through a residual connection and normalization: 
+
+h𝑖 = Norm (x𝑖 + Attention 𝑖 (x𝑖 )) . (1) The router maps h𝑖 to a normalized score vector r𝑖 over all 
+
+𝐸 experts and selects the top-𝐾 expert set T𝑖 :
+
+r𝑖 = softmax (Router 𝑖 (h𝑖 )) , T𝑖 = TopK (r𝑖 , 𝐾 ). (2) For each selected expert 𝑒 ∈ T 𝑖 , we normalize its score within the selected set as 𝛼 𝑖,𝑒 = 𝑟 𝑖,𝑒 /Í𝑗 ∈ T 𝑖 𝑟 𝑖,𝑗 . The selected experts process the token independently, and their outputs are com-bined according to these routing scores: 
+
+m𝑖 =∑︁  
+
+> 𝑒 ∈ T 𝑖
+
+𝛼 𝑖,𝑒 Expert 𝑖,𝑒 (h𝑖 ). (3) Finally, the aggregated expert output is combined with h𝑖 
+
+through another residual connection and normalization, pro-ducing x𝑖 +1 = Norm (h𝑖 + m𝑖 ). This representation becomes 
+
+> 2Apex
+
+Figure 2. Execution timelines of pure GPU execution, tradi-tional CPU-GPU collaboration, and Apex .the input to the next Transformer layer, and the same work-flow repeats until the final layer completes. 
+
+Expert routing under batching. LLM serving systems commonly use continuous batching [21, 44] to improve hard-ware utilization and inference throughput. At each inference iteration, the system groups tokens from multiple requests into one batch [14]. A prefill request contributes multiple prompt tokens, whereas each decoding request typically con-tributes one current token. Consequently, one model forward pass may process 𝑁 tokens contributed by different requests. Let X𝑖 = {x𝑖,𝑡 }𝑁 𝑡 =1 denote the input hidden states of these tokens at layer 𝑖 , and let H𝑖 = {h𝑖,𝑡 }𝑁 𝑡 =1 denote their post-attention states. Each token follows the workflow above and is routed independently to its own top-𝐾 expert set T𝑖,𝑡 . Thus, the batch produces 𝑁 × 𝐾 token-expert pairs in every MoE module. The set of experts activated by the entire batch is the union of the per-token selections: 
+
+A𝑖 =
+
+> 𝑁
+
+Ø 
+
+> 𝑡 =1
+
+T𝑖,𝑡 . (4) The token-loads are generally uneven across A𝑖 [11, 16]. We define the token-load of expert 𝑒 as the number of tokens routed to it: 
+
+𝑛 𝑖,𝑒 =
+
+> 𝑁
+
+∑︁  
+
+> 𝑡 =1
+
+I 𝑒 ∈ T 𝑖,𝑡 
+
+ . (5) Some activated experts may receive many tokens, whereas others receive only a few. This difference directly determines the amount of computation performed by each expert [16]. 
+
+2.2 Execution with Expert Offloading 
+
+Despite the computational efficiency, the large number of ex-pert parameters imposes substantial memory requirements. Expert offloading addresses this issue by keeping the non-expert modules and only a limited subset of experts in GPU memory while keeping all experts in CPU host memory. When the router selects an expert that is absent from the GPU, existing systems generally follow one of two execu-tion paradigms: (1) pure GPU execution transfers every GPU-missed expert to the GPU and performs expert computation, whereas (2) CPU-GPU collaborative execution computes GPU-missed experts in place on the CPU while the GPU processes its resident experts. 
+
+Pure GPU execution. Pure GPU execution performs all expert computation on the GPU. An activated expert already resident in GPU memory can execute immediately, whereas the weights of a GPU-missed expert must traverse PCIe before execution. Existing systems use speculative prefetch-ing to overlap transfers with ongoing computation and re-duce the exposed transfer latency. For example, Mixtral-Offloading [9] estimates the experts required by the next layer from the current hidden states. For token 𝑡 , it feeds hidden state h𝑖,𝑡 to the router of layer 𝑖 + 1 to obtain the predicted routing scores and expert set: 
+
+br𝑖 +1,𝑡 = softmax  Router 𝑖 +1 (h𝑖,𝑡 ) ,
+
+bT𝑖 +1,𝑡 = TopK  br𝑖 +1,𝑡 , 𝐾  . (6) Although h𝑖,𝑡 is not the exact input to the next-layer router, residual connections keep the hidden states of adjacent layers highly similar [9, 22]. The predicted expert set thus provides an early estimate of the next layer’s routing result and can achieve considerable prediction accuracy ( e.g. , over 80% [48]). The system starts transferring these predicted experts while the current layer is still executing. Speculative prefetching can hide only the transfers that fit within the computation window, which spans from the current layer’s MoE module to the next layer’s MoE module. Upon reaching the next layer’s MoE module, any required expert that remains absent from the GPU must be transferred on demand. GPU expert computation is then blocked until the corresponding experts arrive, directly exposing PCIe latency on the GPU execution path. Pure GPU execution therefore trades high GPU compute throughput for waiting on expert transfer, as illustrated in Figure 2(a). 
+
+CPU-GPU collaborative execution. CPU-GPU collabo-rative execution avoids transferring GPU-missed experts by evaluating them directly on the CPU. To reduce CPU com-putation overhead, existing works attempt to decrease the number of GPU misses and thereby limit the expert workload assigned to the CPU. A representative system, Fiddler [19], first profiles expert popularity on a calibration dataset and keeps the most frequently activated experts resident in GPU memory. Let R𝑖 denote the resident expert set of layer 𝑖 
+
+under this residency policy. Once the router produces the exact token-expert assignments, the GPU groups the hidden states for each activated expert. For a GPU-missed expert 
+
+𝑒 ∈ A 𝑖 \ R 𝑖 , its input group H𝑖,𝑒 = {h𝑖,𝑡 | 𝑒 ∈ T 𝑖,𝑡 } is trans-ferred to the CPU. The CPU evaluates these tokens using the experts in host memory, while the GPU concurrently evaluates the activated experts in A𝑖 ∩ R 𝑖 .                      
+
+> 3Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng 036B=8 · 13 active
+> 0612
+> Routed tokens
+> B=16 · 18 active
+> 1816 27
+> Expert rank (256 total)
+> 010 20 B=24 · 27 active
+> (a) Batched expert activation 1816 24 32
+> Batch size
+> 0510 15 20
+> Time (ms)
+> 5.2× 7.9× 10.2× 12.0× 13.1×
+> GPU compute Expert transfer (b) Computation vs transfer 32 48 64 80 96
+> GPU-resident experts
+> 01234
+> Time (ms)
+> 20 40 60 80
+> CPU token share (%)
+> CPU compute CPU token share GPU compute (c) CPU/GPU execution latency Top-0 Top-2 Top-3 Top-4 Top-5
+> Strategy
+> 01234
+> Time (ms)  3.28 2.87 2.66 3.56 4.22
+> CPU compute GPU compute Expert transfer max(CPU, GPU) (d) CPU-GPU path balancing
+
+Figure 3. Preliminary experimental results. (a) Larger batches activate more experts with uneven token loads. (b) Transferring all GPU-missed experts dominates GPU computation. (c) Collaborative execution leaves inference CPU-bound. (d) Selectively transferring high-load experts reduces the CPU path, whereas excessive transfers shift the bottleneck to the GPU path. After CPU computation completes, its expert outputs are returned to the GPU. The GPU and CPU results are then combined using the original routing scores: 
+
+mGPU  
+
+> 𝑖,𝑡
+
+=∑︁   
+
+> 𝑒 ∈ T 𝑖,𝑡 ∩R 𝑖
+
+𝛼 𝑖,𝑡,𝑒 Expert 𝑖,𝑒 (h𝑖,𝑡 ),
+
+mCPU  
+
+> 𝑖,𝑡
+
+=∑︁   
+
+> 𝑒 ∈ T 𝑖,𝑡 \R 𝑖
+
+𝛼 𝑖,𝑡,𝑒 Expert 𝑖,𝑒 (h𝑖,𝑡 ),
+
+m𝑖,𝑡 = mGPU  
+
+> 𝑖,𝑡
+
++ mCPU  
+
+> 𝑖,𝑡
+
+.
+
+(7) Compared with transferring expert weights, transferring expert inputs and outputs introduces less PCIe traffic. Nev-ertheless, expert computation is still substantially slower on the CPU, as illustrated in Figure 2(b). 
+
+2.3 Motivation for System Design 
+
+To quantify the limitations of existing execution paradigms, we conduct preliminary experiments using Qwen3.5-35B-A3B [31] on the MMLU [13] dataset. This model contains 256 experts in each MoE module and activates eight experts for every token. We combine multiple MMLU requests into batches and evaluate the resulting token-loads, transfer la-tency, and CPU/GPU execution latency. These experiments yield the following observations. 
+
+Batched routing activates more experts with highly uneven token-loads. As shown in Figure 3(a), increasing the batch size from 8 to 16 and 24 expands the number of activated experts from 13 to 18 and 27, respectively. A larger activated set creates more potential GPU misses under a fixed GPU-memory budget. More importantly, token assignments remain highly uneven within each batch. At batch size 24, for example, the token-loads of the 27 activated experts range from one token to 23 tokens. Consequently, these experts impose substantially different computation workloads. 
+
+Expert transfer dominates GPU computation. Under a fixed GPU-memory budget, larger activated sets generally create more GPU misses and hence more transfers under pure GPU execution. Figure 3(b) shows that, at batch size 1, expert transfer takes 3.80 ms per layer, compared with only 0.73 ms for GPU expert computation. At batch size 32, expert transfer increases to 20.86 ms while GPU computation takes 1.59 ms, widening the ratio to 13 .1×. Because specula-tive prefetching provides only a limited overlap window, a substantial fraction of this transfer remains exposed. Trans-ferring every GPU-missed expert consequently makes pure GPU execution transfer-bound. 
+
+Collaborative execution leaves inference CPU-bound. 
+
+Following Fiddler [19], we profile expert popularity on the MMLU training split, keep the most popular experts resi-dent on the GPU, and evaluate inference on the validation split at batch size 16. We vary the number of GPU-resident experts from 32 to 96. As shown in Figure 3(c), increasing the GPU-memory budget moves more computation to the GPU and gradually reduces CPU computation. With 32 ex-perts resident on the GPU, the CPU still processes 74.80% of the assignments and takes 3.66 ms per layer, compared with 0.45 ms on the GPU. Even with 96 GPU-resident experts, the CPU receives 43.73% of the assignments and takes 2.98 ms, whereas GPU computation takes only 0.49 ms. Thus, CPU expert execution remains the long-tail latency bottleneck. These observations expose a common limitation of exist-ing approaches: they treat all GPU-missed experts uniformly. Pure GPU execution transfers every missed expert, whereas traditional CPU-GPU collaborative execution computes ev-ery missed expert on the CPU. However, experts have identi-cal transfer sizes while their token-loads differ substantially. Transferring a high-load expert can eliminate considerable CPU computation, whereas transferring a low-load expert incurs the same PCIe cost for little benefit. This insight mo-tivates load-aware execution assignment: high-load experts should be transferred to the GPU, while low-load experts should remain on the CPU. 
+
+Balancing the CPU and GPU execution paths. We next evaluate runtime, load-aware expert assignment with 64 experts resident on the GPU. Once the routing result 
+
+> 4Apex
+
+of layer 𝑖 becomes available, we identify the GPU-missed expert set M𝑖 = A𝑖 \ R 𝑖 and rank its experts by their actual token-loads. The top-𝑃 highest-load experts are assigned to GPU execution and their weights are transferred to the GPU, while all remaining GPU-missed experts execute on the CPU. Let G𝑖 and C𝑖 = M𝑖 \ G 𝑖 denote these two sets, respectively. Every expert in G𝑖 contributes transfer latency to the GPU path, and the GPU waits for these transfers before performing expert computation. The layer latency for a given 
+
+𝑃 is determined by the longer of the CPU and GPU paths: 
+
+𝑇 𝑖 (𝑃 ) = max {𝑇 CPU (C 𝑖 ) ,𝑇 transfer (G 𝑖 ) + 𝑇 GPU (R 𝑖 ∪ G 𝑖 )} . (8) Increasing 𝑃 moves the most computation-intensive GPU-missed experts from the CPU to the GPU, thereby shortening the CPU path. At the same time, each additional expert incurs a complete transfer latency, lengthening the GPU path. Figure 3(d) illustrates this tradeoff. When 𝑃 = 0, the CPU path takes 3.28 ms, compared with only 0.46 ms for the GPU path, making CPU computation the bottleneck. Transferring the two highest-load experts introduces 1.39 ms of transfer latency but reduces the CPU path to 2.87 ms. The GPU path takes 1.89 ms, so CPU computation still determines layer latency. At 𝑃 = 4, the CPU path decreases to 2.52 ms, while the GPU path increases to 2.66 ms, including 2.12 ms of trans-fer latency. Although the GPU path becomes slightly longer, this setting achieves the lowest latency among the evaluated transfer counts. Increasing 𝑃 to 8 and 12 further reduces the CPU path to 2.31 ms and 2.21 ms, respectively, but raises the GPU path to 3.56 ms and 4.22 ms. Thus, transferring too many experts shifts the bottleneck from CPU computation to GPU-side transfer and increases overall latency. These results motivate an adaptive assignment policy for 
+
+Apex , as shown in Figure 2(c). At each layer of every in-ference step, Apex uses the actual routing demand, GPU residency, and expert token-loads to determine which GPU-missed experts should execute on each device. The objective is to balance the CPU computation path against the GPU transfer-and-computation path, minimizing the longer of the two rather than applying a fixed transfer budget. Further-more, substantial transfer latency limits the available transfer count before the GPU becomes the bottleneck. To provide greater flexibility for adaptive assignment, Apex predicts high-load experts for the next layer and begins transferring during the current-layer. This speculative transfer creates an overlap window in which additional GPU-missed experts can be transferred without exposing transfer latency, allowing more CPU work to be reassigned to the GPU. 
+
+## 3 System Design 
+
+3.1 Overview of Apex 
+
+Apex is an efficient MoE inference system with expert of-floading, where all expert weights are stored in CPU host 
+
+Figure 4. System overview of Apex .memory, while GPU memory holds the non-expert param-eters and a fixed-capacity expert pool. Figure 4 illustrates how Apex coordinates expert execution and transfers along the inference path. At each Transformer layer, inference pro-ceeds from attention execution on GPU to the MoE block, which consists of router computation and CPU-GPU col-laborative expert execution. After attention completes, its output is passed to the router, which determines the exact expert demand and sends it to the transfer controller . Using the current GPU pool state and observed runtime rates, the controller performs exact assignment : it decides which GPU-missed experts should execute on CPU and which should be transferred to GPU, forming an expert execution plan and starting the exact expert transfers. The inference engine fol-lows this plan to group input tokens by expert and dispatch them to the assigned devices. CPU-assigned experts process activations transferred from GPU, while GPU-assigned ex-perts execute after the exact expert transfers complete. The engine then returns CPU results to GPU and merges the expert outputs before proceeding to the next layer. Along-side this main inference path, the attention output of layer 
+
+𝑖 is also passed to the speculative ranker , which applies the next layer’s router to estimate expert demand for layer 𝑖 + 1. The ranker sends this prediction to the transfer controller for speculative assignment . After current-layer exact trans-fers complete, the controller prefetches predicted experts, assigning some next-layer missed experts to GPU in advance while overlapping their transfers with ongoing computation. Throughout this process, the expert pool manager maintains the GPU expert pool, selecting an eviction victim whenever an incoming expert requires a slot and reporting the updated pool state to the controller. The inference engine reports observed expert token-loads to the pool manager, which up-dates token-load-based priorities for every expert to make future eviction decisions. 
+
+> 5Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng
+
+3.2 Speculative Ranker 
+
+At every layer, the speculative ranker estimates the experts that will be activated by the next layer, thereby exposing an early transfer window. Once the attention module of layer 𝑖 
+
+produces H𝑖 = {h𝑖,𝑡 }𝑁 𝑡 =1, the speculative ranker feeds these representations to the router of layer 𝑖 + 1 and applies the prediction rule in Eq. (6). This prediction is used only to schedule prefetching and does not change the exact routing result or model output. After obtaining the predicted token-level assignments, the ranker aggregates them into two statistics for each expert: 
+
+b𝑛 𝑖 +1,𝑒 =
+
+> 𝑁
+
+∑︁ 
+
+> 𝑡 =1
+
+I
+
+
+
+𝑒 ∈ bT𝑖 +1,𝑡 
+
+
+
+, b𝑞 𝑖 +1,𝑒 =∑︁    
+
+> 𝑡 :𝑒 ∈bT𝑖 +1,𝑡
+
+b𝑟 𝑖 +1,𝑡,𝑒 . (9) Here, b𝑛 𝑖 +1,𝑒 is the predicted token-load assigned to expert 
+
+𝑒 , while b𝑞 𝑖 +1,𝑒 is the sum of their predicted routing scores. Because expert computation is primarily determined by the number of routed tokens, the ranker orders the experts by decreasing b𝑛 𝑖 +1,𝑒 . When two experts have the same predicted load, the expert with the larger b𝑞 𝑖 +1,𝑒 is placed earlier. Let bA𝑖 +1 = {𝑒 | b𝑛 𝑖 +1,𝑒 > 0} denote the set of experts predicted to be active. At inference step 𝑠 , the speculative ranker produces the ordered descriptor: 
+
+bD (𝑠 ) 
+
+> 𝑖 +1
+
+= (𝑖 + 1, b𝑒 𝑟 , b𝑛 𝑖 +1,b𝑒 𝑟 , b𝑞 𝑖 +1,b𝑒 𝑟 ) | bA𝑖 +1 |  
+
+> 𝑟 =1
+
+, (10) where (b𝑒 1, . . . , b𝑒 | bA𝑖 +1 | ) follows the ranking above. The ranker passes this descriptor to the transfer controller as the prefetch priority. The controller therefore transfers high-load experts first and overlaps their transfers with current computation. 
+
+3.3 Transfer Controller 
+
+The transfer controller combines exact expert assignment for the current layer with speculative expert assignment for the next layer. Together, they adapt CPU-GPU expert assignment to observed and predicted demand: exact assignment bal-ances the current execution paths, while speculative assign-ment uses the available overlap window to place next-layer experts on GPU in advance. Exact transfers take priority over speculative transfers. 
+
+Exact expert assignment. Let A𝑖 denote the exact acti-vated set of layer 𝑖 , and let R𝑖 denote the GPU resident set. The GPU-missed expert set is M𝑖 = A𝑖 \ R 𝑖 . The activated resident experts in A𝑖 ∩ R 𝑖 execute directly on GPU. Exact expert assignment therefore focuses on the GPU-missed ex-perts: it determines which of them should be transferred to GPU for execution and which should remain on CPU. Because transferring high-load experts removes more com-putation from CPU at the same transfer cost, the controller orders the missed experts as (𝑒 1, . . . , 𝑒 𝑚 ) so that 
+
+𝑛 𝑖,𝑒 1 ≥ 𝑛 𝑖,𝑒 2 ≥ · · · ≥ 𝑛 𝑖,𝑒 𝑚 . (11) For every transfer count 𝑝 , the controller assigns the 𝑝 highest-load missed experts to GPU and leaves the remaining missed experts on CPU: 
+
+G𝑖 (𝑝 ) = {𝑒 1, . . . , 𝑒 𝑝 }, C𝑖 (𝑝 ) = M𝑖 \ G 𝑖 (𝑝 ). (12) The transfer count 𝑝 determines the length of both concur-rent execution paths. The CPU path contains the computa-tion of the experts in C𝑖 (𝑝 ), while the GPU path contains the exposed transfer of the experts in G𝑖 (𝑝 ) followed by the computation of both resident and newly transferred experts. The layer latency is determined by the larger of the two. The assignment problem therefore reduces to selecting 𝑝 that minimizes this maximum. To determine 𝑝 , the controller performs online rate-driven balancing. It tracks three end-to-end service rates: CPU to-ken throughput 𝑣 C, GPU token throughput 𝑣 G, and expert-transfer throughput 𝑣 T. The first two rates measure the to-ken processing throughput of the CPU and GPU during ex-pert execution, while the third measures the expert transfer throughput. The controller updates these rates from com-pleted operations using an exponential moving average: 
+
+𝑣 𝑥, (𝑠 ) = (1 − 𝛽 )𝑣 𝑥, (𝑠 −1) + 𝛽 𝑤 (𝑠 )
+
+> 𝑥
+
+𝑡 (𝑠 )
+
+> 𝑥
+
+, 𝑥 ∈ { C, G, T}. (13) For each possible transfer count 𝑝 , the controller estimates the two concurrent execution paths as: 
+
+b𝑇 C 
+
+> 𝑖
+
+(𝑝 ) =
+
+Í𝑒 ∈ C 𝑖 (𝑝 ) 𝑛 𝑖,𝑒 
+
+𝑣 C ,
+
+b𝑇 G 
+
+> 𝑖
+
+(𝑝 ) = 𝑝 𝑣 T +
+
+Í𝑒 ∈ ( A 𝑖 ∩R 𝑖 )∪G 𝑖 (𝑝 ) 𝑛 𝑖,𝑒 
+
+𝑣 G .
+
+(14) The CPU estimate contains the computation assigned to CPU, whereas the GPU estimate contains the transfers followed by the computation of resident and newly transferred experts. The controller then selects 𝑝 ∗:
+
+𝑝 ∗ 
+
+> 𝑖
+
+= arg min   
+
+> 0≤𝑝 ≤𝑚
+
+max 
+
+nb𝑇 C 
+
+> 𝑖
+
+(𝑝 ), b𝑇 G 
+
+> 𝑖
+
+(𝑝 )
+
+o
+
+. (15) As 𝑝 increases, CPU work decreases, while transfer and GPU work increase. Scanning all possible transfer counts there-fore directly identifies the approximate balance between the two execution paths under the latest observed rates. The controller assigns C𝑖 (𝑝 ∗ 
+
+> 𝑖
+
+) to CPU and (A 𝑖 ∩ R 𝑖 ) ∪ G 𝑖 (𝑝 ∗ 
+
+> 𝑖
+
+) to GPU. This partition forms the execution plan Π(𝑠 ) 
+
+> 𝑖
+
+passed to the inference engine. After selecting 𝑝 ∗ 
+
+> 𝑖
+
+, the controller places the GPU-assigned misses in the exact transfer queue: 
+
+QE 
+
+> 𝑖
+
+= (𝑒 1, . . . , 𝑒 𝑝 ∗ 
+
+> 𝑖
+
+). (16) It immediately drains this queue to load the selected expert weights into the GPU pool, while the inference engine starts the CPU-assigned experts. Once the exact transfers complete, the engine executes the GPU-assigned experts, and the trans-fer channel becomes available for speculative assignment. 
+
+Speculative expert assignment. Speculative assignment uses the speculative ranker’s ordered descriptor bD (𝑠 ) 
+
+> 𝑖 +1
+
+to place 
+
+> 6Apex
+
+Algorithm 1: Adaptive assignment with exact and speculative transfers 
+
+Input: Activated set A𝑖 , loads {𝑛 𝑖,𝑒 }, resident sets 
+
+R𝑖 , R𝑖 +1, prediction bD (𝑠 )
+
+> 𝑖 +1
+
+, rates 𝑣 C, 𝑣 G, 𝑣 T.
+
+Output: Execution plan Π(𝑠 ) 
+
+> 𝑖
+
+and transfer queues 
+
+QE 
+
+> 𝑖
+
+, QS
+
+> 𝑖 +1
+
+. 
+
+> 1
+
+Identify GPU misses: M𝑖 ← A 𝑖 \ R 𝑖 ; 𝑚 ← |M 𝑖 |; 
+
+> 2
+
+Sort misses by token-load: 𝑛 𝑖,𝑒 1 ≥ · · · ≥ 𝑛 𝑖,𝑒 𝑚 ; 
+
+> 3
+
+Initialize prefix load: 𝑆 0 ← 0;  
+
+> 4
+
+for 𝑝 ← 1 to 𝑚 do  
+
+> 5
+
+Accumulate token-load: 𝑆 𝑝 ← 𝑆 𝑝 −1 + 𝑛 𝑖,𝑒 𝑝 ; 
+
+> 6
+
+Compute resident load: 𝐿 R ← Í𝑒 ∈ A 𝑖 ∩R 𝑖 𝑛 𝑖,𝑒 ; 
+
+> 7
+
+Initialize best choice: 𝑇 ∗ ← ∞ ; 𝑝 ∗ 
+
+> 𝑖
+
+← 0;  
+
+> 8
+
+for 𝑝 ← 0 to 𝑚 do  
+
+> 9
+
+Estimate CPU latency: b𝑇 C 
+
+> 𝑖
+
+(𝑝 ) ← ( 𝑆 𝑚 − 𝑆 𝑝 )/ 𝑣 C; 
+
+> 10
+
+Estimate GPU path latency: 
+
+b𝑇 G 
+
+> 𝑖
+
+(𝑝 ) ← 𝑝 /𝑣 T + ( 𝐿 R + 𝑆 𝑝 )/ 𝑣 G; 
+
+> 11
+
+Evaluate layer latency: 𝑇 𝑝 ← max {b𝑇 C 
+
+> 𝑖
+
+(𝑝 ), b𝑇 G 
+
+> 𝑖
+
+(𝑝 )} ; 
+
+> 12
+
+if 𝑇 𝑝 < 𝑇 ∗ then  
+
+> 13
+
+Update best choice: 𝑇 ∗ ← 𝑇 𝑝 ; 𝑝 ∗ 
+
+> 𝑖
+
+← 𝑝 ; 
+
+> 14
+
+Partition missed experts: G𝑖 ← { 𝑒 𝑟 | 1 ≤ 𝑟 ≤ 𝑝 ∗ 
+
+> 𝑖
+
+};
+
+C𝑖 ← M 𝑖 \ G 𝑖 ; 
+
+> 15
+
+Build execution plan: 
+
+Π(𝑠 ) 
+
+> 𝑖
+
+← { CPU : C𝑖 , GPU : (A 𝑖 ∩ R 𝑖 ) ∪ G 𝑖 }; 
+
+> 16
+
+Build exact queue: QE 
+
+> 𝑖
+
+← ( 𝑒 𝑟 )𝑝 ∗ 
+
+> 𝑖
+> 𝑟 =1
+
+; 
+
+> 17
+
+Build speculative queue: QS 
+
+> 𝑖 +1
+
+← ( b𝑒 𝑟 | b𝑒 𝑟 ∉ R𝑖 +1) in prediction order;  
+
+> 18
+
+Run CPU experts while draining QE 
+
+> 𝑖
+
+; 
+
+> 19
+
+When QE 
+
+> 𝑖
+
+= ∅, run GPU experts and prefetch from 
+
+QS 
+
+> 𝑖 +1
+
+concurrently;  
+
+> 20
+
+At next exact routing, stop prefetching and clear QS
+
+> 𝑖 +1
+
+;retain loaded experts;  
+
+> 21
+
+Update runtime rates 𝑣 C, 𝑣 G, 𝑣 T;predicted next-layer experts on GPU before their exact de-mand is known. The controller filters out experts already resident in the next layer’s GPU expert pool and preserves the ranker’s order of decreasing predicted token-load. Let 
+
+(e𝑒 1, . . . , e𝑒 ℓ ) denote the remaining candidates. The controller constructs the speculative transfer queue as: 
+
+QS 
+
+> 𝑖 +1
+
+= (e𝑒 1, . . . , e𝑒 ℓ ). (17) After all transfers in QE 
+
+> 𝑖
+
+complete, the controller transfers these candidates to GPU one by one while ongoing compu-tation proceeds. Unlike exact assignment, which selects a transfer count from the current demand and runtime rates, speculative assignment follows the predicted priority for as long as the overlap window permits. When the router of layer 𝑖 + 1 produces the exact routing result, the controller stops speculative transfers and clears the remaining entries in QS
+
+> 𝑖 +1
+
+. Completed prefetches remain in the GPU pool and are included in the resident set used by the next exact assignment. The controller then prioritizes the new exact transfers and uses the prediction for layer 𝑖 + 2to prepare the next speculative assignment. 
+
+Overall runtime algorithm. Algorithm 1 summarizes this workflow. Lines 1–6 identify and sort the current GPU misses, compute their accumulated loads 𝑆 𝑝 , and obtain the activated GPU-resident load 𝐿 R. Lines 7–13 scan all transfer counts 𝑝 ∈ { 0, . . . , 𝑚 }, estimate the CPU and GPU path laten-cies, and retain the count 𝑝 ∗ 
+
+> 𝑖
+
+that minimizes their maximum. Lines 14–16 convert this choice into the CPU-GPU execu-tion plan and exact transfer queue, while line 17 prepares the speculative queue from predicted experts. Execution then follows the transfer priority: line 18 overlaps CPU execution with exact weight transfers, and line 19 starts GPU execution and speculative prefetching after those transfers complete. At the next exact routing event, line 20 stops speculative prefetching while retaining the experts already transferred. Finally, line 21 updates the runtime rates for subsequent assignment decisions. 
+
+3.4 Inference Engine 
+
+The inference engine controls the forward pass and real-izes the CPU-GPU execution plan produced by the transfer controller. For each Transformer layer, it first performs the original normalization and attention computation on GPU. The attention output is then passed to the MoE block, where the router determines the selected experts and routing scores for every token. The router reports the exact activated ex-perts and their loads to the transfer controller, which returns the execution plan Π(𝑠 ) 
+
+> 𝑖
+
+.After receiving the plan, the inference engine groups hid-den states by their selected experts and dispatches each group to its assigned device. For every expert in C𝑖 (𝑝 ∗ 
+
+> 𝑖
+
+), the corresponding hidden states are sent to CPU and processed using the experts in host memory. The resulting outputs are then returned to GPU. In parallel, the controller trans-fers the missed experts in G𝑖 (𝑝 ∗ 
+
+> 𝑖
+
+) according to QE 
+
+> 𝑖
+
+. Once the exact queue is empty, the inference engine executes these newly transferred experts on GPU. The controller then uses the available transfer window to prefetch next-layer experts while GPU computation proceeds. Each selected expert pro-duces an output y𝑖,𝑡,𝑒 for every assigned token. After both executions complete and the CPU results return, the infer-ence engine merges all expert outputs using the original routing scores: 
+
+m𝑖,𝑡 =∑︁  
+
+> 𝑒 ∈ T 𝑖,𝑡
+
+𝛼 𝑖,𝑡,𝑒 y𝑖,𝑡,𝑒 , x𝑖 +1,𝑡 = Norm  h𝑖,𝑡 + m𝑖,𝑡 
+
+ . (18) The resulting X𝑖 +1 becomes the input to the next Trans-former layer, and the same workflow repeats. Besides, the 
+
+> 7Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng
+
+Table 1. MoE models used in the evaluation.                  
+
+> Model Parameters Experts Total Activated Total Activated Qwen3.5-35B-A3B 35B 3B 256 8Qwen3-Next-80B-A3B 80B 3B 512 10 GLM-4.5-Air 106B 12B 128 8
+
+inference engine reports the token-loads and the end-to-end CPU, GPU, and transfer times. The transfer controller uses these measurements to update the online rates in Eq. (13), while the expert pool manager uses the token-load to main-tain cache priority. The first Transformer layer performs exact assignment without an earlier transfer, and the final layer disables speculative assignments. 
+
+3.5 Expert Pool Manager 
+
+The expert pool manager maintains the fixed-capacity expert pool in GPU memory. Before every assignment decision, it reports the latest resident set R𝑖 to the transfer controller. Whenever the transfer controller brings in a new expert, the manager evicts an existing expert according to the eviction policy. The eviction policy aims to remove an expert that is unlikely to be activated again, thereby reducing the probabil-ity of reloading an expert shortly after its eviction. To capture both the recency and frequency of recent routing demand, the manager records an exponentially decayed token-load utility. At inference step 𝑠 , it updates the utility as: 
+
+𝑢 (𝑠 ) 
+
+> 𝑖,𝑒
+
+= 𝛾𝑢 (𝑠 −1) 
+
+> 𝑖,𝑒
+
++ ( 1 − 𝛾 )𝑛 (𝑠 ) 
+
+> 𝑖,𝑒
+
+, 0 ≤ 𝛾 < 1, (19) where 𝑛 (𝑠 ) 
+
+> 𝑖,𝑒
+
+= 0 when expert 𝑒 is inactive. The utility empha-sizes recent token-loads, which are the key signal for expert assignment. Before selecting an eviction victim, the manager excludes all experts that will be used by the current inference step according to the execution plan. Consequently, experts that repeatedly receive many tokens are more likely to re-main in GPU memory, whereas experts with infrequent or low-load activations are replaced first. 
+
+## 4 Performance Evaluation 
+
+4.1 Experimental Setup Implementation. We implement Apex on top of KTrans-formers [5], an efficient CPU-GPU collaborative inference framework. KTransformers keeps the complete expert weights in CPU host memory and retains only a subset of experts in GPU memory. It uses SGLang [47] for GPU execution and provides optimized MoE kernels for CPU expert com-putation. To support Apex , we extend the framework with next-layer expert prediction and prefetching, online CPU-GPU expert assignment, and GPU expert-pool management. We conduct all experiments on a server equipped with one NVIDIA RTX A6000 GPU with 48 GB of memory, one Intel Xeon Platinum 8358P CPU, and 512 GB of host memory. The CPU and GPU communicate through PCIe 4.0 ×16, which provides a theoretical peak bandwidth of 32 GB/s. 
+
+Models and workloads. We evaluate Apex using three representative MoE models: Qwen3.5-35B-A3B [31], Qwen3-Next-80B-A3B-Instruct [30], and GLM-4.5-Air [37]. As sum-marized in Table 1, these models differ substantially in total parameter count, activated parameters, number of total ex-perts, and number of activated experts. They therefore allow us to evaluate Apex across diverse model scales and expert-activation patterns. All models use BF16 precision. None of them can be fully accommodated by the 48 GB GPU, mak-ing expert offloading necessary. We construct the inference workloads from the validation split of MMLU [13] and vary the batch size to evaluate the systems under different serving loads. We use the disjoint training split only for the offline profiling such as collecting expert activation frequencies. 
+
+Baselines. We compare Apex against three representative expert-offloading approaches. 
+
+Mixtral-Offloading [9] follows pure GPU execution and performs all expert computation on GPU. It predicts the experts required by the next layer from the current layer’s intermediate representations and prefetches their weights to reduce exposed transfer latency. 
+
+Fiddler [19] represents static CPU-GPU collaborative exe-cution. It profiles expert activation frequencies offline, places the most frequently activated experts on GPU, and executes every GPU-missed expert directly on CPU. Its expert place-ment remains unchanged during inference, and no experts are transferred at runtime. 
+
+Post-Fetch [15] also executes every GPU-missed expert on CPU. After each inference iteration, however, it transfers the missed experts to GPU for possible reuse in subsequent decoding iterations. To isolate the effects of their transfer and execution poli-cies, we reproduce all baselines within the same KTransform-ers framework and assign them the same GPU expert-pool capacity as Apex .
+
+Metrics. We quantify prefill performance using time to first token (TTFT) and prefill speed, and decode performance using time per output token (TPOT) and decode through-put [1, 49]. TTFT measures the latency until the first output token is generated, while prefill speed measures the num-ber of prompt tokens processed per second. TPOT measures the average time to generate each subsequent output to-ken, while decode throughput measures the total number of output tokens generated per second across the batch. Lower TTFT and TPOT and higher prefill speed and decode through-put indicate better performance. 
+
+4.2 Overall Performance 
+
+We first compare the end-to-end performance of Apex and the baselines across different batch sizes. We evaluate batch sizes of 1, 8, 16, 24, and 32 and report both prefill speed and                  
+
+> 8Apex Fiddler Post-Fetch Mixtral-Offloading Apex 1816 24 32
+> Batch size
+> 0100 200 300 400
+> Prefill speed (tokens/s)
+> (a) Qwen3.5-35B-A3B 1816 24 32
+> Batch size
+> 060 120 180 240
+> Prefill speed (tokens/s) (b) Qwen3-Next-80B-A3B 1816 24 32
+> Batch size
+> 0816 24 32
+> Prefill speed (tokens/s) (c) GLM-4.5-Air
+
+Figure 5. End-to-end prefill speed of Apex and the baselines across batch sizes on three MoE models. Fiddler Post-Fetch Mixtral-Offloading Apex 1 8 16 24 32           
+
+> Batch size
+> 030 60 90 120
+> Decode speed (tokens/s)
+> (a) Qwen3.5-35B-A3B 1816 24 32
+> Batch size
+> 020 40 60
+> Decode speed (tokens/s) (b) Qwen3-Next-80B-A3B 1816 24 32
+> Batch size
+> 04812 16
+> Decode speed (tokens/s) (c) GLM-4.5-Air
+
+Figure 6. End-to-end decode throughput of Apex and the baselines across batch sizes on three MoE models. decode throughput for every model and method. For each model, we select a fixed GPU expert-pool capacity that fits within the available memory and use the same capacity for all methods. Specifically, the GPU pool accommodates 64 ex-perts for Qwen3.5-35B-A3B, 56 experts for Qwen3-Next-80B-A3B-Instruct, and 12 experts for GLM-4.5-Air. The remaining GPU memory is reserved for non-expert model parameters, the KV cache, and runtime buffers. As shown in Figure 5, 
+
+Apex consistently achieves the highest throughput across all models and batch sizes during the prefill stage. Compared with the strongest baseline, it improves prefill speed by 31.2% on average and by up to 51.9%. Post-Fetch has the same pre-fill speed as Fiddler because its transfers occur only after an inference iteration and therefore cannot accelerate the current prefill stage. Mixtral-Offloading is generally slower than the two CPU-GPU collaborative baselines. This result shows that, under limited PCIe bandwidth, transferring ev-ery GPU-missed expert costs more than directly computing missed experts on CPU. The prefill gain is relatively small at batch size 1, where few tokens are routed and the loads of activated experts provide limited opportunities for selective assignment. As the batch size increases, more experts are activated and their token-loads become increasingly uneven. 
+
+Apex exploits this diversity by transferring high-load misses to GPU, reducing CPU computation without introducing the excessive traffic of pure GPU execution. Figure 6 illustrates gains in the decode stage, in which 
+
+Apex improves throughput over the strongest baseline by 31.1% on average and by up to 39.5%. Unlike in prefill, Post-Fetch can benefit from expert reuse across decoding iter-ations and therefore generally outperforms Fiddler. How-ever, its inter-step transfer reflects the previous iteration and does not account for the current iteration. By combining speculative and exact expert assignment, Apex avoids both limitations and remains the best-performing method. The improvement also depends on the specific MoE architecture. Averaged over both phases and all batch sizes, Apex improves over the strongest baseline by 36.4% on Qwen3-Next, 34.1% on Qwen3.5, and 22.9% on GLM-4.5-Air. Qwen3-Next con-tains 512 experts and activates only 10 of them per token, providing fine-grained choices for moving high-load experts. GLM-4.5-Air has fewer, larger experts and activates 12B pa-rameters per token. Each expert transfer is therefore more expensive and the assignment choice is coarser, leaving less room for improvement. 
+
+> 9Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng
+
+Table 2. Throughput under different GPU expert pool capacities at batch size 16. 
+
+Prefill speed (tokens/s) Decode throughput (tokens/s) Model ( 𝐺 0) Method 0.5𝐺 0 0.75 𝐺 0 𝐺 0 1.25 𝐺 0 1.5𝐺 0 0.5𝐺 0 0.75 𝐺 0 𝐺 0 1.25 𝐺 0 1.5𝐺 0
+
+Qwen3.5 (64) Fiddler 177.60 205.90 249.60 316.50 383.80 56.10 65.10 72.44 83.80 93.90 Post-Fetch 177.60 205.90 249.60 316.50 383.80 59.19 69.31 75.85 94.33 104.33 Mixtral-Off. 181.94 201.69 236.20 258.71 284.24 46.14 52.88 56.51 60.43 63.40 
+
+Apex 231.20 288.20 350.30 451.10 520.30 83.60 97.20 103.35 132.90 148.60 
+
+Qwen3-Next (56) Fiddler 124.60 133.00 149.02 172.57 194.89 38.20 40.80 43.54 48.77 51.76 Post-Fetch 124.60 133.00 149.02 172.57 194.89 37.40 41.33 45.09 52.81 61.36 Mixtral-Off. 112.07 120.73 133.82 158.76 172.35 22.42 26.17 27.39 29.82 33.78 
+
+Apex 165.10 191.40 219.98 258.75 289.97 56.60 61.30 62.88 77.04 84.44 
+
+GLM-4.5-Air (12) Fiddler 29.37 30.83 32.09 32.47 33.49 8.59 8.91 9.25 9.50 9.66 Post-Fetch 29.37 30.83 32.09 32.47 33.49 9.82 10.18 10.44 11.06 12.36 Mixtral-Off. 23.74 26.88 28.06 30.29 32.94 7.79 8.46 9.22 10.68 11.66 
+
+Apex 32.10 34.91 37.64 39.72 41.53 12.94 13.74 14.03 15.29 15.80 Experts transferred Latency 32 48 64 80 96      
+
+> Number of GPU experts
+> 0510 15
+> Experts transferred
+> 012345
+> TTFT (s)
+> (a) Prefill stage 32 48 64 80 96
+> Number of GPU experts
+> 0246
+> Experts transferred
+> 050 100 150 200
+> TPOT (ms) (b) Decode stage
+
+Figure 7. Impact of GPU-resident expert capacity on expert transfers and inference latency for Qwen3.5-35B-A3B. 
+
+4.3 Performance across GPU Memory Budgets 
+
+We next evaluate the effectiveness of Apex under different GPU memory constraints. We fix the batch size to 16 and vary the capacity of the GPU expert pool. A smaller pool pro-duces more GPU misses and places greater pressure on CPU execution and expert transfer, whereas a larger pool allows more activated experts to execute directly on GPU. We use the capacity from Sec. 4.2 as a practical, model-specific bud-get, denoted by 𝐺 0. Thus, 𝐺 0 is 64 experts for Qwen3.5, 56 for Qwen3-Next, and 12 for GLM-4.5-Air. We sweep the pool ca-pacity from 0 .5𝐺 0 to 1 .5𝐺 0 and conduct experiments, and the results are reported in Table 2. As expected, increasing the resident expert budget improves every method by reducing GPU misses. More importantly, Apex achieves the highest prefill and decode throughput at every budget for all three models. Relative to the strongest baseline in each setting, it improves prefill speed by 33.0% and decode throughput by 39.2% on average. The advantage persists from 0 .5𝐺 0 to 1.5𝐺 0, showing that adaptive assignment is effective under both tight and relatively relaxed GPU memory budgets rather than being tuned to a single configuration. 
+
+Table 3. Ablation results of Apex on Qwen3.5-35B-A3B at batch size 16. 
+
+Average layer latency (ms) Decode Configuration CPU GPU Critical tokens/s No assignment 3.074 0.295 3.074 72.44 SA only 2.515 0.408 2.515 84.62 EA only 2.220 2.320 2.320 90.31 Full Apex 2.130 1.930 2.130 103.35 
+
+To further understand the transfer behavior of Apex , we record the number of transferred experts and the correspond-ing latency on Qwen3.5. We use TTFT for prefill and TPOT for decode in this analysis. As shown in Figure 7, increasing the GPU expert budget reduces both the number of transfers and inference latency. When the pool grows from 32 to 96 experts, the number of prefill transfers decreases from 17.9 to 9.0, while TTFT decreases from 5.19 to 2.30 seconds. During decode, the corresponding transfer count decreases from 5.94 to 3.18 and TPOT decreases from 197.6 to 111.1 milliseconds. With a larger resident pool, fewer activated experts miss on GPU. The CPU consequently receives a smaller workload, so 
+
+Apex needs to transfer fewer high-load experts to balance the concurrent CPU and GPU paths. The GPU-side MoE latency consists of exposed transfer followed by GPU expert com-putation. Since GPU expert computation is short relative to expert transfers, changes in the GPU path are dominated by the number of exposed transfers. The synchronized decrease in transfer count and latency therefore confirms that Apex 
+
+adapts its transfer volume to the available GPU budget. 
+
+4.4 Ablation Study 
+
+We use Qwen3.5-35B-A3B to isolate the contributions of spec-ulative assignment (SA) and exact assignment (EA) in Apex .We compare four configurations: No assignment disables both mechanisms and executes every GPU-missed expert 
+
+> 10 Apex
+
+on CPU. SA only predicts and transfers next-layer experts during the available overlap window, but does not make an exact assignment and won’t make the GPU wait. EA only 
+
+disables prediction and speculative prefetching but retains exact assignment. After exact routing, it selects GPU-missed experts for transfer according to the observed CPU, GPU, and transfer rates. Full Apex enables both mechanisms. SA transfers predicted high-load experts ahead of demand, while EA uses the exact routing result to determine the CPU-GPU assignment at runtime. For each configuration, we report decode throughput and the average per-layer CPU and GPU path latency within the MoE module. The CPU path consists of CPU expert com-putation, whereas the GPU path includes GPU expert com-putation and exposed transfer latency. Since the two paths execute concurrently, we use the maximum of their aver-age times to approximate the critical-path latency. Table 3 shows that SA and EA are complementary. With No assign-ment , the GPU completes its resident-expert computation in only 0.30 ms, while the CPU path takes 3.07 ms and limits throughput to 72.44 tokens/s. SA only uses the overlap win-dow to move predicted high-load experts to GPU without introducing GPU waiting. This reduces the CPU path to 2.52 ms and improves throughput by 16.8%. However, the CPU path remains substantially longer than the 0.41 ms GPU path, indicating that speculative assignment cannot sufficiently balance the two paths. EA only achieves a closer balance by assigning experts according to actual demand and the observed execution rates. The CPU and GPU paths take 2.22 and 2.32 ms, respectively, and throughput improves by 24.7% over No assignment . However, all selected transfers begin after exact routing, exposing their latency on the GPU path and limiting room for improvement. Full Apex combines the benefits of both mechanisms. SA overlaps expert transfers with preceding-layer computation, allowing more CPU work to move to GPU without extending the GPU path. EA then uses exact demand and GPU pool state to balance the remain-ing CPU computation against GPU transfer and computation. Together, they reduce the critical-path latency to 2.13 ms and achieve 103.35 tokens/s, outperforming No assignment , SA only , and EA only by 42.7%, 22.1%, and 14.4%, respectively. 
+
+## 5 Related Work 
+
+The large expert memory footprint of MoE models makes inference challenging under limited GPU memory. Expert offloading alleviates this constraint by storing expert weights in host memory and retaining only a subset on the GPU. Existing approaches primarily differ in how they execute activated experts that are absent from GPU memory. 
+
+Pure GPU execution. Early frameworks, for example, DeepSpeed-Inference [2], use host memory as a backing store and stage model parameters to GPU on demand. MoE-specific systems exploit sparse activation to transfer only the experts selected by the router. Mixtral-Offloading [9] com-bines expert caching with prefetching, which applies a future-layer router to an earlier hidden state and transfers pre-dicted experts before their exact activation is known. MoE-Infinity [42] instead records request-level expert-activation traces and uses the results to guide expert caching and prefetch-ing. Subsequent work improves the timeliness or accuracy of expert prediction. Pre-gated MoE [17] modifies the model so that each gating function selects experts for a later MoE block. ProMoE [35] introduces a learned predictor and coordi-nates prediction, prefetching, and cache replacement to move likely experts into GPU memory before they are requested. fMoE [45] further combines fine-grained expert-selection patterns with semantic information from the input to guide caching and prefetching. Despite these differences, expert computation remains on the GPU, and any GPU-missed ex-pert must be transferred over PCIe before execution. 
+
+CPU-GPU collaborative execution. Other systems ex-ploit CPU computation to reduce expert weight transfers. Instead of transferring GPU-missed experts, they send the much smaller activations to CPU, execute the correspond-ing experts in host memory, and return their outputs to GPU. Fiddler [19] demonstrates that this strategy can out-perform weight transfers for memory-constrained, small-batch MoE inference. It profiles expert popularity to keep frequently activated experts resident on GPU. During in-ference, GPU-missed experts execute on CPU. KTransform-ers [5] provides optimized heterogeneous kernels for exe-cuting selected model operators, including MoE experts, on CPU. Recent work further refines expert residency for collab-orative execution. Huang et al. [15], referred to as Post-Fetch 
+
+in our evaluation, execute a GPU-missed expert on CPU for the current inference step and asynchronously transfer its weights into the GPU for potential reuse by subsequent inference steps. These approaches demonstrate that CPU computation can reduce costly expert transfers and enable both processors to contribute to MoE inference. 
+
+## 6 Conclusion 
+
+This paper presents Apex , a CPU-GPU collaborative infer-ence system for memory-constrained MoE inference. Apex 
+
+uses the token-load of each expert and online measurements of CPU computation, GPU computation, and expert trans-fer to determine its execution device at runtime, avoiding both long CPU execution time and excessive transfer time. We implement Apex on KTransformers and evaluate it on modern MoE models. Compared with the strongest baseline, Apex improves prefill speed by 31.2% on average and up to 51.9%, while increasing decode throughput by 31.1% on average and up to 39.5%. Its advantage persists across all evaluated GPU capacities. These results demonstrate that balancing expert transfer against CPU computation at run-time enables efficient inference of large MoE models under limited GPU-memory budgets. 
+
+> 11
+
+Wenhui Lv, Yunming Liao, Hongli Xu, Yang Xu, Junhao Cheng 
+
+## References 
+
+[1] Amey Agrawal, Nitin Kedia, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav S. Gulavani, Alexey Tumanov, and Ramachandran Ramjee. 2024. Taming throughput-latency tradeoff in LLM inference with sarathi-serve. In Proceedings of the 18th USENIX Conference on Operating Systems Design and Implementation (Santa Clara, CA, USA) (OSDI’24). USENIX Association, USA, Article 7, 18 pages. [2] Reza Yazdani Aminabadi, Samyam Rajbhandari, Ammar Ahmad Awan, Cheng Li, Du Li, Elton Zheng, Olatunji Ruwase, Shaden Smith, Minjia Zhang, Jeff Rasley, and Yuxiong He. 2022. DeepSpeed-Inference: Enabling Efficient Inference of Transformer Models at Unprecedented Scale. In SC22: International Conference for High Performance Computing, Networking, Storage and Analysis. 1–15. doi: 10.1109/SC41404.2022.00051 
+
+[3] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, et al. 2020. Language models are few-shot learn-ers. In Proceedings of the 34th International Conference on Neural Information Processing Systems (Vancouver, BC, Canada) (NIPS ’20). Curran Associates Inc., Red Hook, NY, USA, Article 159, 25 pages. [4] Weilin Cai, Juyong Jiang, Fan Wang, Jing Tang, Sunghun Kim, and Jiayi Huang. 2025. A Survey on Mixture of Experts in Large Language Mod-els. IEEE Transactions on Knowledge and Data Engineering (2025), 1–20. doi: 10.1109/tkde.2025.3554028 
+
+[5] Hongtao Chen, Weiyu Xie, Boxin Zhang, Jingqi Tang, Jiahao Wang, Jianwei Dong, Shaoyuan Chen, Ziwei Yuan, Chen Lin, Chengyu Qiu, Yuening Zhu, Qingliang Ou, Jiaqi Liao, Xianglin Chen, Zhiyuan Ai, Yongwei Wu, and Mingxing Zhang. 2025. KTransformers: Unleashing the Full Potential of CPU/GPU Hybrid Inference for MoE Models. In Proceedings of the ACM SIGOPS 31st Symposium on Operating Systems Principles (Lotte Hotel World, Seoul, Republic of Korea) (SOSP ’25). Association for Computing Machinery, New York, NY, USA, 1014–1029. doi: 10.1145/3731569.3764843 
+
+[6] Junyu Chen, Jungang Li, Jing Xiong, Wenjie Wang, Qingyao Yang, He Xiao, Zhen Li, Taiqiang Wu, Mengzhao Chen, Zhen Peng, Chaofan Tao, Long Shi, Hongxia Yang, and Ngai Wong. 2026. BPDQ: Bit-Plane Decomposition Quantization on a Variable Grid for Large Language Models. arXiv:2602.04163 [cs.LG] https://arxiv.org/abs/2602.04163 
+
+[7] Damai Dai, Chengqi Deng, Chenggang Zhao, R. X. Xu, Huazuo Gao, Deli Chen, Jiashi Li, Wangding Zeng, Xingkai Yu, Y. Wu, Zhenda Xie, Y. K. Li, Panpan Huang, Fuli Luo, Chong Ruan, Zhifang Sui, and Wen-feng Liang. 2024. DeepSeekMoE: Towards Ultimate Expert Specializa-tion in Mixture-of-Experts Language Models. arXiv:2401.06066 [cs.CL] 
+
+https://arxiv.org/abs/2401.06066 
+
+[8] DeepSeek-AI, Aixin Liu, Bei Feng, Bing Xue, et al. 2025. DeepSeek-V3 Technical Report. arXiv:2412.19437 [cs.CL] https://arxiv.org/abs/2412. 19437 
+
+[9] Artyom Eliseev and Denis Mazur. 2023. Fast Inference of Mixture-of-Experts Language Models with Offloading. arXiv:2312.17238 [cs.LG] 
+
+https://arxiv.org/abs/2312.17238 
+
+[10] William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch trans-formers: scaling to trillion parameter models with simple and efficient sparsity. J. Mach. Learn. Res. 23, 1, Article 120 (Jan. 2022), 39 pages. [11] Trevor Gale, Deepak Narayanan, Cliff Young, and Matei Zaharia. 2022. MegaBlocks: Efficient Sparse Training with Mixture-of-Experts. arXiv:2211.15841 [cs.LG] https://arxiv.org/abs/2211.15841 
+
+[12] GLM-5-Team, Aohan Zeng, Xin Lv, Zhenyu Hou, Zhengxiao Du, et al. 2026. GLM-5: from Vibe Coding to Agentic Engineering. arXiv:2602.15763 [cs.LG] https://arxiv.org/abs/2602.15763 
+
+[13] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2021. Measuring Mas-sive Multitask Language Understanding. arXiv:2009.03300 [cs.CY] 
+
+https://arxiv.org/abs/2009.03300 
+
+[14] Connor Holmes, Masahiro Tanaka, Michael Wyatt, Ammar Ahmad Awan, Jeff Rasley, Samyam Rajbhandari, Reza Yazdani Aminabadi, Heyang Qin, Arash Bakhtiari, Lev Kurilenko, and Yuxiong He. 2024. DeepSpeed-FastGen: High-throughput Text Generation for LLMs via MII and DeepSpeed-Inference. arXiv:2401.08671 [cs.PF] https://arxiv. org/abs/2401.08671 
+
+[15] En-Ming Huang, Li-Shang Lin, and Chun-Yi Lee. 2026. Effi-cient CPU-GPU Collaborative Inference for MoE-based LLMs on Memory-Limited Systems. In 2026 31st Asia and South Pacific Design Automation Conference (ASP-DAC). 333–340. doi: 10.1109/ASP-DAC66049.2026.11420335 
+
+[16] Changho Hwang, Wei Cui, Yifan Xiong, Ziyue Yang, Ze Liu, Han Hu, Zilong Wang, Rafael Salas, Jithin Jose, Prabhat Ram, Joe Chau, Peng Cheng, Fan Yang, Mao Yang, and Yongqiang Xiong. 2023. Tutel: Adaptive Mixture-of-Experts at Scale. arXiv:2206.03382 [cs.DC] https: //arxiv.org/abs/2206.03382 
+
+[17] Ranggi Hwang, Jianyu Wei, Shijie Cao, Changho Hwang, Xiaohu Tang, Ting Cao, and Mao Yang. 2025. Pre-Gated MoE: An Algorithm-System Co-Design for Fast and Scalable Mixture-of-Expert Infer-ence. In Proceedings of the 51st Annual International Symposium on Computer Architecture (Buenos Aires, Argentina) (ISCA ’24). IEEE Press, 1018–1031. doi: 10.1109/ISCA59077.2024.00078 
+
+[18] Albert Q. Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, et al. 2024. Mixtral of Experts. arXiv:2401.04088 [cs.LG] https://arxiv. org/abs/2401.04088 
+
+[19] Keisuke Kamahori, Tian Tang, Yile Gu, Kan Zhu, and Baris Kasikci. 2025. Fiddler: CPU-GPU Orchestration for Fast Inference of Mixture-of-Experts Models. arXiv:2402.07033 [cs.LG] https://arxiv.org/abs/ 2402.07033 
+
+[20] Hyungyo Kim, Gaohan Ye, Nachuan Wang, Amir Yazdanbakhsh, and Nam Sung Kim. 2024. Exploiting Intel Advanced Matrix Ex-tensions (AMX) for Large Language Model Inference. IEEE Computer Architecture Letters 23, 1 (2024), 117–120. doi: 10.1109/LCA.2024. 3397747 
+
+[21] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. 2023. Efficient Memory Management for Large Language Model Serving with PagedAttention. In Proceedings of the 29th Symposium on Operating Systems Principles (Koblenz, Germany) (SOSP ’23). As-sociation for Computing Machinery, New York, NY, USA, 611–626. doi: 10.1145/3600006.3613165 
+
+[22] Wonbeom Lee, Jungi Lee, Junghwan Seo, and Jaewoong Sim. 2024. InfiniGen: efficient generative inference of large language models with dynamic KV cache management. In Proceedings of the 18th USENIX Conference on Operating Systems Design and Implementation (Santa Clara, CA, USA) (OSDI’24). USENIX Association, USA, Article 9, 18 pages. [23] Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. 2020. GShard: Scaling Giant Models with Condi-tional Computation and Automatic Sharding. arXiv:2006.16668 [cs.CL] 
+
+https://arxiv.org/abs/2006.16668 
+
+[24] Jinhao Li, Jiaming Xu, Shan Huang, Yonghua Chen, Wen Li, Jun Liu, Yaoxiu Lian, Jiayi Pan, Li Ding, Hao Zhou, Yu Wang, and Guo-hao Dai. 2025. Large Language Model Inference Acceleration: A Comprehensive Hardware Perspective. arXiv:2410.04466 [cs.AR] 
+
+https://arxiv.org/abs/2410.04466 
+
+[25] Ji Lin, Jiaming Tang, Haotian Tang, Shang Yang, Guangxuan Xiao, and Song Han. 2025. AWQ: Activation-aware Weight Quantization for On-Device LLM Compression and Acceleration. GetMobile: Mobile Comp. and Comm. 28, 4 (Jan. 2025), 12–17. doi: 10.1145/3714983.3714987 
+
+[26] Juxin Niu, Wei Zhang, Chun Jason Xue, and Nan Guan. 2024. RTiL: Real-Time Inference of Large Language Models on Memory-Constrained GPU Devices. In 2024 IEEE 30th International Conference on Embedded and Real-Time Computing Systems and Applications (RTCSA). 21–30. doi: 10.1109/RTCSA62462.2024.00013 
+
+12 Apex 
+
+[27] OpenAI, Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, et al. 2024. GPT-4 Technical Report. arXiv:2303.08774 [cs.CL] https: //arxiv.org/abs/2303.08774 
+
+[28] OpenAI, Sandhini Agarwal, Lama Ahmad, Jason Ai, Sam Altman, Andy Applebaum, et al. 2025. gpt-oss-120b & gpt-oss-20b Model Card. arXiv:2508.10925 [cs.CL] https://arxiv.org/abs/2508.10925 
+
+[29] Hiari Pizzini Cavagna, Daniele Cesarini, and Andrea Bartolini. 2025. Assessing Tenstorrent’s RISC-V MatMul Acceleration Ca-pabilities. In High Performance Computing: ISC High Performance 2025 International Workshops, Hamburg, Germany, June 10–13, 2025, Revised Selected Papers (Hamburg, Germany). Springer-Verlag, Berlin, Heidelberg, 123–134. doi: 10.1007/978-3-032-07612-0_10 
+
+[30] Qwen Team. 2025. Qwen3-Next-80B-A3B-Instruct. Official model card. https://huggingface.co/Qwen/Qwen3-Next-80B-A3B-Instruct 
+
+[31] Qwen Team. 2026. Qwen3.5: Towards Native Multimodal Agents. 
+
+https://qwen.ai/blog?id=qwen3.5 
+
+[32] Samyam Rajbhandari, Conglong Li, Zhewei Yao, Minjia Zhang, Reza Yazdani Aminabadi, Ammar Ahmad Awan, Jeff Rasley, and Yuxiong He. 2022. DeepSpeed-MoE: Advancing Mixture-of-Experts Inference and Training to Power Next-Generation AI Scale. arXiv:2201.05596 [cs.LG] https://arxiv.org/abs/2201.05596 
+
+[33] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. 2017. Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. arXiv:1701.06538 [cs.LG] https://arxiv.org/abs/1701.06538 
+
+[34] Ying Sheng, Lianmin Zheng, Binhang Yuan, Zhuohan Li, Max Ryabinin, Beidi Chen, Percy Liang, Christopher Ré, Ion Stoica, and Ce Zhang. 2023. FlexGen: high-throughput generative inference of large language models with a single GPU. In Proceedings of the 40th International Conference on Machine Learning (Honolulu, Hawaii, USA) (ICML’23). JMLR.org, Article 1288, 23 pages. [35] Xiaoniu Song, Zihang Zhong, Rong Chen, and Haibo Chen. 2025. ProMoE: Fast MoE-based LLM Serving using Proactive Caching. arXiv:2410.22134 [cs.DC] https://arxiv.org/abs/2410.22134 
+
+[36] Peng Tang, Jiacheng Liu, Xiaofeng Hou, Yifei Pu, Jing Wang, Pheng-Ann Heng, Chao Li, and Minyi Guo. 2024. HOBBIT: A Mixed Precision Expert Offloading System for Fast MoE Inference. arXiv:2411.01433 [cs.LG] https://arxiv.org/abs/2411.01433 
+
+[37] GLM-4.5 Team, Aohan Zeng, Xin Lv, Qinkai Zheng, Zhenyu Hou, Bin Chen, et al. 2025. GLM-4.5: Agentic, Reasoning, and Coding (ARC) Foundation Models. arXiv:2508.06471 [cs.CL] https://arxiv.org/abs/ 2508.06471 
+
+[38] Gemini Team, Rohan Anil, Sebastian Borgeaud, Jean-Baptiste Alayrac, Jiahui Yu, et al. 2025. Gemini: A Family of Highly Capable Multimodal Models. arXiv:2312.11805 [cs.CL] https://arxiv.org/abs/2312.11805 
+
+[39] Kimi Team, Tongtong Bai, Yifan Bai, Yiping Bao, M. C., Jianfeng Cai, Xinyuan Cai, et al. 2026. Kimi K3: Open Frontier Intelligence. arXiv:2607.24653 [cs.CL] https://arxiv.org/abs/2607.24653 
+
+[40] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, et al. 2023. Llama 2: Open Foundation and Fine-Tuned Chat Models. arXiv:2307.09288 [cs.CL] https://arxiv.org/abs/2307.09288 
+
+[41] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. 2023. Attention Is All You Need. arXiv:1706.03762 [cs.CL] https://arxiv.org/ abs/1706.03762 
+
+[42] Leyang Xue, Yao Fu, Zhan Lu, Luo Mai, and Mahesh Marina. 2025. MoE-Infinity: Efficient MoE Inference on Personal Machines with Sparsity-Aware Expert Cache. arXiv:2401.14361 [cs.LG] https://arxiv. org/abs/2401.14361 
+
+[43] Jiaming Yan, Jianchun Liu, Hongli Xu, and Liusheng Huang. 2025. Accelerating Mixture-of-Expert Inference with Adaptive Expert Split Mechanism. arXiv:2509.08342 [cs.LG] https://arxiv.org/abs/2509.08342 
+
+[44] Gyeong-In Yu, Joo Seong Jeong, Geon-Woo Kim, Soojeong Kim, and Byung-Gon Chun. 2022. Orca: A Distributed Serving Sys-tem for Transformer-Based Generative Models. In 16th USENIX Symposium on Operating Systems Design and Implementation (OSDI 22). USENIX Association, Carlsbad, CA, 521–538. https://www.usenix. org/conference/osdi22/presentation/yu 
+
+[45] Hanfei Yu, Xingqi Cui, Hong Zhang, Hao Wang, and Hao Wang. 2026. Taming Latency-Memory Trade-Off in MoE-Based LLM Serving via Fine-Grained Expert Offloading. In Proceedings of the 21st European Conference on Computer Systems (McEwan Hall/The University of Edinburgh, Edinburgh, Scotland UK) (EUROSYS ’26). Association for Computing Machinery, New York, NY, USA, 176–191. doi: 10.1145/ 3767295.3769319 
+
+[46] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, et al. 2022. OPT: Open Pre-trained Transformer Language Models. arXiv:2205.01068 [cs.CL] https://arxiv.org/abs/2205.01068 
+
+[47] Lianmin Zheng, Liangsheng Yin, Zhiqiang Xie, Chuyue Sun, Jeff Huang, Cody Hao Yu, Shiyi Cao, Christos Kozyrakis, Ion Sto-ica, Joseph E. Gonzalez, Clark Barrett, and Ying Sheng. 2024. SGLang: efficient execution of structured language model programs. In Proceedings of the 38th International Conference on Neural Information Processing Systems (Vancouver, BC, Canada) (NIPS ’24). Curran Associates Inc., Red Hook, NY, USA, Article 2000, 27 pages. [48] Shuzhang Zhong, Ling Liang, Yuan Wang, Runsheng Wang, Ru Huang, and Meng Li. 2025. AdapMoE: Adaptive Sensitivity-based Expert Gating and Management for Efficient MoE Inference. In Proceedings of the 43rd IEEE/ACM International Conference on Computer-Aided Design (Newark Liberty International Airport Marriott, New York, NY, USA) (ICCAD ’24). Association for Computing Machinery, New York, NY, USA, Article 51, 9 pages. doi: 10.1145/3676536.3676741 
+
+[49] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xuanzhe Liu, Xin Jin, and Hao Zhang. 2024. DistServe: disaggre-gating prefill and decoding for goodput-optimized large language model serving. In Proceedings of the 18th USENIX Conference on Operating Systems Design and Implementation (Santa Clara, CA, USA) (OSDI’24). USENIX Association, USA, Article 11, 18 pages. [50] Barret Zoph, Irwan Bello, Sameer Kumar, Nan Du, Yanping Huang, Jeff Dean, Noam Shazeer, and William Fedus. 2022. ST-MoE: Designing Sta-ble and Transferable Sparse Expert Models. arXiv:2202.08906 [cs.CL] 
+
+https://arxiv.org/abs/2202.08906 
+
+13

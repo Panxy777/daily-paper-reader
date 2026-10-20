@@ -1,0 +1,1525 @@
+Title: TRACE: Transformer Residual Activation Codebook Encoding for Communication-efficient Distributed Edge Inference
+
+URL Source: https://arxiv.org/pdf/2610.22435v1
+
+Published Time: Mon, 19 Oct 2026 00:04:56 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+> 1
+
+# TRACE: Transformer Residual Activation Codebook Encoding for Communication-efficient Distributed Edge Inference 
+
+Muhammad Azlan Qazi, Alexandros Iosifidis, and Qi Zhang 
+
+Abstract —Distributed Transformer inference across co-located edge devices is fundamentally communication-bound, as exchang-ing activations between sequence-parallel partitions dominates inference latency under commodity edge bandwidths. Existing compression schemes reduce this cost but retain a structural bottleneck: the received data must still undergo key/value pro-jection before attention can proceed, serializing computation behind communication. This paper presents Transformer Resid-ual Activation Codebook Encoding (T RACE ), a framework that addresses these limitations. T RACE places a Vector Quantizer (VQ) at the post-attention residual of every Transformer layer and precomputes codebook-indexed key/value representations. During inference, exchanged activations are encoded into com-pact codebook indices, allowing receivers to directly recover keys and values through table lookup instead of executing the downstream computations required to derive them. By eliminating the received data downstream computation, T RACE 
+
+enables communication–computation overlap and reduces a key latency bottleneck in distributed Transformer inference. A hi-erarchical clustering further structures the learned codebook into a multi-resolution hierarchy, enabling runtime adaptation of the communication bitrate without retraining. The framework supports two operating variants: one prioritizing accuracy and the other balancing accuracy and efficiency through buffer-compatible quantization. Experiments on ViT-Base (ImageNet-1K and CIFAR-100) and ViViT-B (UCF-101) show that T RACE 
+
+achieves up to 1.89% higher accuracy and up to 1.27 × end-to-end inference speedup compared with the state-of-the-art VQ-based distributed inference framework. Compared with uncompressed sequence-parallel inference, T RACE reduces communication over-head by up to 22 ,624 ×.
+
+Index Terms —Distributed inference, edge computing, communication-efficient machine learning, model compression, Transformer neural networks, vector quantization. 
+
+I. I NTRODUCTION 
+
+# TRANSFORMER architectures have emerged as the dom-inant computational paradigm across vision, language, and multimodal artificial intelligence. Trained at scale, they now define state-of-the-art performance across perception, understanding, and generation tasks [1]–[7]. Their accuracy, however, comes at a steep computational and memory price: a single forward pass through a state-of-the-art Transformer model involves billions of floating-point operations and hun-dreds of megabytes of intermediate activations, making single-device deployment on resource-constrained edge nodes im-practical. Centralized cloud serving is increasingly unsuitable for IoT workloads. End-user latency targets, privacy guarantees, 
+
+> Muhammad Azlan Qazi and Qi Zhang are with DIGIT and the Department of Electrical and Computer Engineering, Aarhus University, Denmark (e-mail: maq@ece.au.dk; qz@ece.au.dk) Alexandros Iosifidis is with the Data Science Research center, Tampere University, Finland (e-mail: alexandros.iosifidis@tuni.fi)
+
+energy budgets, and unreliable wide-area connectivity all motivate to bring inference at the network edge [8]–[10]. When a single edge device cannot host the model alone, the natural answer is collaborative or distributed inference, in which a model is partitioned across multiple co-located edge nodes whose aggregate compute and memory cover the model’s demands [11]–[13]. Three parallelism families have been developed for this purpose, namely tensor parallelism in Megatron-LM [14], pipeline parallelism in GPipe [15], and sequence parallelism [16]. All three were designed for high-bandwidth datacenter interconnects such as NVLink, where all-reduce and ring activation transfers consume negligible time. The picture changes dramatically at edge bandwidths. In a sequence-parallel deployment with hidden dimension D,sequence length N , and P participating devices, every Trans-former layer must exchange (P −1) N D/P floating-point val-ues per device per layer before the next layer can proceed [11]. At commodity edge bandwidths of tens to a few hundreds Mbps, this volume implies per-layer communication latencies of tens to hundreds of milliseconds, which is several orders of magnitude above local computation time [17]–[19]. Empirical measurements confirm that under bandwidth constraints below 
+
+100 Mbps, inter-device communication accounts for roughly 
+
+60 –93% of total inference latency in distributed BERT exe-cution ( N =1024 , P =4 ), largely negating the speed-up that parallelism is supposed to provide [20]. To address this bottleneck, several lines of work directly compress the communicated payload. Theoretical results in distributed inference [21] establish that combined sparsifica-tion and quantization preserve convergence at extremely low bit budgets, providing the foundation for compressed inter-device communication. V OLTAGE [11], illustrated in Fig. 2(d), is the baseline sequence-parallel design: each device transmits its full-precision hidden-state partition to peers at the parti-tioning boundary, with communication volume (P −1) N D/P 
+
+per layer and no compression of any kind. PRISM [22], shown in Fig. 2(c), takes a significant step by replacing this full transmission with training-free Segment Means (column-wise averages of token sub-groups) substantially reducing communication at the cost of approximation accuracy. A S- 
+
+> TRA
+
+[20], shown in Fig. 2(b), applies vector quantization (VQ) 
+
+inside multi-head self-attention, quantizing pre-attention token embeddings exchanged between devices and recovering them on the receiver for direct use in the attention kernel. ASTRA and P RISM share a common structural limitation visible in Figs. 2(b)–(c), i.e., both still require the receiver to complete K/V projection step before attention can proceed, preventing full overlap of communication with downstream arXiv:2610.22435v1 [cs.LG] 15 Oct 2026 2
+
+computation (Section II). P RISM ’s per-token payload also re-mains a D-dimensional float vector, so communication volume scales with model dimension regardless of compression ratio. ASTRA ’s bitrate is fixed at finetuning time with no mechanism for adaptive resolution. This paper proposes Transformer Residual Activation 
+
+Codebook Encoding (T RACE ), a communication-efficient framework for distributed Transformer inference that closes both gaps simultaneously. The core idea is to place VQ at the post-attention layer boundary (on the hidden state Z produced by the multi-head self-attention sublayer and its first residual addition) and to amortize the next layer’s K and V projections into precomputed lookup buffers indexed by codebook entry, so that the receiver recovers cross-device quantized K/V via direct table lookup with zero matrix-multiply computation. A hierarchical k-medoids clustering [23] of the trained codebook then exposes a multi-resolution sub-codebook hierarchy, al-lowing the deployed model to select bitrate at inference time without retraining. It is imperative to mention that, this paper targets the encoder-only architectures used for perception and understanding tasks (e.g., ViT, ViViT). Extending the mechanism to autoregressive decoder-only LLMs is discussed as future work in Section VI. Across all settings, T RACE closely matches baseline accu-racy at significant communication overhead reduction com-pared with uncompressed sequence-parallel inference meth-ods, and is also superior to the best prior compression methods while enabling seamless compute-communication overlap that those methods cannot provide. The main contributions of this work are:  
+
+> •
+
+Two accuracy–latency variants. TRACE offers two vari-ants that differ in the placement of vector quantiza-tion relative to the post-attention residual (Section V-E). TRACE -nb quantizes before the residual and retains runtime-dependent residual information for higher ac-curacy, whereas T RACE -b quantizes after the residual, enabling deterministic mapping to precomputed key/value entries and compute–communication overlap.  
+
+> •
+
+Post-attention VQ with precomputed K/V buffers. The hidden state Z at the post-attention boundary is quantized using a learned codebook, while the downstream layer normalization, MLP, and K/V representations of each codeword are precomputed during post-training calibra-tion. At inference, only codebook indices are transmitted and cross-device K/V representations are recovered by direct table lookup, eliminating receiver-side matrix mul-tiplication for reconstruction.  
+
+> •
+
+Communication–computation overlap. In TRACE -b, devices transmit codebook indices while concurrently executing local MLP and K/V computations on their available partition data. This removes the receiver-side projection dependency on incoming activations, avoiding the communication–computation serialization that limits prior sequence-parallel methods.  
+
+> •
+
+Multi-resolution bitrate adaptation. TRACE constructs a hierarchical multi-resolution codebook using k-medoids clustering [23] on the trained codebook. Each hierar-chy level forms a valid sub-codebook, enabling runtime bitrate selection without retraining and adaptation to changing bandwidth and resource constraints.  
+
+> •
+
+Modal evaluation. TRACE is evaluated on image clas-sification (ViT-Base/16 on ImageNet-1K and CIFAR-100) and video classification (ViViT-B/16 on UCF-101). TRACE -nb improves top-1 accuracy by up to 1.89% over the strongest prior VQ-based method, while T RACE -b achieves up to 1.27 × faster inference with up to 1.45% 
+
+higher accuracy; both variants reduce transmitted acti-vation payloads by up to 22 ,624 × for ViT-Base/16 and 
+
+24 ,500 × for ViViT-B/16 compared with uncompressed sequence-parallel inference. The remainder of this paper is organized as follows. Sec-tion II reviews the relevant background and related work. Section III provides a high-level overview of T RACE and its operational lifecycle. Section IV presents the technical details of codebook training, K/V buffer calibration, distributed in-ference, and multi-resolution operation. Section V describes the experimental setup and results. Section VI discusses the implications, limitations, and future directions, and Section VII concludes the paper. 
+
+Notation. Bold uppercase ( X) and lowercase ( x) denote ma-trices and vectors, respectively. Italic lowercase ( k, n) denotes scalars or indices; italic uppercase ( N , D, P ) and Greek let-ters ( γ, σ) denote constants or hyperparameters. Calligraphic letters ( I) denote sets, and R the reals. Device , peers and edge device are used interchangeably. II. B ACKGROUND & R ELATED WORK 
+
+A. Transformer Architecture 
+
+The Transformer [24] replaces recurrent and convolutional sequence models with a fully attention-based design. ViT [1] extended the architecture to vision by treating fixed-size image patches as a token sequence. DeiT [25] subsequently improved data efficiency through Transformer-specific knowl-edge distillation. ViViT [2] generalized the design to video by extracting spatio-temporal tube tokens and applying spatial– temporal attention. BERT [26] established the encoder-only bidirectional Transformer paradigm for natural language un-derstanding, while the autoregressive decoder family, including modern LLMs such as Qwen2.5 [3], DeepSeek-R1 [6], and LLaMA [4], [5], has redefined the state of the art on language tasks. T RACE is designed to apply distributed inference across encoder (ViT, ViViT) variants. The core building block in all of the Transformer based models is the multi-head self-attention (MHSA) sublayer. For each of H heads, the input sequence X(ℓ) 
+
+> p
+
+∈ RNp×D of device 
+
+p at layer ℓ is first projected into queries, keys, and values via three learned weight matrices WQ, WK , WV ∈ RD×d:
+
+Q(ℓ) 
+
+> p
+
+= X(ℓ) 
+
+> p
+
+WQ, K(ℓ) 
+
+> p
+
+= X(ℓ) 
+
+> p
+
+WK , V(ℓ) 
+
+> p
+
+= X(ℓ) 
+
+> p
+
+WV ,
+
+(1) where Q(ℓ) 
+
+> p
+
+, K(ℓ) 
+
+> p
+
+, V(ℓ) 
+
+> p
+
+∈ RNp×d and d = D/H is the per-head dimension. Scaled dot-product attention is then applied: 
+
+Attention( Q(ℓ) 
+
+> p
+
+, K(ℓ) 
+
+> p
+
+, V(ℓ) 
+
+> p
+
+) = softmax 
+
+ Q(ℓ) 
+
+> p
+
+K(ℓ)
+
+> p
+> ⊤
+
+√d
+
+ V(ℓ) 
+
+> p
+
+.
+
+(2) 3Source               
+
+> Attn
+> Q
+> K
+> V
+> VQ
+> +
+> Fine-Tune Transformer with VQ K-Medoids Clustering
+> Fine-Tuning and clustering
+> Level 0
+> Level 1
+> Level 2
+> Level 3
+> Multi-Level Hierarchy Tree
+> Pre-Compute VQ K/V Buffer (Frozen weights)
+> LN
+> MLP
+> MHSA
+> LN
+> +
+> +
+> 𝐕𝐐 𝟐
+> 𝐕𝐐 𝟏
+> LN
+> MLP
+> MHSA
+> LN
+> +
+> +
+> 𝐕𝐐 𝟑
+> 𝐊 𝐯𝐪𝐜𝐛 = 𝐗 𝐜𝐛 𝐖 𝐤 ,
+> 𝐕 𝐯𝐪𝐜𝐛 = 𝐗 𝐜𝐛 𝐖 𝐯
+> 𝐊 𝐯𝐪𝐜𝐛 = 𝐗 𝐜𝐛 𝐖 𝐤 ,
+> 𝐕 𝐯𝐪𝐜𝐛 = 𝐗 𝐜𝐛 𝐖 𝐯
+> ln(VQ 1) VQ 2 + MLP(ln  VQ 2 ) VQ 3 + MLP(ln  VQ 3 )
+> Distributed Inference with Adaptive Multi-Resolution (m) VQ (Per Session) Adaptive Encoding/Decoding
+> Decoding and Analysis
+> Encoded Frame
+> 8-bit metadata | 3-bit indices
+> Adaptive Encoding
+> ✓Metadata: 00000011
+> ✓Codebook level: 2
+> ✓Bit-width r: 3 Bits
+> 011
+> 011
+> 010
+> 142 → e 142
+> 38 → e 38
+> 142 → e 142
+> LN
+> MLP
+> LN
+> +
+> Emb
+> Partition
+> +
+> MHSA
+> LN
+> MLP
+> LN
+> +
+> +
+> MHSA Level 0
+> Level 1
+> Level 2
+> Level 3
+> Resolution Management
+> Network profiling
+> Select Resolution Level m
+> Allowed Codes ( 𝟐 𝐫 )
+> Distributed inference (2 Devices)
+> 00000011 011 010 011
+
+Fig. 1. TRACE system overview. (Top ) Offline pipeline: finetune Transformer with VQ modules, build a multi-level hierarchy tree via hierarchical k-medoids clustering. ( Bottom-left ) Pre-compute per-layer Kvqcb and Vvqcb buffers with frozen weights. ( Bottom-center ) Per-session adaptive inference: select resolution level m from network conditions, exchange r-bit indices between devices overlapped with local FFN computation. ( Bottom-right ) Adaptive encoding with 8-bit metadata header; receiver decodes indices and gathers precomputed K/V buffers — no MatMul on cross-device tokens. 
+
+MHSA is followed by a position-wise feed-forward sublayer (MLP), and both sublayers are wrapped with residual connec-tions and layer normalization, giving each Transformer layer the structure 
+
+Z(ℓ)
+
+p = X(ℓ)
+
+p + MHSA 
+
+
+
+LN 1
+
+
+
+X(ℓ)
+
+p
+
+ 
+
+, (3) 
+
+Y(ℓ)
+
+p = Z(ℓ)
+
+p + MLP 
+
+
+
+LN 2
+
+
+
+Z(ℓ)
+
+p
+
+ 
+
+. (4) The intermediate tensor Z(ℓ)
+
+p in (3) is the activation that T RACE 
+
+quantizes, encodes, and transmits, making it the central object of the proposed framework. 
+
+B. Distributed Transformer Inference at the Edge 
+
+Distributing Transformer inference across multiple devices has been studied primarily in datacenter settings. Tensor parallelism , introduced in Megatron-LM [14], partitions in-dividual weight matrices and inserts an all-reduce collective after each MHSA and MLP sublayer, exchanging hidden-state shards across devices at every sublayer boundary. Pipeline parallelism , exemplified by GPipe [15], assigns contiguous groups of layers to different devices and processes micro-batches in a pipeline, passing the full hidden state at each stage transition. Sequence parallelism [16], [27] distributes the token sequence ( X(ℓ) ∈ RN ×D ) across devices. Each device computes Transformer block for available partitioned sequence X(ℓ)
+
+p ∈ RNp×D , and communicates respected output 
+
+Y(ℓ)
+
+p to other devices. This cycle is repeated for the rest of the Transformer blocks. Pope et al. [18] provide a systematic analysis confirming that, in all three families, inter-device communication is the principal bottleneck at inference stage. This bottleneck becomes even more acute at the network edge, where a growing body of work targets Transformer in-ference under tighter resource constraints. DeTransformer [19] restructures each Transformer layer into decoupled sub-blocks and adaptively places them across edge devices, motivating bandwidth-aware design. EdgeShard [8] addresses LLM par-titioning across heterogeneous edge–cloud nodes through a joint device-selection and shard-placement formulation. TPI-LLM [9] demonstrates serving 70B-parameter models on low-resource edge devices via star-based scheduling and memory windowing. STI [28] elastically pipelines parameter loading and computation on a single mobile device, while Jupiter [10] extends collaborative LLM inference to recent-generation edge hardware. RCIF [29] specifically targets robustness under the highly lossy network conditions characteristic of many IoT de-ployments, a setting in which T RACE ’s ultra-low-bitrate index transmission provides additional resilience against packet loss relative to floating-point transmissions. For broader context on distributed neural-network inference across embedded and IoT 4Partitioning 
+
+> Segment Means
+> VQ+ Encoding/Decoding
+> Vector Quantization (VQ)
+> LN
+> MLP
+> LN
+
++
+
+> Emb
+
++
+
+> MHSA
+> LN
+> MLP
+> LN
+
++
+
++
+
+> MHSA
+> (d) Voltage
+> LN
+> MLP
+> LN
+
++
+
+> Emb
+
++
+
+> MHSA
+> LN
+> MLP
+> LN
+
++
+
++
+
+> MHSA
+> (c) Prism
+> LN
+> MLP
+> LN
+
++
+
+> Emb
+
++
+
+> MHSA
+> LN
+> MLP
+> LN
+
++
+
++
+
+> MHSA
+> (b) Astra
+> LN
+> MLP
+> LN
+
++
+
+> Emb
+
++
+
+> MHSA
+> LN
+> MLP
+> LN
+
++
+
++            
+
+> MHSA
+> (a) Trace-b
+> Concatenation
+> Fig. 2. Comparison of distributed Transformer inference frameworks across two sequence-parallel devices. (a) T RACE -b (ours) : transmits only a codebook index; the receiver fetches precomputed K/Ventries from a buffer and concatenates them with local keys and values, eliminating receiver-side projection and enabling full compute/communication overlap. (b) A STRA [20]: quantizes pre-attention embeddings via VQ; receiver-side projection remains a hard dependency. (c) P RISM [22]: transmits Segment Means (token-group averages); receiver still applies K/Vprojections before attention. (d) V OLTAGE [11]: transmits the full hidden-state partition; no compression.
+
+systems, see the recent systematic review in [13]. The works most directly related to T RACE are V OLTAGE ,PRISM , and A STRA , all of which target sequence-parallel distributed Transformer inference but differ in what they compress and where. V OLTAGE [11] is an edge-targeted dis-tributed inference system that exploits position-wise sequence partitioning and adapts the partition strategy to measured band-width and device speed. It serves as the uncompressed base-line, transmitting the full D-dimensional hidden-state partition between devices at every layer boundary with communication volume O(N × D). P RISM [22] replaces full transmission with training-free Segment Means (column-wise averages of token sub-groups) achieving substantial communication re-duction across ViT, BERT, and GPT-2. The receiving device extends its local key and value matrices with the received Segment Means features and applies a scaling-aware softmax correction. Two limitations remain: the transmitted payload is still a D-dimensional float vector per segment, and the receiver must apply Wk/Wv projection matrix multiplications to those vectors before attention can proceed. A STRA [20] goes further by using learned VQ codewords in place of Segment Means. Each device quantizes its pre-attention hidden features against a shared codebook, transmits the assigned codeword indices to its peers, and likewise receives indices for the partitions held by other devices. The received indices are de-referenced through the codebook to reconstruct the corresponding quantized embeddings, from which non-local keys and values Kvq /Vvq are then computed via the Wk/Wv
+
+projection matrices. Each device finally concatenates these reconstructed Kvq /Vvq with the keys and values of its own local partition and performs attention over the combined sequence. However, because VQ is placed before attention, the receiver must still apply the Wk/Wv projection matrix multiplications to every quantized embedding before attention can proceed. This is a non-trivial compute dependency that limits compute–communication overlap and creates a data synchronization bottleneck. A STRA ’s codebook size and bits per vector are also fixed at training time, requiring retraining to adapt to varying link and codebook setups. 
+
+C. Vector Quantization 
+
+Vector quantization (VQ) [30] represents a continuous vec-tor z ∈ RD by the index of its nearest entry in a learned codebook C = {c1, . . . , cK } ⊂ RD :
+
+k = arg min 
+
+> j
+
+∥z − cj ∥2, q(z) = ck. (5) Each vector is transmitted as a single codeword index of 
+
+⌈log 2 K⌉ bits, the minimum number of bits required to ad-dress one of K codewords. This is determined solely by the codebook size K and independent of the feature dimension 
+
+D, yielding compression ratios that grow favorably with D.However, nearest-centroid search in high-dimensional spaces is susceptible to codebook collapse as D grows [31]. In 5
+
+TRACE this is mitigated by cosine-similarity assignment, k-means initialization on real activations, and exponential mov-ing average EMA-based dead-code recycling, as described in Section IV-A. VQ-VAE [31] established the standard framework for end-to-end neural VQ training. A straight-through estimator (STE) enables gradient propagation through the non-differentiable assignment, a commitment loss encourages encoder outputs to remain close to their assigned codebook entries (codewords), and an EMA update rule refines the codebook vectors directly from encoder statistics improving training stability compared to purely gradient-based codebook updates. Multi-stage designs such as Group-Residual VQ in HiFi-Codec [32] stack codebooks to iteratively reduce quantization error, achieving variable-bitrate compression by varying the number of residual stages. In contrast, T RACE derives variable bitrate from a hierarchical sub-codebook configuration of a 
+
+single codebook. This preserves a single-index representation per vector, enabling efficient precomputation of the corre-sponding quantized representations from the trained codebook for fast communication-time reconstruction. III. S YSTEM OVERVIEW 
+
+TRACE targets sequence-parallel Transformer inference across P co-located edge devices. As illustrated in Fig. 1, the input sequence is partitioned position-wise across devices, while each device stores a copy of the model. Device p
+
+processes a local partition X(ℓ) 
+
+> p
+
+∈ RNp×D , where Np =
+
+N/P . Global self-attention requires each device to access the representations associated with peer partitions, making this inter-device exchange the main communication bottleneck addressed by T RACE .The central idea of T RACE is to quantize the post-attention residual of each Transformer layer and communicate only the resulting codebook indices. For every codeword, T RACE stores the precomputed corresponding K/V representations. Upon receiving the peer device’s encoded representation, the device decodes it and maps directly to quantized K/V vectors through buffer retrieval, without applying the intermediate neural trans-formations (MLP) and K/V projections to the received data. This allows the communication to proceed concurrently with local computation. This mechanism defines the default variant TRACE -b. We also proposed a second variant T RACE -nb which forgoes buffer retrieval in exchange for higher accuracy. Both are defined in Section III-B. Unless stated otherwise, T RACE 
+
+refers to T RACE -b. 
+
+A. Lifecycle 
+
+TRACE consists of three phases. First, during offline fine-tuning, a layer-specific vector quantizer is inserted at each post-attention residual. An input-stage quantizer VQ 0 is also used so that the first inter-device exchange is represented by codebook indices. The model and codebooks are jointly finetuned for the target task. Second, after finetuning, the model weights and codebooks are frozen. Each trained codebook is organized into a nested hierarchy of sub-codebooks using hierarchical k-medoids clus-tering. This provides multiple resolution levels from a single trained model, allowing the communication data size to be selected according to the available bandwidth, latency bud-get, and desired accuracy. A one-time calibration procedure then computes, for every codeword, the K/V representations required by the subsequent attention layer and stores them in the corresponding Kvqcb and Vvqcb lookup buffers. Since each sub-codebook contains entries from the original trained codebook, all resolution levels reuse the same buffers without recalibration. Third, during online inference, an active resolution level is selected and each device quantizes its local post-attention residual using the corresponding sub-codebook. The device transmits only the resulting indices, which its peers use to retrieve the corresponding rows from the precomputed K/V buffers. These non-local K/V representations are combined with the locally computed K/V representations for global attention. The finetuning procedure, hierarchy construction, buffer calibration, and distributed inference operations are detailed in Section IV. 
+
+B. Online Data Flow and Runtime Resolution 
+
+The bottom-center panel of Fig. 1 illustrates the per-layer data flow described in this subsection. Consider a single layer transition from ℓ to ℓ+1 on device p, with peers indexed p′̸ =
+
+p. Five operations occur per layer (operations 2 and 3 execute in parallel): 1) Local layer execution. Device p computes Z(ℓ) 
+
+> p
+
+over its own partition via Eq. (3). 2) Quantization and index broadcast. Each token vec-tor z(ℓ) 
+
+> p,n
+
+is assigned to its nearest entry in the active resolution-level m sub-codebook by cosine similarity (Eq. 6), and the resulting local sub-codebook indices 
+
+{i(ℓ)
+
+> p,n
+
+}Np 
+
+> n=1
+
+are packed into r-bit fields with an 8-bit metadata header and broadcast to all peers. 3) Local MLP and projections. In parallel with the broadcast, device p continues local computation: Y(ℓ) 
+
+> p
+
+=
+
+Z(ℓ) 
+
+> p
+
++ MLP(LN 2(Z(ℓ) 
+
+> p
+
+)) , followed by the layer-ℓ+1 
+
+K/V projections on the local partition to obtain K(ℓ+1)  
+
+> p
+
+,
+
+V(ℓ+1)  
+
+> p
+
+.4) Cross-device K/V lookup. Once the local indices 
+
+{i(ℓ)
+
+> p′,n
+
+} from peer p′ arrive, device p maps each to its global codebook position gp′,n = π[i(ℓ)
+
+> p′,n
+
+] (Sec-tion IV-D) and retrieves the corresponding rows of Kvqcb 
+
+> ℓ+1
+
+and Vvqcb  
+
+> ℓ+1
+
+by direct array indexing. 5) Split-attention. Device p concatenates its local 
+
+K(ℓ+1)  
+
+> p
+
+/V(ℓ+1)  
+
+> p
+
+with the buffer-recovered cross-device sets {Kvq ,(ℓ+1)  
+
+> p′
+
+}p′̸ =p/ {Vvq ,(ℓ+1)  
+
+> p′
+
+}p′̸ =p (Eq. 15) to form global key/value matrices, and computes attention with its local queries Q(ℓ+1)  
+
+> p
+
+over this concatenation. The placement of operation 3 in parallel with operation 2 yields the compute–communication overlap (Fig. 3) that dis-tinguishes T RACE -b from prior compression methods (Fig. 2): the sender’s MLP and projections proceed independently of the index broadcast, and the receiver does no neural-network 6(a) Trace-b                                    
+
+> Time 0T₁T₂TN-1 TN
+> Block 1 Block 2 Block N
+> p₁
+> p₀(host)
+> p₂
+> …
+> …
+> …
+> …
+> Time 0T₁T₂TN-1 TN
+> Block 1 Block 2 Block N
+> p₁
+> p₀(host)
+> p₂
+> …
+> …
+> …
+> …
+> (b) Astra
+> (d) Voltage (c) Prism
+> Embedding / Prediction
+> Computing (Transformer block)
+> Distributing partitions Collecting partitions
+> Waiting (much shorter than Voltage)
+> End of a transformer block Segment Means
+> Features synchronization
+> ASTRA : decode
+> TRACE : encode + decode
+> (host)
+> Time 0T₁T₂TN-1 TN
+> Block 1 Block 2 Block N
+> p₁
+> p₀
+> p₂
+> …
+> …
+> …
+> …
+> Time 0T₁T₂TN-1 TN
+> Block 1 Block 2 Block N
+> p₁
+> p₀(host)
+> p₂
+> …
+> …
+> …
+> …
+> Fig. 3. Compute–communication timing across distributed inference methods for Transformer blocks across devices p0,p1,p2. (a) T RACE -b (ours): index encoding and transmission run in parallel with the local FFN, making communication and computation overlap and saving communication latency. (b) A STRA : compact VQ codewords’ indices are transmitted, but communication and computation are still non-overlapping. (c) P RISM : Segment Means compression reduces communication volume but execution remains sequential. (d) V OLTAGE : computation and communication are fully sequential; all devices idle during full-feature AllGather.
+
+computation on incoming data, so the only inter-device syn-chronization point per layer is the broadcast itself. 
+
+Variant: The five-operation flow defines TRACE -b (buffered ), the default configuration shown in Figs. 2(a) and 3(a). We also evaluate T RACE -nb ( non-buffered ), which places VQ before the post-attention residual and uses no input-stage quantizer VQ 0 (Case 1 A.i in Table VI). Its first inter-device communication therefore carries the unquantized input partition, while subsequent exchanges transmit codeword indices but reconstruct representations that also depend on runtime residuals. The precomputed K/V buffers are consequently invalid, and the receiver must apply the corresponding transformation chain to the received representations before K/V projection. TRACE -nb thus preserves runtime residual information and achieves higher accuracy. In contrast, T RACE -b replaces this computation with buffer lookup, enabling compute–communication overlap. TRACE -nb is therefore preferable when the application does not have stringent inference latency constraints and the connectivity between edge devices offers high bandwidth, whereas T RACE -b is preferable when application has stringent inference latency constraints and the network connection is bandwidth-constrained or highly variable. IV. M ETHODOLOGY 
+
+This section presents the technical details of T RACE , in-cluding codebook training, post-training K/V calibration, dis-tributed inference, and multi-resolution codebook construction. Table I summarizes the notation used throughout this section. 
+
+A. Codebook Training a) VQ insertion: A vector quantizer VQ ℓ with a dedi-cated codebook Cℓ = {c(ℓ) 
+
+> k
+
+}Kk=1 ⊂ RD is inserted at the post-attention residual of every Transformer layer. For each token 
+
+n ∈ { 1, . . . , N p}, the nearest codeword is identified by cosine similarity over the full codebook: 
+
+˜z(ℓ) 
+
+> p,n
+
+= VQ ℓ
+
+
+
+z(ℓ)
+
+> p,n
+
+
+
+= c(ℓ)
+
+> k∗
+> p,n
+
+, (6) 
+
+k∗ 
+
+> p,n
+
+= arg max 
+
+> k
+
+z(ℓ)⊤ 
+
+> p,n
+
+c(ℓ)
+
+> k
+
+∥z(ℓ)
+
+> p,n
+
+∥2 ∥c(ℓ) 
+
+> k
+
+∥2
+
+. (7) At inference, nearest codeword search is restricted to the active sub-codebook Cm = {c(ℓ)
+
+> π[0]
+
+, . . . , c(ℓ)
+
+> π[Km−1]
+
+}, and the sender transmits the local position in ∈ {0, . . . , K m−1}
+
+within the prefix array π. The receiver recovers the global codebook index as gn = π[in] at all resolution levels and uses it to index the K/V buffers. VQ is placed after the residual addition (i.e., on Z(ℓ) 
+
+> p
+
+= X(ℓ) 
+
+> p
+
++ MHSA( ·), not on the raw attention output), so that each codeword index maps determin-istically to a unique K/V vector independently of any runtime input. This is the property that makes buffer precomputation exact. The rationale for this placement, and the comparison with alternative designs, are evaluated in Section V-E. An 7
+
+> TABLE I SUMMARY OF NOTATION USED THROUGHOUT THIS PAPER .
+
+Symbol Description Symbol Description 
+
+System and dimensions 
+
+P Number of co-located edge devices L, ℓ Number of Transformer layers; layer index 
+
+p, p′ Local device index; peer device index ( p′̸ =p) N , Np Total / per-device sequence length ( Np=N/P )
+
+n Token index within a device’s local partition D Model (hidden-state) dimension 
+
+H, d Number of attention heads; per-head dimension (d=D/H )
+
+dff Feed-forward (MLP) hidden dimension 
+
+Transformer activations 
+
+X(ℓ) 
+
+> p
+
+Input hidden state of device p at layer ℓ Z(ℓ) 
+
+> p
+
+Post-attention residual activation (quantized by TRACE )
+
+Y(ℓ) 
+
+> p
+
+Layer output (post-MLP residual) Q(ℓ) 
+
+> p
+
+, K(ℓ) 
+
+> p
+
+, V(ℓ) 
+
+> p
+
+Query, key, value matrices (superscript “loc” de-notes a device’s local-only K/V) 
+
+WQ, WK , WV Query/key/value projection weights LN 1, LN 2 Pre-attention / pre-MLP layer normalization 
+
+MHSA( ·) Multi-head self-attention sublayer MLP( ·) Position-wise feed-forward sublayer 
+
+Vector quantization and training 
+
+Cℓ, K Layer-ℓ codebook; codebook size (# entries) c(ℓ) 
+
+> k
+
+k-th codeword of layer ℓ
+
+VQ ℓ(·), VQ 0 Per-layer quantizer; input-stage (layer-0) quan-tizer 
+
+k∗ 
+
+> p,n
+
+Global index of the nearest codeword to token 
+
+(p, n )˜z(ℓ) 
+
+> p,n
+
+Quantized activation (assigned codeword) ρ, Mp Local-KV drop rate; per-device Bernoulli drop mask 
+
+α EMA codebook decay rate n(t) 
+
+> k
+
+, m(t) 
+
+> k
+
+EMA count / sum accumulators for codeword kβ Commitment-loss weight L, Ltask ,
+
+L(ℓ)commit 
+
+Total / task / layer-ℓ commitment loss 
+
+sg( ·) Stop-gradient operator ε Small constant preventing division by zero 
+
+dq Reduced dimension for the projected EMA vari-ant 
+
+W↓, W↑ Down-/up-projection weights for the dq -dim. vari-ant 
+
+Multi-resolution hierarchy and K/V buffers 
+
+R, m Index of the finest hierarchy level; active hierar-chy level ( 0≤m≤R)
+
+Cm, Km Sub-codebook at level m; its size 
+
+π ∈ ZK Prefix array mapping local → global codeword index 
+
+in, gn Transmitted local index; recovered global index (gn=π[in])
+
+r = ⌈log 2 Km⌉ Bit-width transmitted per token at level m Kvqcb  
+
+> ℓ
+
+, Vvqcb  
+
+> ℓ
+
+Precomputed K/V lookup buffers ( ∈ RK×D )
+
+Kvq ,(ℓ) 
+
+> p′
+
+, Vvq ,(ℓ) 
+
+> p′
+
+Buffer-recovered K/V for peer p′ at layer ℓ O(ℓ) 
+
+> p
+
+Attention output for device p’s local queries at layer ℓ
+
+Communication 
+
+s PRISM segment size BW Link bandwidth 
+
+tcomm , tMLP Per-layer communication latency; local MLP la-tency CR Compression ratio (uncompressed size / transmit-ted size) 
+
+additional input-stage quantizer VQ 0 is applied to the patch or token embeddings before layer 0. It enables the first inter-device exchange to use codebook indices and provides the codewords used to construct Kvqcb  
+
+> 0
+
+and Vvqcb  
+
+> 0
+
+. The effect of 
+
+VQ 0 is included in the same ablation. 
+
+b) Local-KV drop regularization: Without explicit reg-ularization, a device can minimize the task loss by relying almost entirely on its own full-precision keys and values while treating cross-device VQ representations as negligible. To prevent this degenerate solution, we introduce local-KV drop , i.e., during each finetuning forward pass, a fraction ρ
+
+of each device’s own key/value tokens are randomly masked before attention is formed, forcing the model to attend across device boundaries. Formally, let Mp ∼ Bernoulli(1 −ρ)Np be a binary mask over the Np local token positions, resampled at each forward pass. The device-p key matrix entering attention at layer ℓ is 
+
+Kp =
+
+h
+
+Kloc  
+
+> p
+
+[Mp] Kvq   
+
+> p′p′̸=p
+
+i
+
+, (8) with Vp constructed analogously. We set ρ=0 .3 during fine-tuning and ρ=0 at inference, so the full local key/value set is always used at test time. 
+
+c) Codebook update: Each VQ ℓ is trained with cosine-similarity assignment and EMA codebook updates [31]. Since the same procedure is applied independently at every layer, we suppress the superscript ℓ for notational clarity. Let S(t)
+
+> k
+
+denote the set of post-attention vectors assigned to codeword 
+
+ck in training batch t, across all devices and token positions. The EMA update maintains, for each codeword, a count accumulator nk and a sum accumulator mk:8
+
+n(t) 
+
+> k
+
+= α n (t−1)  
+
+> k
+
++ (1 −α) |S(t) 
+
+> k
+
+|, (9) 
+
+m(t) 
+
+> k
+
+= α m(t−1)  
+
+> k
+
++ (1 −α) X
+
+> z∈S(t)
+> k
+
+z, (10) 
+
+c(t) 
+
+> k
+
+= m(t)
+
+> k
+
+ max 
+
+
+
+n(t) 
+
+> k
+
+, ε 
+
+
+
+, (11) with decay α=0 .99 and ε a small constant to prevent division by zero. Because the codebook is updated by EMA rather than gradient descent, a commitment loss [31] supplies the gradient signal back to the encoder: 
+
+L(ℓ)commit = β X
+
+> p,n
+
+z(ℓ) 
+
+> p,n
+
+− sg 
+
+
+
+˜z(ℓ)
+
+> p,n
+
+ 22
+
+, (12) where sg( ·) denotes the stop-gradient operator, β=0 .1, and the sum is taken over all devices p and token positions n in the training batch. The commitment loss retains the layer index ℓ
+
+since it is computed independently per layer. The total training loss combines the task loss with all layer-wise commitment terms: 
+
+L = Ltask +
+
+> L−1
+
+X
+
+> ℓ=0
+
+L(ℓ)commit . (13) An alternative codebook update strategy projects hidden states to a lower-dimensional space ( dq =256 ) before quanti-zation via a learned linear map W↓ ∈ RD×dq , applies EMA-based VQ in Rdq , then reprojects to RD via W↑ ∈ Rdq ×D .This reduces the effective dimensionality of nearest-centroid search and can improve codebook utilization at higher de-vice counts, as the benefit of better-conditioned quantization compounds with more cross-device VQ proxies. This variant is architecturally compatible with K/V buffer precomputation since W↑ is a fixed matrix after training and is absorbed into the calibration pass. T RACE uses the direct EMA update (dq =D) as the default to keep all reported results comparable with existing baselines. The dimension-reduction variant is evaluated as an ablation in Section V-E and represents a natural direction for future work. 
+
+d) Initialization and dead-code prevention: Each code-book Cℓ is initialized by k-means clustering (10 iterations) applied to post-attention+residual activations from the first training batch, placing codewords in high-density regions of the activation space and reducing the risk of early codebook collapse. During training, any codeword whose EMA count 
+
+n(t) 
+
+> k
+
+falls below a threshold tr is re-initialized by random sampling from the current batch’s activations. Codewords with extremely low EMA counts receive no meaningful updates and effectively become inactive, so this mechanism ensures full codebook utilization throughout training. 
+
+B. Post-Training K/V Calibration 
+
+Once training converges and all codebooks are fixed, a single calibration forward pass constructs, for each layer ℓ,two lookup buffers Kvqcb  
+
+> ℓ
+
+, Vvqcb  
+
+> ℓ
+
+∈ RK×D that store (for every codeword) the keys and values that layer ℓ’s attention would produce if that codeword were its input. Algorithm 1 and the bottom-left panel of Fig. 1 summarize the procedure. 
+
+Algorithm 1: Post-training K/V calibration for T RACE .
+
+Input: Trained model with L layers; codebooks 
+
+C0, . . . , CL−1; frozen weights 
+
+{W (ℓ) 
+
+> K
+
+, W (ℓ) 
+
+> V
+
+, LN (ℓ)1 , LN (ℓ)2 , MLP (ℓ)}L−1 
+
+> ℓ=0
+
+.
+
+Output: Lookup buffers {Kvqcb  
+
+> ℓ
+
+, Vvqcb  
+
+> ℓ
+
+}L−1 
+
+> ℓ=0
+
+.
+
+// Input-stage ( VQ 0): produces Kvqcb  
+
+> 0
+
+,
+
+Vvqcb  
+
+> 0
+
+; no preceding MLP residual. 
+
+C0 ← [c(0) 1 ; · · · ; c(0)  
+
+> K
+
+] ∈ RK×D ;
+
+Kvqcb  
+
+> 0
+
+← LN (0) 1 (C0) W (0)  
+
+> K
+
+;
+
+Vvqcb  
+
+> 0
+
+← LN (0) 1 (C0) W (0)  
+
+> V
+
+;
+
+// Main loop: layer-ℓ codewords produce Kvqcb  
+
+> ℓ+1
+
+, Vvqcb  
+
+> ℓ+1
+
+for 
+
+ℓ+1 ∈ { 1, . . . , L −1}.
+
+for ℓ = 0 , 1, . . . , L −2 do 
+
+Cℓ ← [c(ℓ)1 ; · · · ; c(ℓ) 
+
+> K
+
+] ∈ RK×D ;
+
+H ← Cℓ + MLP (ℓ)
+
+LN (ℓ)2 (Cℓ)
+
+
+
+; // layer-ℓ
+
+MLP residual 
+
+ˆH ← LN (ℓ+1) 1 (H) ; // layer-(ℓ+1) 
+
+pre-attention LN 
+
+Kvqcb  
+
+> ℓ+1
+
+← ˆH W (ℓ+1)  
+
+> K
+
+;
+
+Vvqcb  
+
+> ℓ+1
+
+← ˆH W (ℓ+1)  
+
+> V
+
+;
+
+return {Kvqcb  
+
+> ℓ
+
+, Vvqcb  
+
+> ℓ
+
+}L−1 
+
+> ℓ=0
+
+;
+
+a) Data independence and complexity: The buffers de-pend solely on the trained codebook entries and the frozen model weights. The dominant cost per layer is the MLP forward pass over Cℓ ∈ RK×D , of order O(KDd ff ) where dff 
+
+is the feed-forward hidden dimension (typically 4D), together with the K/V projections at O(KD 2). For K=1024 and ViT-Base dimensions, calibration completes in seconds on a server-class GPU and need only be performed once. 
+
+b) Storage footprint: Each layer stores two buffers of shape K × D at FP16, occupying 4KD bytes, making the total across L layers 4KDL bytes. For ViT-Base ( K=1024 ,
+
+D=768 , L=12 ), this amounts to approximately 36 MB, sub-stantially smaller than the ≈344 MB FP32 model weights. 
+
+c) Correctness argument: At inference, a device receiv-ing cross-device tokens would ordinarily evaluate the chain 
+
+LN (ℓ)2 → MLP (ℓ) → residual → LN (ℓ+1) 1 → W (ℓ+1)  
+
+> K
+
+, W (ℓ+1) 
+
+> V
+
+on every incoming feature (Fig. 1 bottom left). Because the sending device constrains each transmitted feature to one of K codewords, this entire chain is replaced by a one-time precomputation over K fixed inputs, i.e., at runtime the receiver performs batched indexed retrieval from Kvqcb  
+
+> ℓ+1
+
+and 
+
+Vvqcb  
+
+> ℓ+1
+
+, with no matrix multiplication, layer normalization, or nonlinearity applied to the received activations. This determin-ism holds precisely because VQ is placed after the residual addition (Section IV-A). That is, any placement that leaves a runtime-dependent residual term outside the quantizer would break the one-to-one mapping between index and K/V vector, invalidating the buffers. 9
+
+C. Distributed Inference a) Split-attention: At layer ℓ, device p holds its local query, key, and value matrices Q(ℓ) 
+
+> p
+
+, Kloc ,(ℓ) 
+
+> p
+
+, Vloc ,(ℓ) 
+
+> p
+
+∈
+
+RNp×D , computed via Eq. (1). For each peer p′̸ = p,device p has received the cross-device sub-codebook indices 
+
+{i(ℓ−1)  
+
+> p′,n
+
+}Np′ 
+
+> n=1
+
+transmitted from layer ℓ−1. These are first mapped to global codebook positions g(ℓ−1)  
+
+> p′,n
+
+= π[i(ℓ−1)  
+
+> p′,n
+
+],and the corresponding cross-device keys and values are then retrieved by direct buffer lookup: 
+
+Kvq ,(ℓ) 
+
+> p′
+
+= Kvqcb 
+
+> ℓ
+
+h
+
+{g(ℓ−1)  
+
+> p′,n
+
+}n
+
+i
+
+, Vvq ,(ℓ) 
+
+> p′
+
+= Vvqcb 
+
+> ℓ
+
+h
+
+{g(ℓ−1)  
+
+> p′,n
+
+}n
+
+i
+
+.
+
+(14) Since the attention output is invariant to the ordering of key/value pairs [22], local and cross-device keys may be concatenated in any order: 
+
+K(ℓ) = Concat 
+
+
+
+Kloc ,(ℓ) 
+
+> p
+
+,
+
+n
+
+Kvq ,(ℓ)
+
+> p′
+
+o 
+
+> p′̸=p
+
+
+
+, (15) and analogously for V(ℓ). Device p then computes attention over its local queries against the global key/value set: 
+
+O(ℓ) 
+
+> p
+
+= softmax Q(ℓ) 
+
+> p
+
+K(ℓ)⊤
+
+√d
+
+!
+
+V(ℓ). (16) Concatenating {O(ℓ) 
+
+> p
+
+}Pp=1 in partition order recovers the full layer output. Because each device computes attention only for its Np local queries against the full N -token key/value set, per-device attention complexity is O(NpN d ), and the aggregate across all P devices is O(N 2d). This is identical to standard sequence-parallel attention. Importantly, unlike other sequence-parallel methods such as V OLTAGE and A STRA ,where every device must compute full K/V projections for the complete received hidden-state partition, T RACE restricts K/V computation to each device’s own local partition only. Cross-device K/V vectors are recovered via direct buffer lookup with no projection matrix multiplications, reducing the per-device K/V projection cost from O(N D 2) to O(NpD2)—a 
+
+P -fold reduction in K/V computation that compounds with the communication savings. 
+
+b) Encoding and Decoding: For brevity, we omit the device and layer indices and write i(ℓ) 
+
+> p,n
+
+= in and g(ℓ) 
+
+> p,n
+
+= gn.
+
+Encoding (sender): after cosine-similarity assignment re-stricted to the active sub-codebook Cm (Eq. (6)), each token n
+
+is assigned a local sub-codebook index in ∈ { 0, . . . , K m−1},which is its position within the prefix array π[0 : Km − 1] ,not a direct global codebook index. Concretely, in = j
+
+means the token was assigned to codeword cπ[j]; the receiver recovers the global index as gn = π[in] at all resolution levels, including the finest ( m=R). An 8-bit metadata header prepended to the frame carries the bit-width r, allowing the receiver to decode without out-of-band negotiation and enabling per-session resolution adaptation. Indices produced at layer ℓ are used to construct cross-device K/V for layer 
+
+ℓ+1 . Fig. 1, bottom right, shows an example of the encoded payload. The 8-bit metadata specifies a bit width of r = 3 ,                                        
+
+> TABLE II PER -DEVICE PER -LAYER COMMUNICATION COST (BITS TRANSMITTED BY EACH DEVICE TO ALL PEERS ). Np=N/P ;D:MODEL DIMENSION ;s:PRISM SEGMENT SIZE ;K:CODEBOOK SIZE ;r=⌈log 2Km⌉:
+> RESOLUTION BIT -WIDTH .
+> Method Payload (bits) Depends on D?
+> VOLTAGE [11] 32 NpDYes PRISM [22] 32 NpD/s Yes ASTRA [20] †Np⌈log 2K⌉No TRACE -b (ours) Npr+ 8 No TRACE -nb (ours) Npr+ 8 No
+> †ASTRA reports Np⌈log 2K⌉bits theoretically; a na¨ ıve uint16 implementa-tion transmits 16 Npbits per partition. T RACE explicitly bit-packs indices, achieving Npr+8 bits including the metadata header.
+
+and the subsequent colored boxes represent the 3-bit indices corresponding to the quantized tokens. 
+
+Decoding (receiver): the receiver reads the 8-bit header to recover r, then unpacks the Np′ local sub-codebook indices 
+
+{in}Np′ 
+
+> n=1
+
+from the r-bit fields. Each local index in is mapped to a global codebook position gn = π[in] via the hierarchy prefix array π, described in Section IV-D. The corresponding K/V vectors are then retrieved from the precomputed buffers using 
+
+gn as in Eq. (14). The bottom right panel of Fig. 1 illustrates an example encoded frame and its two-step decoding into buffer lookups. 
+
+c) Compute–communication overlap.: The index broad-cast for partition p and the local MLP forward pass are mutually independent: the indices are derived from Z(ℓ) 
+
+> p
+
+,which is fully available before the MLP executes, while the MLP consumes no cross-device data. On systems supporting concurrent execution of network I/O and GPU compute (e.g., CUDA streams with asynchronous communication backends using multi-threading), both operations may therefore proceed simultaneously. The effective per-layer communication latency is thus max( tcomm , t MLP ) − tMLP , becoming zero whenever 
+
+tcomm ≤ tMLP . This expression represents the ideal overlap enabled by the dependency structure of T RACE .
+
+d) Communication volume.: Table II compares per-device per-layer communication cost across methods. At res-olution bit-width r, T RACE -b transmits Npr + 8 bits per partition per layer, independent of model dimension D. At the full codebook ( r=10 , K=1024 ), T RACE transmits 10 Np + 8 
+
+bits, compared with 32 NpD bits for V OLTAGE . The resulting reduction factor is 32 NpD
+
+10 Np + 8 , (17) which approaches 3.2D as Np increases. 
+
+e) Layer-0 special case.: At layer 0, no codeword indices from an upstream layer are available. The input-stage quantizer 
+
+VQ 0 quantizes the patch or token embeddings directly, and the buffers Kvqcb  
+
+> 0
+
+, Vvqcb  
+
+> 0
+
+precomputed in Algorithm 1 are used. 
+
+D. Multi-Resolution Codebook a) Hierarchical construction: After training converges, hierarchical k-medoids clustering [23] is applied to each 10 
+
+layer’s trained codebook C = CR to produce a nested hier-archy: 
+
+C0 ⊂ C 1 ⊂ · · · ⊂ C R = C, K0 < K 1 < · · · < K R = K. 
+
+(18) We use (K0, K 1, K 2, K 3, K 4) = (2 , 4, 8, 32 , 1024) . Con-struction proceeds fine-to-coarse: starting from the full code-book CR, k-medoids is applied to select K3=32 representative medoids; those 32 medoids are then clustered to yield K2=8 ,then K1=4 , and finally K0=2 at the coarsest level. Because each level’s medoids are selected from the previous (finer) level’s medoid set, the strict-subset property C0 ⊂ C 1 ⊂ · · · ⊂ CR is enforced by construction. The resulting levels are stored in coarse-to-fine order in the prefix array π, defined below. 
+
+b) Hierarchy storage and buffer validity: The hierarchy is stored per-layer as a prefix integer array π ∈ ZK , where 
+
+π[i] gives the global codebook index corresponding to sub-codebook position i; the level boundaries K0, K 1, . . . , K R
+
+from Eq. (18) index directly into this array, so that π[0 : 
+
+Km] = Cm for every level m. Decoding a received local index i therefore reduces to two operations: g ← π[i] (prefix lookup), followed by a row fetch from the K/V buffer at row g,as described in Section IV-C. Because Cm ⊂ C R for every m,every codeword at any resolution level has a valid precomputed row in Kvqcb  
+
+> ℓ
+
+and Vvqcb  
+
+> ℓ
+
+: switching resolution at inference time changes only the nearest-neighbour search domain and the bit-width of the encoded frame; no buffer recomputation or data movement is required. 
+
+c) Runtime resolution selection: At the start of each in-ference session, a resolution level m can be selected according to the available link bandwidth and latency budget. The sender restricts cosine-similarity search to Cm of size Km and en-codes each token’s local index in r = ⌈log 2 Km⌉ bits. A single trained and calibrated model thereby supports the full family of operating points (⌈log 2 Km⌉ bits/token , accuracy m) Rm=0 
+
+spanning the bitrate–accuracy trade-off frontier without re-training, as reported in Table III. V. E XPERIMENTAL EVALUATION 
+
+We evaluate TRACE on image and video classification, comparing against the uncompressed baseline (V OLTAGE ), Segment-Means method (P RISM ), and the strongest prior VQ-based method (A STRA ). Section V-A describes the setup; Sections V-D–V-B present accuracy, latency and scalability, communication, compression results; and Section V-E reports four ablations isolating the contribution of each design choice. 
+
+A. Experimental Setup a) Models and datasets: For image classification, ViT-Base/16 [1] is evaluated on ImageNet-1K [33] (single-device baseline accuracy 80 .32% ) and CIFAR-100 [34] ( 92 .30% ). For video classification, ViViT-B/16 [2] is evaluated on UCF-101 [35] (90 .77% ), with scalability measured for P ∈{2, 3, 4, 6, 8, 10 } devices and evaluated across its multi-resolution sub-codebook hierarchy K ∈ { 2, 4, 8, 32 , 1024 }.
+
+b) Training & Evaluation: VQ codebooks are finetuned jointly with the pretrained backbone model using EMA code-book updates ( α=0 .99 ), commitment weight β=0 .1, local-KV drop ρ=0 .3, and K=1024 codewords initialized by k-means on the first batch. The multi-resolution hierarchy is built post-training by k-medoids. Compute latency is measured on a CPU configured with two cores, and communication latency is computed at a range of network bandwidth BW =
+
+{1, 2, 4, 8, 10 , 20 } Mbps. All latency figures report effective per-device latency averaged over fifty runs ( ±5 ms standard deviation). 
+
+B. Compression Ratio 
+
+Fig. 7 reports the compression ratio (CR), defined as the ratio of uncompressed intermediate features to compressed transmitted data. For ViT at P =2 , T RACE (K=1024 ) achieves 
+
+2,426 × compression versus A STRA ’s 1,528 × at the same codebook size, which is 1.59 × improvement that stems from TRACE transmitting ⌈log 2 K⌉ bits per token independently of model’s feature dimension. Successive resolution levels yield near-proportional CR gains: 4,813 × (K=32 ), 7,937 ×
+
+(K=8 ), and 22 ,624 × (K=2 ). Fig. 8 confirms that these ratios are essentially invariant to device count for ViViT: across 
+
+P ∈ { 2, 4, 10 }, the CR for each resolution level varies by less than 0.5% , indicating that the compression mechanism does not degrade as more devices participate, as long as the number of tokens is sufficient large in each partition. 
+
+C. Inference Latency 
+
+Figs. 5a and 5b show the effective per-device inference latency of ViT-Base/16 at 10 Mbps, decomposed into com-putation and communication, while Table IV reports the cor-responding measurements. Fig. 6 further evaluates communi-cation latency over the 1–20 Mbps bandwidth range. Together, the results show that T RACE -b reduces both communication overhead and receiver-side computation, resulting in the lowest effective latency among the evaluated methods. At P =2 , T RACE -b requires only 0.12 –1.14 ms of com-munication by transmitting compact codeword indices, de-pending on the resolution m. Unlike A STRA , T RACE -b also avoids receiver-side K/V projections by retrieving cross-device K/V vectors from precomputed buffers. Consequently, its computation latency decreases to 92 ms at P =2 and 
+
+63 ms at P =3 for K≤32 . At K=1024 , the larger nearest-neighbor search increases computation modestly to 106 ms and 
+
+72 ms, respectively. In comparison, A STRA requires 1.81 ms of communication, while P RISM reduces communication to 
+
+140 .63 ms through Segment-Means compression, although its communication time still exceeds its computation time at 10 Mbps. The uncompressed V OLTAGE baseline incurs 
+
+2,770 .31 ms of communication at 10 Mbps, approximately 
+
+30 × its 92 .5 ms computation latency, making communication the dominant contributor to end-to-end latency. The communication advantage is maintained across the evaluated bandwidth range in Fig. 6. As bandwidth decreases, the latency of all methods increases, but the effect is most severe for methods that transmit high-dimensional features. 11                                                          
+
+> TABLE III TOP -1 ACCURACY (%) ON IMAGE NET AND CIFAR-100 (V IT-B ASE /16). SINGLE -DEVICE BASELINE :80 .32% (I MAGE NET ), 92 .30% (CIFAR-100).
+> ImageNet CIFAR-100 Method P=2 P=3 P=2 P=3
+> VOLTAGE [11] 80.32 80.32 92.30 92.30 ASTRA (K=1024 ) [20] 78.45 77.14 89.34 88.12 PRISM [22] 79.66 79.47 90.10 89.69 TRACE -nb ( K=1024 )80.23 80.11 91.23 90.58
+> TRACE -b ( K=1024 )79.90 79.70 90.55 89.90 TRACE -b ( K=32 )79.60 79.01 90.52 88.54 TRACE -b ( K=8 )79.51 78.60 89.89 87.70 TRACE -b ( K=4 )79.46 77.29 89.18 85.81 TRACE -b ( K=2 )78.84 76.85 84.91 83.33
+
+At P =2 , T RACE -b with K=2 achieves up to 22 ,624 × lower communication latency than V OLTAGE and 15 × lower latency than A STRA . Even at 1 Mbps, T RACE -b keeps communication in the millisecond range, whereas V OLTAGE incurs delays on the order of tens of seconds. These results demonstrate that the communication advantage of T RACE -b is consistent across the evaluated bandwidth range. Finally, because communication is fully overlapped with local computation (Section IV-C), T RACE ’s effective latency at 10 Mbps equals its computation latency whenever tcomm ≤
+
+tMLP . At matched codebook size ( K=1024 ), eliminating the receiver-side K/V projection alone reduces effective latency from 116 .8 to 106 .0 ms relative to A STRA at P =2 (1.10 ×), and from 79 .4 to 72 .0 ms at P =3 (1.10 ×). T RACE ’s hierar-chical codebook further lets the same deployed model drop to a coarser resolution ( K=32 ) with no retraining (a capability ASTRA ’s fixed-bitrate design cannot match) bringing effective latency to 92 ms and 63 ms, or 1.27 × and 1.26 × over A STRA .
+
+D. Accuracy versus Compression 
+
+Table III and Figs. 4a–4b show the accuracy–compression trade-off on ImageNet-1K and CIFAR-100. At K=1024 , both TRACE variants outperform the prior compression baselines, ASTRA and P RISM , across all four settings. T RACE -nb con-sistently achieves higher accuracy, for example, 80 .23% on ImageNet-1K and 91 .23% on CIFAR-100 at P =2 , which is 1.78 and 1.89 percentage point higher than A STRA . T RACE -b still achieves 1.45 and 1.21 percentage point higher accuracy than A STRA at P =2 . The trade-off is that T RACE -nb preserves higher accuracy, while T RACE -b trades a modest accuracy loss for exact buffer-based K/V reconstruction and compute– communication overlap, achieving inference acceleration. This difference highlights the accuracy–efficiency trade-off intro-duced by the post-residual placement required for buffer precomputation. The hierarchy provides additional compression at an accuracy-dependent trade-off. On ImageNet-1K at P =2 , re-ducing the effective codebook size from K=1024 to K=4 
+
+decreases accuracy by only 0.44 percentage points, while the most aggressive K=2 level retains 78 .84% accuracy using one bit per token. Similarly on UCF-101, Fig. 9 shows that T RACE TABLE IV PER -DEVICE LATENCY BREAKDOWN (MS ) AT 10 MBPS ON VIT-B ASE /16 (2-CORE CPU).                                                                    
+
+> Method PCompute Comm. Effective †
+> VOLTAGE [11] 292.5 2770.31 2862.8 PRISM (s=10 ) [22] 295.2 140.63 235.9 ASTRA (K=1024 ) [20] 2115.0 1.81 116.8 TRACE -nb ( K=1024 )2119.0 1.34 120.3 TRACE -b ( K=1024 )2106.0 1.14 106.0
+> TRACE -b ( K=32 )292.0 0.58 92.0
+> TRACE -b ( K=2 )292.0 0.12 92.0
+> VOLTAGE [11] 374.4 3693.75 3768.1 PRISM (s=10 ) [22] 376.3 131.25 207.6 ASTRA (K=1024 ) [20] 377.0 2.43 79.4 TRACE -nb ( K=1024 )379.0 1.68 80.7 TRACE -b ( K=1024 )372.0 1.53 72.0
+> TRACE -b ( K=32 )363.0 0.77 63.0
+> TRACE -b ( K=2 )363.0 0.16 63.0
+> †Effective latency accounts for compute–communication overlap. For T RACE -b, communication is overlapped with local MLP execution; for the baselines, communication and computation are sequential.
+
+with K=1024 achieves 90 .25% accuracy at P =2 and 88 .72% 
+
+at P =10 . This runtime-selectable trade-off is particularly relevant under low or time-varying bandwidth, where the sys-tem can select a coarser resolution to reduce communication latency while retaining usable prediction accuracy, without retraining the deployed model. This flexibility is valuable for latency-sensitive edge applications, where meeting a latency budget may be more important than maximizing accuracy at a fixed operating point. 
+
+E. Ablation Studies 
+
+We isolate the contribution of four design choices: the precomputed K/V buffers, the VQ placement, the hierarchy construction metric, and the codebook update strategy. 
+
+a) Precomputed K/V buffers: Table V quantifies the per-device compute savings from buffer precomputation on ViViT. Comparing T RACE -b against an otherwise identical configuration in which the buffers are disabled and the receiver reconstructs cross-device K/V through the full LN → MLP →
+
+residual → K/V chain. This configuration retains T RACE -b’s post-residual VQ placement and is therefore distinct from TRACE -nb, which additionally moves VQ before the residual. The buffers reduce per-device compute latency by 15 .5–
+
+32 .3% .
+
+b) VQ placement: TRACE -b places VQ after the post-attention residual and uses VQ 0 for the first block (Case 2 B in Table VI). Consequently, each transmitted activation is represented entirely by a codeword index, with no runtime-dependent residual component. This establishes an exact index-to-K/V mapping, allowing non-local K/V vectors to be retrieved from the precomputed buffers. The use of VQ 0 also ensures that the first inter-device exchange is performed in the codebook domain. This design achieves top-1 accuracies of 90 .51% and 89 .90% for P =2 and P =3 , respectively. We compare this design against VQ placements before and after the residual. Case 2 A retains the post-residual 12 Voltage Astra (k=1024) Prism Trace-nb (k=1024) Trace-b (k=1024) Trace-b (k=32) Trace-b (k=8) Trace-b (k=4) Trace-b (k=2)                 
+
+> 010 20 30 40 50 60 70 80
+> Top-1 Accuracy (%)
+> 80.32 78.45 79.66 80.23 79.90 79.60 79.51 79.46 78.84 80.32 77.14 79.47 80.11 79.70 79.01 78.60 77.29 76.85
+> Voltage Astra Prism Trace-b Baseline (80.32) 2 devices 3 devices
+
+(a) ImageNet-1K Voltage Astra (k=1024) Prism Trace-nb (k=1024) Trace-b (k=1024) Trace-b (k=32) Trace-b (k=8) Trace-b (k=4) Trace-b (k=2)                  
+
+> 020 40 60 80
+> Top-1 Accuracy (%)
+> 92.30 89.34 90.10 91.23 90.55 90.52 89.89 89.18 84.91 92.30 88.12 89.69 90.58 89.90 88.54 87.70 85.81 83.33
+> Voltage Astra Prism Trace-b Baseline (92.3) 2 devices 3 devices
+
+(b) CIFAR-100 
+
+Fig. 4. Top-1 accuracy on ImageNet-1K and CIFAR-100 using ViT-Base/16 with P = 2 and P = 3 devices. The single-device baselines are 80 .32% on ImageNet-1K and 92 .30% on CIFAR-100. At K = 1024 , T RACE achieves the highest accuracy among the evaluated compression methods in all four settings. 0 50 100 150 200 250 300 
+
+> Effective Latency per Device (ms)
+> Voltage Prism Baseline Astra (k=1024) Trace-nb (k=1024) Trace-b (k=1024) Trace-b (k=32) Trace-b (k=8) Trace-b (k=4) Trace-b (k=2)
+> 235.9 ms 152.2 ms 116.8 ms 120.3 ms 106 ms 92 ms 92 ms 92 ms 92 ms
+> Total: 2,863 ms
+> Compute latency Communication latency (sequential) ±5 ms std dev
+
+(a) P = 2 0 50 100 150 200 250 300  
+
+> Effective Latency per Device (ms)
+> Voltage Prism Baseline Astra (k=1024) Trace-nb (k=1024) Trace-b (k=1024) Trace-b (k=32) Trace-b (k=8) Trace-b (k=4) Trace-b (k=2)
+> 207.6 ms 152.2 ms 79.4 ms 80.7 ms 72 ms 63 ms 63 ms 63 ms 63 ms
+> Total: 3,768 ms
+> Compute latency Communication latency (sequential) ±5 ms std dev
+
+(b) P = 3 
+
+Fig. 5. Effective per-device latency (ms) at 10 Mbps on ViT-Base/16. Dark bars show compute latency; light extensions indicate communication latency when executed sequentially. T RACE -b at K ≤ 32 reaches the single-device compute floor (92 ms at P = 2 , 63 ms at P = 3 ). 1 2 4 8 10 20 
+
+Bandwidth (Mbps) 
+
+10 1
+
+10 0
+
+10 1
+
+10 2
+
+10 3
+
+10 4
+
+> Communication Latency (ms)
+
+22,624× vs Voltage 
+
+15× vs Astra 
+
+Voltage Prism Astra (k=1024) Trace (k=2) Trace (k=4) Trace (k=8) Trace (k=32) Trace (k=1024) 
+
+Fig. 6. Communication latency (ms) versus link bandwidth (Mbps) on ViT-Base/16 (log scale). T RACE (K = 2 ) achieves 22 ,624 × lower communication latency than V OLTAGE and 15 × lower than A STRA at P = 2 . The T RACE 
+
+curves indicate that its communication advantage is maintained consistently across the evaluated 1–20 Mbps bandwidth range. 
+
+placement but computes the first-block K/V from the unquan-tized input, leaving the first exchange uncompressed. In the Case 1 variants, VQ is applied before the residual, so the transmitted representation carries a runtime-dependent residual and exact codebook-indexed retrieval from K/V buffers is no longer possible. Case 1 A.i attains the highest accuracy of all placements and is adopted as the second variant T RACE -nb (Section III-B): relative to T RACE -b it gains 0.72 and 0.68 Astra (k=1024) Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2) 05000 10000 15000 20000 Compression Ratio (CR) 
+
+> 1528 2426 4813 7937 11751 22624 1521 2418 4808 7950 11808 22945
+
+Compression Ratio by Model and Number of Devices 
+
+P = 2 devices P = 3 devices 
+
+Fig. 7. Compression ratio for ViT-Base/16 at P = 2 and P = 3 . T RACE 
+
+(K = 1024 ) achieves 2,426 × at P = 2 , a 1.59 × improvement over A STRA 
+
+(1,528 ×) at the same codebook size. Coarser levels yield near-proportional gains, reaching 22 ,624 × at K = 2 .
+
+percentage points at P =2 and P =3 , at the cost of receiver-side reconstruction and the loss of compute–communication overlap. Cases 1 A.ii, 1 A.iii and 1 B lose accuracy relative to 1 A.i without recovering the deterministic mapping, and are therefore dominated by both variants. 
+
+c) Hierarchy construction metric: Table VII compares three dissimilarity measures for the k-medoids hierarchy: Euclidean distance, cosine distance, and codeword usage fre-quency n(t)
+
+k . All three coincide at the full codebook ( m=R); 13 Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2) 05000 10000 15000 20000 25000 Compression Ratio (CR) 
+
+> 2456 4909 8175 12253 24444
+> Compression Ratio by Model (P = 2 devices)
+> Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2)
+
+(a) P = 2 Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2) 05000 10000 15000 20000 25000 Compression Ratio (CR)  
+
+> 2454 4907 8175 12255 24469
+> Compression Ratio by Model (P = 4 devices)
+> Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2)
+
+(b) P = 4 Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2) 05000 10000 15000 20000 25000 Compression Ratio (CR)  
+
+> 2450 4898 8161 12236 24437
+> Compression Ratio by Model (P = 10 devices)
+> Trace (k=1024) Trace (k=32) Trace (k=8) Trace (k=4) Trace (k=2)
+
+(c) P = 10 
+
+Fig. 8. Compression ratio for ViViT-B/16 on UCF-101 across P ∈ { 2, 4, 10 } devices. The compression ratio at each resolution level varies by less than 
+
+0.5% across all device counts, confirming that T RACE ’s compression mechanism is invariant to the number of participating devices. 2 3 4 6 8 10 Number of Devices      
+
+> 020 40 60 80
+> Top-1 Accuracy (%)
+> 90.250 90.058 89.550 89.190 89.000 88.717
+> Trace Baseline (90.77%)
+
+Fig. 9. Top-1 accuracy on UCF-101 (ViViT-B/16, K=1024 ) as the number of devices scales from 2 to 10 . T RACE degrades by only 1.53 percentage points from P =2 (90 .25% ) to P =10 (88 .72% ) relative to the single-device baseline ( 90 .77% , dashed line). TABLE V EFFECT OF PRECOMPUTED K/V BUFFERS ON PER -DEVICE COMPUTE LATENCY (MS ) FOR VIVIT ( K=1024 ). “W ITHOUT ” RECONSTRUCTS CROSS -DEVICE K/V VIA THE FULL PROJECTION CHAIN ; “W ITH ” USES BUFFER LOOKUP .
+
+Devices Without buffers With buffers Gain (%) 
+
+2 3441 2329 32.3 3 2281 1596 30.0 4 1766 1320 25.2 6 1213 952 21.5 8 917 719 21.6 10 742 627 15.5 
+
+differences emerge only at coarser levels. Euclidean and cosine perform comparably, with neither dominating across all settings, while frequency-based clustering underperforms markedly at P =3 and coarse levels, hence grouping code-words by popularity rather than geometric proximity yields medoids that are less representative of their clusters. We adopt Euclidean k-medoids as the default. 
+
+d) Codebook update strategy: Table VIII compares gradient-based codebook updates, EMA (T RACE ’s default), and EMA applied in a dimension-reduced subspace ( dq =256 ). EMA outperforms gradient-based updates at every device count, with the gap widening from 0.04 points at P =2 to 
+
+0.56 at P =3 , consistent with the known instability of gradient-based codebook training under multiple VQ bottlenecks. Ap-
+
+TABLE VI VQ PLACEMENT ABLATION ON CIFAR-100 (A CCURACY %) USING 
+
+VIT-B ASE /16. T RACE USES POST -RESIDUAL VQ WITH VQ 0 FOR THE FIRST -BLOCK K/V. 
+
+Case Quantized-copy treatment P =2 P =3 
+
+1 A.i X(0) 
+
+p residual at block 1; ˜Z(ℓ−1) 
+
+p thereafter (T RACE -nb) 91.23 90.58 2 B Post-residual VQ; VQ 0 K/V at block 1 (T RACE -b) 90.51 89.90 2 A Post-residual VQ; full X K/V at block 1 90.52 88.61 1 A.ii No residual at block 1; ˜Z(ℓ−1) 
+
+p thereafter 90.78 89.03 1 A.iii No residual in any block 90.51 88.59 1 B VQ 0 as the block-1 residual and K/V 90.90 89.56 TABLE VII HIERARCHY CONSTRUCTION METRIC ABLATION : TOP -1 ACCURACY (%) 
+
+ON CIFAR-100 AT EACH RESOLUTION LEVEL m (LEVEL 4 = FULL CODEBOOK , K=1024 ). 
+
+Resolution level mP Metric 0 1 2 3 42Euclidean 84.91 89.18 89.89 90.52 90.55 Cosine 83.30 88.40 89.53 90.32 90.55 Frequency 85.56 89.29 89.73 89.72 90.55 3Euclidean 83.33 85.81 87.70 88.54 89.90 Cosine 82.59 85.30 86.28 87.60 88.90 Frequency 80.04 80.62 84.40 85.04 88.90 
+
+plying EMA in a 256 -dimensional projected space improves accuracy by a further 0.28 –0.30 points, with the benefit growing with P : better-conditioned nearest-centroid search in lower dimensions becomes increasingly valuable as cross-device proxies multiply. This variant is compatible with buffer precomputation (the up-projection is absorbed into calibration) and is a promising direction for future work; T RACE uses the direct EMA update as the default to keep all reported results comparable. VI. D ISCUSSION 
+
+a) Implications and limitations: The results in Section V indicate that removing the receiver’s compute dependency is what drives T RACE ’s latency gains over P RISM and A STRA ,and that a single multi-resolution codebook lets a deployed model react to changing link conditions without retraining. 14 
+
+TABLE VIII CODEBOOK UPDATE STRATEGY ABLATION : TOP -1 ACCURACY (%) ON 
+
+CIFAR-100 (V IT-B ASE /16). S INGLE -DEVICE BASELINE : 92 .30% .
+
+Update strategy P =2 P =3 
+
+Gradient-based 90.47 88.44 EMA (T RACE default) 90.51 89.00 EMA + dim. reduction ( dq =256 ) 90.79 89.30 
+
+This property is likely to matter as much as raw compres-sion across heterogeneous edge devices. One caveat applies: TRACE is evaluated on encoder-only models, where Sec-tion V-E shows that exact buffer precomputability already costs 0.72 –1.68 accuracy points. 
+
+b) Extension to decoder-only LLMs: TRACE ’s buffers and split-attention (Eq. (16)) assume unconditional cross-device attendance, which holds for the bidirectional encoders evaluated here but not for autoregressive decoder-only LLMs such as Qwen2.5 [3]: causal masking would require T RACE ’s distributed attention mechanism to be made partition- and position-aware, and autoregressive decoding would addition-ally require a scheduling strategy that allocates compute het-erogeneously across devices to manage the differing prefill and decode phases of concurrent requests. These are architectural changes rather than a direct application of the present design, so we did not implement or evaluate T RACE on decoder-only LLMs in this work and leave this extension to future work. VII. C ONCLUSION 
+
+This paper presented TRACE , a communication-efficient framework for distributed Transformer inference across edge devices. T RACE introduces multi-resolution vector quantiza-tion to substantially reduce cross-device communication while consistently improving inference accuracy over the state-of-the-art VQ-based method A STRA . The framework further pro-vides two operating variants. T RACE -nb prioritizes accuracy, achieving up to 1.89% higher accuracy than A STRA , whereas TRACE -b achieves up to 1.45% higher accuracy and up to 
+
+1.27 × inference speedup over A STRA by introducing buffer-compatible quantization to precompute codebook-indexed K/V representations, thereby eliminating receiver-side K/V pro-jection and enabling communication–computation overlap. In addition, a multi-resolution hierarchical codebook clustering enables runtime bitrate adaptation without retraining. Across ViT-Base/16 and ViViT-B/16 on image and video classification tasks, T RACE achieves approximately 22 ,624 × and 24 ,500 ×
+
+reduction in transmitted activation payload, respectively, rel-ative to uncompressed sequence parallelism. Together, these results demonstrate that T RACE provides a flexible foundation for communication-efficient distributed Transformer inference, while enabling low-latency execution through precomputed K/V lookup and communication–computation overlap. ACKNOWLEDGMENTS 
+
+This research was supported by the PANDORA project, funded by the European Union’s Horizon Europe Framework Programme under Grant Agreement No 101135775 and Nord-Forsk Nordic University Cooperation on Edge Intelligence (Grant No. 168043). REFERENCES [1] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly et al. ,“An image is worth 16x16 words: Transformers for image recognition at scale,” arXiv preprint arXiv:2010.11929 , 2020. [2] A. Arnab, M. Dehghani, G. Heigold, C. Sun, M. Luˇ ci´ c, and C. Schmid, “Vivit: A video vision transformer,” in Proceedings of the IEEE/CVF international conference on computer vision , 2021, pp. 6836–6846. [3] Qwen, :, A. Yang, B. Yang et al. , “Qwen2.5 technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2412.15115 [4] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux, T. Lacroix, B. Rozi` ere, N. Goyal, E. Hambro, F. Azhar et al. ,“Llama: Open and efficient foundation language models,” arXiv preprint arXiv:2302.13971 , 2023. [5] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale et al. , “Llama 2: Open foundation and fine-tuned chat models,” arXiv preprint arXiv:2307.09288 , 2023. [6] D. Guo, D. Yang, H. Zhang, J. Song, P. Wang, Q. Zhu, R. Xu, R. Zhang, S. Ma, X. Bi et al. , “Deepseek-r1 incentivizes reasoning in llms through reinforcement learning,” Nature , vol. 645, no. 8081, pp. 633–638, Sep. 2025. [Online]. Available: https://doi.org/10.1038/s41586-025-09422-z [7] Google, “Veo 3 launch,” https://cloud.google.com/blog/products/ ai-machine-learning/veo-3-fast-available-for-everyone-on-vertex-ai, 2025, accessed: September 28, 2025. [8] M. Zhang, X. Shen, J. Cao, Z. Cui, and S. Jiang, “Edgeshard: Efficient llm inference via collaborative edge computing,” IEEE Internet of Things Journal , vol. 12, no. 10, pp. 13 119–13 131, 2025. [9] Z. Li, W. Feng, M. Guizani, and H. Yu, “Tpi-llm: Serving 70b-scale llms efficiently on low-resource mobile devices,” IEEE Transactions on Services Computing , 2025. [10] S. Ye, B. Ouyang, L. Zeng, T. Qian, X. Chu, J. Tang, and X. Chen, “Jupiter: Fast and resource-efficient collaborative inference of generative llms on edge devices,” in IEEE INFOCOM 2025-IEEE Conference on Computer Communications . IEEE, 2025, pp. 1–10. [11] C. Hu and B. Li, “When the edge meets transformers: Distributed inference with transformer models,” in 2024 IEEE 44th International Conference on Distributed Computing Systems (ICDCS) , 2024, pp. 82– 92. [12] Y. Jiang, R. Yan, X. Yao, Y. Zhou, B. Chen, and B. Yuan, “Hexgen: generative inference of large language model over heterogeneous en-vironment,” in Proceedings of the 41st International Conference on Machine Learning , ser. ICML’24. JMLR.org, 2024. [13] F. N. Peccia and O. Bringmann, “Embedded distributed inference of deep neural networks: A systematic review,” arXiv preprint arXiv:2405.03360 , 2024. [14] M. Shoeybi, M. Patwary, R. Puri, P. LeGresley, J. Casper, and B. Catan-zaro, “Megatron-lm: Training multi-billion parameter language models using model parallelism,” arXiv preprint arXiv:1909.08053 , 2019. [15] Y. Huang, Y. Cheng, A. Bapna, O. Firat, D. Chen, M. Chen, H. Lee, J. Ngiam, Q. V. Le, Y. Wu et al. , “Gpipe: Efficient training of giant neu-ral networks using pipeline parallelism,” Advances in neural information processing systems , vol. 32, 2019. [16] S. Li, F. Xue, C. Baranwal, Y. Li, and Y. You, “Sequence parallelism: Long sequence training from system perspective,” in 
+
+Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , A. Rogers, J. Boyd-Graber, and N. Okazaki, Eds. Toronto, Canada: Association for Computational Linguistics, Jul. 2023, pp. 2391–2404. [Online]. Available: https://aclanthology.org/2023.acl-long.134/ [17] Q. Anthony, B. Michalowicz, J. Hatef, L. Xu, M. Abduljabbai, A. Shafi, H. Subramoni, and D. K. Panda, “Demystifying the communication char-acteristics for distributed transformer models,” in 2024 IEEE Symposium on High-Performance Interconnects (HOTI) . IEEE, 2024, pp. 57–65. [18] R. Pope, S. Douglas, A. Chowdhery, J. Devlin, J. Bradbury, J. Heek, K. Xiao, S. Agrawal, and J. Dean, “Efficiently scaling transformer inference,” Proceedings of machine learning and systems , vol. 5, pp. 606–624, 2023. 15 
+
+[19] Y. Wei, S. Ye, J. Jiang, X. Chen, D. Huang, J. Du, and Y. Lu, “Communication-efficient model parallelism for distributed in-situ trans-former inference,” in 2024 Design, Automation & Test in Europe Conference & Exhibition (DATE) , 2024, pp. 1–6. [20] X. Liu, L. Zhang, D. Ganesan, and H. Guan, “ASTRA: Communication-efficient acceleration for multi-device transformer inference,” in Forty-third International Conference on Machine Learning , 2026. [Online]. Available: https://openreview.net/forum?id=QmiKRq3e4N [21] A. Mitra, J. A. Richards, S. Bagchi, and S. Sundaram, “Distributed inference with sparse and quantized communication,” IEEE Transactions on Signal Processing , vol. 69, pp. 3906–3921, 2021. [22] M. A. Qazi, A. Iosifidis, and Q. Zhang, “Prism: Distributed inference for foundation models at edge,” arXiv preprint arXiv:2507.12145 , 2025. [23] L. Kaufman and P. J. Rousseeuw, Finding groups in data: an introduc-tion to cluster analysis . John Wiley & Sons, 2009. [24] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin, “Attention is all you need,” 2017. [Online]. Available: https://arxiv.org/pdf/1706.03762.pdf [25] H. Touvron, M. Cord, M. Douze, F. Massa, A. Sablayrolles, and H. J´ egou, “Training data-efficient image transformers & distillation through attention,” in International conference on machine learning .PMLR, 2021, pp. 10 347–10 357. [26] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “Bert: Pre-training of deep bidirectional transformers for language understanding,” in Pro-ceedings of the 2019 conference of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers) , 2019, pp. 4171–4186. [27] J. Fang and S. Zhao, “Usp: A unified sequence parallelism approach for long context generative ai,” arXiv preprint arXiv:2405.07719 , 2024. [28] L. Guo, W. Choe, and F. X. Lin, “Sti: Turbocharge nlp inference at the edge via elastic pipelining,” in Proceedings of the 28th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 , 2023, pp. 791–803. [29] Y. Cheng, Z. Zhang, and S. Wang, “Rcif: Towards robust distributed dnn collaborative inference under highly lossy networks,” in ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2024, pp. 5350–5354. [30] A. Gersho and R. M. Gray, Vector quantization and signal compression .USA: Kluwer Academic Publishers, 1991. [31] A. Van Den Oord, O. Vinyals et al. , “Neural discrete representation learning,” Advances in neural information processing systems , vol. 30, 2017. [32] D. Yang, S. Liu, R. Huang, J. Tian, C. Weng, and Y. Zou, “Hifi-codec: Group-residual vector quantization for high fidelity audio codec,” arXiv preprint arXiv:2305.02765 , 2023. [33] J. Deng, W. Dong, R. Socher, L.-J. Li, K. Li, and L. Fei-Fei, “Imagenet: A large-scale hierarchical image database,” in 2009 IEEE Conference on Computer Vision and Pattern Recognition , 2009, pp. 248–255. [34] A. Krizhevsky, “Learning multiple layers of features from tiny images,” University of Toronto, Tech. Rep., 2009. [35] K. Soomro, A. R. Zamir, and M. Shah, “Ucf101: A dataset of 101 human actions classes from videos in the wild,” arXiv preprint arXiv:1212.0402 ,2012.
