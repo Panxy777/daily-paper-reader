@@ -1,0 +1,39 @@
+{
+  "label": "2026-10-21",
+  "date": "2026-10-21",
+  "generated_at": "2026-10-21T22:12:18",
+  "count": 2,
+  "papers": [
+    {
+      "paper_id": "202610/21/2610.26991v1-3d-moe-complementarity-guided-hardware-software-co-design-for-moe-decode-on-3d-stacked-nmp",
+      "section": "deep",
+      "title_en": "3D-MoE: Complementarity-Guided Hardware-Software Co-Design for MoE Decode on 3D-Stacked NMP",
+      "authors": "Yudong Pan, Lian Liu, Shixin Zhao, Yintao He, Kaiyan Chang, Tianhua Han, Chenyang Ai, Haonan Zhu, Mengdi Wang, Yinhe Han, Ying Wang",
+      "date": "2026-10-19",
+      "pdf": "https://arxiv.org/pdf/2610.26991v1",
+      "score": "8.0",
+      "evidence": "在专家并行MoE解码中权衡专家负载均衡与局部性",
+      "tldr": "MoE解码受内存带宽限制且专家负载高度倾斜、随时间变化；3D堆叠近存计算虽提供带宽，却因分块组织使负载均衡与局部性冲突。3D-MoE利用专家互补性做软硬件协同：离线分组映射建立组间均衡，CMN按需广播热点专家权重，并用在线重映射应对漂移。相比EP实现MoE层平均4.63倍加速，端到端吞吐提升1.58–1.86倍，仅增2.11%逻辑裸片面积。",
+      "tags": "query:ccl",
+      "abstract_en": "Mixture-of-Experts (MoE) have become a mainstream way to scale Large Language Models (LLMs), because each token activates only a small subset of experts, reducing inference cost. However, MoE decode remains highly memory-bound and exhibits strongly skewed, time-varying expert loads. 3D-stacked DRAM near-memory processing (NMP) provides the bandwidth that decode demands, yet its tiled organization makes load balancing expensive: expert parallelism (EP) preserves locality but suffers from hotspot-induced imbalance, while more distributed strategies weaken locality and increase NoC traffic.   To address this locality-balance conflict, we observe that domain-specialized token routing creates offsetting expert-load fluctuations across decode steps, a property we call expert complementarity. Using this insight, we propose 3D-MoE, a hardware--software co-designed system for MoE decode on 3D-stacked NMP. 3D-MoE uses offline, one-time complementarity-guided grouping and locality-aware mapping to establish coarse-grained inter-group balance, handles residual intra-group hotspots through a lightweight Collaborative Memory-Network (CMN) that streams each hot expert's weight tiles once from its host DRAM channel to helper cores over a reconfigured local broadcast path, and uses cost-aware online remapping to remain robust to workload drift. Across MoE models, 3D-MoE achieves an average 4.63$\\times$ MoE-layer speedup over EP and improves end-to-end throughput by 1.58$\\times$--1.86$\\times$ over the strongest NMP baselines, with 2.11\\% additional logic-die area.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "paper_id": "202610/21/2610.19405v1-scaling-llm-inference-via-parallelism-throughput-latency-trade-off",
+      "section": "quick",
+      "title_en": "Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off",
+      "authors": "Javad Mirzaei, Jeebak Mitra",
+      "date": "2026-10-14",
+      "pdf": "https://arxiv.org/pdf/2610.19405v1",
+      "score": "6.0",
+      "evidence": "分布式LLM推理的并行配置，关联集合通信权衡",
+      "tldr": "LLM推理需同时优化TTFT与ITL，分布式并行配置选择缺乏系统依据。本文构建TTFT-ITL可行集与Pareto前沿，刻画TP/PP及混合并行的运行区域，并以goodput进行SLO感知配置选择。结果表明，预填充负载加重使最优配置由TP主导转向PP主导；严格TTFT偏好PP，宽松延迟则倾向高容量TP。长上下文下PP主导配置更具可扩展性与SLO达成优势。",
+      "tags": "query:ccl",
+      "abstract_en": "Large Language Model (LLM) serving systems must balance latency and throughput while efficiently utilizing distributed GPU resources. This challenge arises because inference consists of two fundamentally different phases: prefill, which determines time-to-first-token (TTFT), and decode, which determines inter-token latency (ITL). The use of tensor parallelism (TP), pipeline parallelism (PP), and hybrid configurations exposes different trade-offs between these latency dimensions, making the optimal parallelism configuration highly dependent on workload characteristics, latency requirements, and context length. Moreover, despite the widespread adoption of distributed inference, there is still limited understanding of how parallelism configurations should be selected under varying workload conditions and service-level objectives (SLO). In this paper, we develop a systematic framework for characterizing LLM inference parallelism via throughput-latency trade-offs, SLO-aware serving, and long-context scalability. We introduce the notion of parallelism operating regions by constructing TTFT-ITL feasible sets and Pareto frontiers across different workload compositions, thereby revealing a systematic transition from TP-dominant to PP-dominant configurations as workloads become increasingly prefill-heavy. We further formulate SLO-aware parallelism selection using goodput, showing that stringent TTFT requirements favor PP-dominated configurations, whereas relaxed latency constraints progressively shift the optimality toward TP-dominated configurations with higher serving capacity. Finally, we demonstrate that increasing context length fundamentally changes the relative advantages of parallelism configurations, with PP-dominant configurations exhibiting more favorable scalability and SLO attainment in the long-context regime.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "errors": []
+}

@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-20</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-21</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 14 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>6</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>1</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-20 21:56:45 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-21 22:12:17 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日共筛选14篇论文、精读6篇，重点锁定高性能集合通信与MoE推理优化。最值得关注的是两篇9.0分工作：《SP-Allreduce》为环面等拓扑设计对称树调度，《MCCL》则用测量驱动的集合通信库提升实际性能。建议普通读者优先读这两篇精读，再按兴趣补看MoE自适应专家分配与多GPU流水线重叠等速读方向。</p>
+<p>今日精选2篇：精读3D-MoE软硬件协同设计，速读LLM推理并行化权衡。最值得关注3D-MoE用互补性引导设计优化3D堆叠NMP上的MoE解码（8.0分），以及并行化策略对吞吐-延迟权衡的影响（6.0分）。普通读者可先读3D-MoE理解MoE推理的软硬件协同优化思路，再结合并行化综述把握系统级取舍。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">6 篇</strong>
+    <strong class="dpr-home-dashboard-count">1 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="SP-Allreduce: Symmetric Tree Schedules for Tori and Beyond">SP-Allreduce: Symmetric Tree Schedules for Tori and Beyond</span></li><li><span class="dpr-home-dashboard-paper-title" title="MCCL: Measurement-based Collective Communication Library">MCCL: Measurement-based Collective Communication Library</span></li><li><span class="dpr-home-dashboard-paper-title" title="BaGuaLu-2: Taming Dynamic Memory Fluctuation for Efficient MoE Model Training over 10,000 GPUs">BaGuaLu-2: Taming Dynamic Memory Fluctuation for Efficient MoE Model Training over 10,000 GPUs</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="3D-MoE: Complementarity-Guided Hardware-Software Co-Design for MoE Decode on 3D-Stacked NMP">3D-MoE: Complementarity-Guided Hardware-Software Co-Design for MoE Decode on 3D-Stacked NMP</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>6</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>1</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">1 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Efficient CPU-GPU collaborative MoE inference via Adaptive Expert Assignment">Efficient CPU-GPU collaborative MoE inference via Adaptive Expert Assignment</span></li><li><span class="dpr-home-dashboard-paper-title" title="Triple Overlap in Pipelined Krylov Methods on Multi-GPU Systems">Triple Overlap in Pipelined Krylov Methods on Multi-GPU Systems</span></li><li><span class="dpr-home-dashboard-paper-title" title="MailRail: Mitigating Incast Congestion with User-Space, Node-Based Flow Control">MailRail: Mitigating Incast Congestion with User-Space, Node-Based Flow Control</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off">Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>8</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>1</strong></span></div>
 </section>
 </div>
 

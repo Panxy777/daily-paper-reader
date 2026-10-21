@@ -1,0 +1,103 @@
+{
+  "mode": "standard",
+  "generated_at": "2026-10-21T22:10:12.555560+00:00",
+  "stats": {
+    "mode": "standard",
+    "tag_count": 1,
+    "deep_divecandidates": 1,
+    "deep_cap": 6,
+    "deep_selected": 1,
+    "quick_candidates": 1,
+    "quick_skim_target": 11,
+    "quick_selected": 1
+  },
+  "deep_dive": [
+    {
+      "id": "2610.26991v1",
+      "source": "arxiv",
+      "title": "3D-MoE: Complementarity-Guided Hardware-Software Co-Design for MoE Decode on 3D-Stacked NMP",
+      "abstract": "Mixture-of-Experts (MoE) have become a mainstream way to scale Large Language Models (LLMs), because each token activates only a small subset of experts, reducing inference cost. However, MoE decode remains highly memory-bound and exhibits strongly skewed, time-varying expert loads. 3D-stacked DRAM near-memory processing (NMP) provides the bandwidth that decode demands, yet its tiled organization makes load balancing expensive: expert parallelism (EP) preserves locality but suffers from hotspot-induced imbalance, while more distributed strategies weaken locality and increase NoC traffic.   To address this locality-balance conflict, we observe that domain-specialized token routing creates offsetting expert-load fluctuations across decode steps, a property we call expert complementarity. Using this insight, we propose 3D-MoE, a hardware--software co-designed system for MoE decode on 3D-stacked NMP. 3D-MoE uses offline, one-time complementarity-guided grouping and locality-aware mapping to establish coarse-grained inter-group balance, handles residual intra-group hotspots through a lightweight Collaborative Memory-Network (CMN) that streams each hot expert's weight tiles once from its host DRAM channel to helper cores over a reconfigured local broadcast path, and uses cost-aware online remapping to remain robust to workload drift. Across MoE models, 3D-MoE achieves an average 4.63$\\times$ MoE-layer speedup over EP and improves end-to-end throughput by 1.58$\\times$--1.86$\\times$ over the strongest NMP baselines, with 2.11\\% additional logic-die area.",
+      "authors": [
+        "Yudong Pan",
+        "Lian Liu",
+        "Shixin Zhao",
+        "Yintao He",
+        "Kaiyan Chang",
+        "Tianhua Han",
+        "Chenyang Ai",
+        "Haonan Zhu",
+        "Mengdi Wang",
+        "Yinhe Han",
+        "Ying Wang"
+      ],
+      "primary_category": "cs.AR",
+      "categories": [
+        "cs.AR",
+        "cs.AI",
+        "cs.DC"
+      ],
+      "published": "2026-10-19T07:13:19+00:00",
+      "link": "https://arxiv.org/pdf/2610.26991v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "Expert load balancing versus locality in expert-parallel MoE decode",
+      "llm_evidence_cn": "在专家并行MoE解码中权衡专家负载均衡与局部性",
+      "llm_evidence": "在专家并行MoE解码中权衡专家负载均衡与局部性",
+      "canonical_evidence": "在专家并行MoE解码中权衡专家负载均衡与局部性",
+      "llm_tldr_en": "MoE decode is memory-bound with skewed, time-varying expert loads, and expert parallelism suffers hotspot imbalance while distributed placement raises NoC traffic. 3D-MoE exploits offsetting load fluctuations via complementarity-guided hardware-software co-design on 3D-stacked NMP.",
+      "llm_tldr_cn": "MoE解码高度受限于内存带宽，专家负载分布偏斜且随时间变化，专家并行虽保留局部性却易出现热点失衡。作者观察到领域特化路由会带来跨设备互补的负载波动，据此提出3D-MoE软硬件协同设计，在3D堆叠近存计算架构上兼顾局部性与负载均衡。该方案缓解了局部性与均衡之间的冲突，降低热点失衡与网络流量开销。工作为MoE专家并行解码的负载均衡提供了架构级新思路。",
+      "llm_tldr": "MoE解码高度受限于内存带宽，专家负载分布偏斜且随时间变化，专家并行虽保留局部性却易出现热点失衡。作者观察到领域特化路由会带来跨设备互补的负载波动，据此提出3D-MoE软硬件协同设计，在3D堆叠近存计算架构上兼顾局部性与负载均衡。该方案缓解了局部性与均衡之间的冲突，降低热点失衡与网络流量开销。工作为MoE专家并行解码的负载均衡提供了架构级新思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "expert load balancing",
+      "matched_requirement_id": "req-1",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "quick_skim": [
+    {
+      "id": "2610.19405v1",
+      "source": "arxiv",
+      "title": "Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off",
+      "abstract": "Large Language Model (LLM) serving systems must balance latency and throughput while efficiently utilizing distributed GPU resources. This challenge arises because inference consists of two fundamentally different phases: prefill, which determines time-to-first-token (TTFT), and decode, which determines inter-token latency (ITL). The use of tensor parallelism (TP), pipeline parallelism (PP), and hybrid configurations exposes different trade-offs between these latency dimensions, making the optimal parallelism configuration highly dependent on workload characteristics, latency requirements, and context length. Moreover, despite the widespread adoption of distributed inference, there is still limited understanding of how parallelism configurations should be selected under varying workload conditions and service-level objectives (SLO). In this paper, we develop a systematic framework for characterizing LLM inference parallelism via throughput-latency trade-offs, SLO-aware serving, and long-context scalability. We introduce the notion of parallelism operating regions by constructing TTFT-ITL feasible sets and Pareto frontiers across different workload compositions, thereby revealing a systematic transition from TP-dominant to PP-dominant configurations as workloads become increasingly prefill-heavy. We further formulate SLO-aware parallelism selection using goodput, showing that stringent TTFT requirements favor PP-dominated configurations, whereas relaxed latency constraints progressively shift the optimality toward TP-dominated configurations with higher serving capacity. Finally, we demonstrate that increasing context length fundamentally changes the relative advantages of parallelism configurations, with PP-dominant configurations exhibiting more favorable scalability and SLO attainment in the long-context regime.",
+      "authors": [
+        "Javad Mirzaei",
+        "Jeebak Mitra"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.AI",
+        "cs.LG",
+        "cs.PF"
+      ],
+      "published": "2026-10-14T01:53:24+00:00",
+      "link": "https://arxiv.org/pdf/2610.19405v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "parallelism configs for distributed LLM inference, related to collective communication trade-offs",
+      "llm_evidence_cn": "分布式LLM推理的并行配置，关联集合通信权衡",
+      "llm_evidence": "分布式LLM推理的并行配置，关联集合通信权衡",
+      "canonical_evidence": "分布式LLM推理的并行配置，关联集合通信权衡",
+      "llm_tldr_en": "The paper analyzes how tensor, pipeline and hybrid parallelism configurations trade off throughput and latency in distributed LLM inference across prefill and decode phases.",
+      "llm_tldr_cn": "分布式LLM服务需在时延与吞吐间权衡，而预填充与解码两阶段目标不同，使并行配置选择复杂。本文系统分析张量并行、流水线并行及混合配置对首字时延与词元间时延的影响。研究揭示了最优并行配置高度依赖负载特征、时延要求与上下文长度。其意义在于为分布式LLM推理的并行策略与资源调度提供指导。",
+      "llm_tldr": "分布式LLM服务需在时延与吞吐间权衡，而预填充与解码两阶段目标不同，使并行配置选择复杂。本文系统分析张量并行、流水线并行及混合配置对首字时延与词元间时延的影响。研究揭示了最优并行配置高度依赖负载特征、时延要求与上下文长度。其意义在于为分布式LLM推理的并行策略与资源调度提供指导。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to optimize collective communication for distributed LLM training and inference?",
+      "matched_requirement_id": "req-9",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    }
+  ]
+}
