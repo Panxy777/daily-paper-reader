@@ -1,0 +1,54 @@
+{
+  "label": "2026-10-22",
+  "date": "2026-10-22",
+  "generated_at": "2026-10-22T22:17:41",
+  "count": 3,
+  "papers": [
+    {
+      "paper_id": "202610/22/2610.20981v1-cyclotron-a-recurrence-language-for-expressing-interprocessor-communication",
+      "section": "quick",
+      "title_en": "Cyclotron: A Recurrence Language for Expressing Interprocessor Communication",
+      "authors": "Shiv Sundram, Akhilesh Balasingam, Nathan Zhang, Kunle Olukotun, Fredrik Kjolstad",
+      "date": "2026-10-14",
+      "pdf": "https://arxiv.org/pdf/2610.20981v1",
+      "score": "6.0",
+      "evidence": "用编译语言表达广播、脉动交换等处理器间通信模式",
+      "tldr": "分布式流式算法常受限于库内固定通信模式，难以直接表达复杂点对点数据交换。Cyclotron 用迭代空间上的递推方程描述计算与通信，再按用户选择的空间—时间映射编译为各处理器的发送、接收与计算程序。在矩阵乘、TRSM、Cholesky 与融合算例上，它对比 ScaLAPACK、SLATE 和 cuSolverMp，最多扩展到 16 个 CPU 节点与 16 块 GPU，性能有竞争力且常更优。该工作把通信模式从硬件映射中解耦，提升了分布式算法表达与调优的灵活性。",
+      "tags": "query:ccl",
+      "abstract_en": "We present Cyclotron, a compiler that expresses streaming dataflow algorithms using recurrence equations, which are then compiled to distributed topologies of interlinked processors. Our compiler lowers a language of recurrences over logical iteration spaces into per-processor programs of sends, receives, and computations. In these recurrences, data accesses are not limited to external accesses to memory; data can live separately on the iteration space itself, allowing internal points to communicate values directly with other points. Users specify this communication directly in the recurrence language, which allows them to express various communication patterns such as a nearest-neighbor systolic exchange, a one-to-all broadcast, a bidirectional split ring, or an asymmetric and piecewise broadcast pattern, which are often not supported by standard distributed linear algebra libraries. These recurrences describe the algorithm and communication independently of how they map onto the hardware. A programmer then chooses which dimensions execute across processors and which execute over time, without rewriting the entire program. Users only specify data dependencies across the iteration space, and the compiler safely generates a program, per process, with correct placement of both communication and computational operators according to the chosen space--time mapping. We evaluate distributed matrix multiplication, TRSM, Cholesky, and fused Cholesky--TRSM on up to 16 CPU nodes and 16 GPUs, comparing against ScaLAPACK, SLATE, and cuSolverMp. Cyclotron is competitive with and often outperforms these hand-optimized libraries; for Cholesky, the best communication strategy changes with problem size and architecture.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "paper_id": "202610/22/2610.22996v1-tallop-joint-optimization-of-local-training-and-communication-compression-for-time-constrained-federated-learning",
+      "section": "quick",
+      "title_en": "TALLOP: Joint Optimization of Local Training and Communication Compression for Time-Constrained Federated Learning",
+      "authors": "Honoka Anada, Yafei Ou, Shinya Takamaeda-Yamazaki",
+      "date": "2026-10-16",
+      "pdf": "https://arxiv.org/pdf/2610.22996v1",
+      "score": "6.0",
+      "evidence": "每轮时间约束下联合优化本地计算与通信压缩",
+      "tldr": "在异构联邦学习中，慢客户端拖慢同步，通信也可能成为瓶颈。TALLOP在每轮时间约束下联合优化本地训练工作量与通信压缩，用LENS从早期小批量损失轨迹预测可达到的训练损失，并用CLEN估计压缩退化。它据此选择使压缩后损失最小的训练—通信分配。实验显示其时间到精度总体有竞争力或更优，但相对仅训练自适应方法的收益依设置而定，为受限FL提供联合分配思路。",
+      "tags": "query:ccl",
+      "abstract_en": "Minimizing the wall-clock time required to reach a target accuracy is crucial in federated learning (FL), where many applications require frequent model updates as data distributions evolve over time. Nevertheless, in heterogeneous environments, slow clients with limited computational and communication capabilities can delay global synchronization, forcing faster clients to wait and increasing the overall training time. To mitigate this straggler effect, recent studies have introduced per-round time constraints and adapted client workloads within the available time. However, these approaches primarily focus on local computation, whereas communication can become a major bottleneck in communication-limited environments, motivating the joint optimization of training workload and communication compression. Although previous studies have explored such joint optimization, determining an effective training--communication balance under a fixed per-round time budget remains challenging, as the resulting model performance depends on both training progress and compression-induced degradation. We therefore propose TALLOP, which jointly optimizes the local training workload and communication compression under per-round time constraints. TALLOP predicts the training loss achievable under different computation budgets from the early-stage mini-batch loss trajectory (LENS), and estimates the degradation caused by communication compression using a compression-error model (CLEN). TALLOP combines these predictions to select the training-communication allocation that minimizes the post-compression loss under the given round time constraint. Experiments in heterogeneous FL environments show that TALLOP generally achieves competitive or improved time-to-accuracy compared with approaches that optimize only local training or neither, although the benefit over training-only adaptation depends on the setting.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "paper_id": "202610/22/2610.24328v1-sigmatrace-library-agnostic-observability-for-cpugpu-initiated-rdma-communication",
+      "section": "quick",
+      "title_en": "SigmaTrace: Library-Agnostic Observability for CPU/GPU-Initiated RDMA Communication",
+      "authors": "Javid Baydamirli, Didem Unat",
+      "date": "2026-10-16",
+      "pdf": "https://arxiv.org/pdf/2610.24328v1",
+      "score": "6.0",
+      "evidence": "库无关的RDMA剖析可定位集合通信性能瓶颈",
+      "tldr": "RDMA 网络缺乏细粒度可观测性，现有工具依赖特定通信库或只报告聚合数据，GPU 发起的内核态 RDMA 更对主机不可见。SigmaTrace 在 libibverbs/mlx5dv 层追踪 CPU 与 GPU 逐操作通信，并用低开销内存插桩实现无需改源码或二进制插桩的 GPU RDMA 观测。它在 128 GPU NCCL AllReduce 仅增 1.3% 开销，1024 GPU RCCL 低于 2%，并揭示持久内核 BFS 与 MoE 推理中既有分析器看不到的内核屏障扩散和 2.13 倍跨节点流量偏斜。",
+      "tags": "query:ccl",
+      "abstract_en": "RDMA networking enables low-latency, high-bandwidth communication on large systems. Despite its adoption, however, observability is lacking. Existing tools target specific communication libraries or only report aggregated data, missing per-operation behavior. The gap is widest for GPU-initiated networking, whose in-kernel RDMA operations are invisible to the host.   We present SigmaTrace, a library-agnostic RDMA profiling framework providing fine-grained, per-operation visibility for CPU and GPU-initiated networking. It traces operations at the libibverbs/mlx5dv layers, the common denominator beneath communication libraries on InfiniBand and RoCE, and employs a low-overhead memory interposition technique that, to our knowledge, gives the first observability into GPU-initiated RDMA without source patching or binary instrumentation.   Host-side tracing adds 1.3% overhead on NCCL AllReduce at 128 GPUs and under 2% on RCCL at 1024 GPUs. On a persistent-kernel BFS and Mixture-of-Experts inference, SigmaTrace exposes an in-kernel barrier spread and 2.13x inter-node traffic skew invisible to existing profilers.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "errors": []
+}

@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-21</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-22</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 3 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>1</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>1</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-21 22:12:17 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-22 22:17:39 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,9 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日精选2篇：精读3D-MoE软硬件协同设计，速读LLM推理并行化权衡。最值得关注3D-MoE用互补性引导设计优化3D堆叠NMP上的MoE解码（8.0分），以及并行化策略对吞吐-延迟权衡的影响（6.0分）。普通读者可先读3D-MoE理解MoE推理的软硬件协同优化思路，再结合并行化综述把握系统级取舍。</p>
+<p>今天速读 3 篇系统与网络方向论文，均获 6.0 分，暂无精读。</p>
+<p>最值得看的是两篇通信优化：《TALLOP》在限时联邦学习下联合优化本地训练与通信压缩，《Cyclotron》用递推语言表达处理器间通信，另《SigmaTrace》给出跨 CPU/GPU 发起 RDMA 的通用可观测方案。</p>
+<p>普通读者可先从 TALLOP 入手了解联邦学习通信瓶颈，再按兴趣补读另两篇的摘要与方法部分。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +80,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="3D-MoE: Complementarity-Guided Hardware-Software Co-Design for MoE Decode on 3D-Stacked NMP">3D-MoE: Complementarity-Guided Hardware-Software Co-Design for MoE Decode on 3D-Stacked NMP</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>1</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +93,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">1 篇</strong>
+    <strong class="dpr-home-dashboard-count">3 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off">Scaling LLM Inference via Parallelism: Throughput-Latency Trade-off</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Cyclotron: A Recurrence Language for Expressing Interprocessor Communication">Cyclotron: A Recurrence Language for Expressing Interprocessor Communication</span></li><li><span class="dpr-home-dashboard-paper-title" title="TALLOP: Joint Optimization of Local Training and Communication Compression for Time-Constrained Federated Learning">TALLOP: Joint Optimization of Local Training and Communication Compression for Time-Constrained Federated Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="SigmaTrace: Library-Agnostic Observability for CPU/GPU-Initiated RDMA Communication">SigmaTrace: Library-Agnostic Observability for CPU/GPU-Initiated RDMA Communication</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>1</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>3</strong></span></div>
 </section>
 </div>
 

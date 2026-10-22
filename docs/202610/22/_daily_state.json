@@ -1,0 +1,57 @@
+{
+  "date": "20261022",
+  "date_label": "",
+  "generated_at": "2026-10-22 22:17:39 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.20981v1",
+      "route": "202610/22/2610.20981v1-cyclotron-a-recurrence-language-for-expressing-interprocessor-communication",
+      "title": "Cyclotron: A Recurrence Language for Expressing Interprocessor Communication",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "用编译语言表达广播、脉动交换等处理器间通信模式",
+      "first_seen_at": "2026-10-22 22:17:39 UTC",
+      "updated_at": "2026-10-22 22:17:39 UTC"
+    },
+    {
+      "paper_id": "2610.22996v1",
+      "route": "202610/22/2610.22996v1-tallop-joint-optimization-of-local-training-and-communication-compression-for-time-constrained-federated-learning",
+      "title": "TALLOP: Joint Optimization of Local Training and Communication Compression for Time-Constrained Federated Learning",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "每轮时间约束下联合优化本地计算与通信压缩",
+      "first_seen_at": "2026-10-22 22:17:39 UTC",
+      "updated_at": "2026-10-22 22:17:39 UTC"
+    },
+    {
+      "paper_id": "2610.24328v1",
+      "route": "202610/22/2610.24328v1-sigmatrace-library-agnostic-observability-for-cpugpu-initiated-rdma-communication",
+      "title": "SigmaTrace: Library-Agnostic Observability for CPU/GPU-Initiated RDMA Communication",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "库无关的RDMA剖析可定位集合通信性能瓶颈",
+      "first_seen_at": "2026-10-22 22:17:39 UTC",
+      "updated_at": "2026-10-22 22:17:39 UTC"
+    }
+  ]
+}

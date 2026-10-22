@@ -1,0 +1,626 @@
+Title: Cyclotron: A Recurrence Language for Expressing Interprocessor Communication
+
+URL Source: https://arxiv.org/pdf/2610.20981v1
+
+Published Time: Fri, 16 Oct 2026 00:27:58 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Cyclotron: A Recurrence Language for Expressing Interprocessor Communication 
+
+Shiv Sundram 
+
+shiv1@stanford.edu 
+
+Stanford University Stanford, California, USA 
+
+Akhilesh Balasingam 
+
+avb03@stanford.edu 
+
+Stanford University Stanford, California, USA 
+
+Nathan Zhang 
+
+stanfurd@stanford.edu 
+
+Stanford University Stanford, California, USA 
+
+Kunle Olukotun 
+
+kunle@stanford.edu 
+
+Stanford University Stanford, California, USA 
+
+Fredrik Kjolstad 
+
+kjolstad@stanford.edu 
+
+Stanford University Stanford, California, USA 
+
+Abstract 
+
+We present Cyclotron, a compiler that expresses streaming dataflow algorithms using recurrence equations, which are then compiled to distributed topologies of interlinked pro-cessors. Our compiler lowers a language of recurrences over logical iteration spaces into per-processor programs of sends, receives, and computations. In these recurrences, data ac-cesses are not limited to external accesses to memory; data can live separately on the iteration space itself, allowing internal points to communicate values directly with other points. Users specify this communication directly in the re-currence language, which allows them to express various communication patterns such as a nearest-neighbor systolic exchange, a one-to-all broadcast, a bidirectional split ring, or an asymmetric and piecewise broadcast pattern, which are often not supported by standard distributed linear alge-bra libraries. These recurrences describe the algorithm and communication independently of how they map onto the hardware. A programmer then chooses which dimensions execute across processors and which execute over time, with-out rewriting the entire program. Users only specify data dependencies across the iteration space, and the compiler safely generates a program, per process, with correct place-ment of both communication and computational operators according to the chosen space–time mapping. We evalu-ate distributed matrix multiplication, TRSM, Cholesky, and fused Cholesky–TRSM on up to 16 CPU nodes and 16 GPUs, comparing against ScaLAPACK, SLATE, and cuSolverMp. Cyclotron is competitive with and often outperforms these hand-optimized libraries; for Cholesky, the best communica-tion strategy changes with problem size and architecture. 
+
+1 Introduction 
+
+Generations of architectural improvements have widened the gap between the cost of data movement and the cost of computation. Performance optimization is now dominated by minimizing memory traffic and network communication on distributed architectures. Extracting performance from such hardware is largely a matter of orchestrating how data moves through that fabric: laterally between PEs, and tem-porally as values are retained in fast memory across steps. Yet the dominant abstractions for programming these ma-chines do not represent data movement beyond memory loads/stores. In tensor algebra notation, loop-based IRs, and polyhedral representations, every data access is a tensor access—logical reads from or writes to memory locations. Such a program says what value each statement consumes, but not how or where that value travels between processors or across time. The movement is left implicit, to be recovered by dependence analysis and then realized by a lowering pass. In computational problems where communication is a pri-mary bottleneck, such as in distributed linear algebra (e.g., matrix multiplication), tensor algebra, and recurrences, the best communication policy can vary with input size, tile size, interconnect, and processor architecture. Yet standard dis-tributed libraries like ScaLAPACK [7] or SLATE [10] either hard-code communication policies or expose only a small set of predefined options. Consequently, the best commu-nication schedule for a particular problem and architecture may not be available to the programmer. Compiler frameworks avoid pitfalls of writing distributed code by hand, which is error-prone and can lead to indefinite hangs from mismatched or incorrectly ordered communica-tion, while also being difficult to optimize (e.g., overlapping communication with computation). Polyhedral frameworks have made important steps forward in modeling relation-ships between iteration spaces and memory accesses. Exist-ing polyhedral frameworks, like AutoSA [37] for systolic-array synthesis and AlphaZ for distributed-memory code generation,[39] lower dependencies into nearest-neighbor transfers; both therefore effectively commit to a systolic realization of communication. As a result, alternative real-izations of the same logical dependence, such as a one-to-all broadcast, a tree-broadcast, or heterogeneous combinations of broadcast and forwarding, are not supported. This limitation stems from what the user program leaves unspecified. With polyhedral frameworks, users write equa-tions or loops over array accesses, and the compiler analyses the program to identify where communication should occur. arXiv:2610.20981v1 [cs.DC] 14 Oct 2026 Anonymous <latexit sha1_base64="PxLrDSZR9WKhWHBSsgPEkztmMe8=">AAAB+HicdVBdSwJBFJ21L7MPrR57GZPAwJZdlU3fxF56NMgPcEVmx1mdnP1gZjawxV/SSw9F9NpP6a1/06waVNSBC4dz7uXee5yQUSEN40NLra1vbG6ltzM7u3v72dzBYUcEEcekjQMW8J6DBGHUJ21JJSO9kBPkOYx0nell4nfvCBc08G/kLCQDD4196lKMpJKGuWyR2vlzO2+WbkvTs2FzmCsYulmxKnUTGnq5bNSshFj1eqVagaZuLFAAK7SGuXd7FODII77EDAnRN41QDmLEJcWMzDN2JEiI8BSNSV9RH3lEDOLF4XN4qpQRdAOuypdwoX6fiJEnxMxzVKeH5ET89hLxL68fSbc2iKkfRpL4eLnIjRiUAUxSgCPKCZZspgjCnKpbIZ4gjrBUWWVUCF+fwv9Jp6yblm5dVwuN5iqONDgGJ6AITHABGuAKtEAbYBCBB/AEnrV77VF70V6XrSltNXMEfkB7+wQYzJF4</latexit> (i→1, j, k )B
+
+<latexit sha1_base64="DfkpW+m4vb8kJ83G6qYePGzewPA=">AAAB7XicdVDLSgMxFM3UV62vqks3wSK4GjK1z12pG5cV7APaoWTStE2bSYYkI5Sh/+DGhSJu/R93/o3pQ1DRAxcO59zLvfcEEWfaIPThpDY2t7Z30ruZvf2Dw6Ps8UlLy1gR2iSSS9UJsKacCdo0zHDaiRTFYcBpO5heL/z2PVWaSXFnZhH1QzwSbMgINlZq1fvJdDLvZ3PIzXteuVSEyL1C1QoqWFLOFwtVBD0XLZEDazT62ffeQJI4pMIQjrXueigyfoKVYYTTeaYXaxphMsUj2rVU4JBqP1leO4cXVhnAoVS2hIFL9ftEgkOtZ2FgO0Nsxvq3txD/8rqxGVb8hIkoNlSQ1aJhzKGRcPE6HDBFieEzSzBRzN4KyRgrTIwNKGND+PoU/k9aedcruaXbQq5WX8eRBmfgHFwCD5RBDdyABmgCAibgATyBZ0c6j86L87pqTTnrmVPwA87bJwpaj3g=</latexit> Bkj 
+
+<latexit sha1_base64="GJuyOTd+dxpZH2pVCUgN+QKVy1Y=">AAAB7nicdVDLSsNAFL3xWeur6tLNYBFchaT2YXdVNy4r2Ae0oUymk3bIZBJmJkIJ/Qg3LhRx6/e4829M0goqeuDC4Zx7ufceN+JMacv6MFZW19Y3Ngtbxe2d3b390sFhV4WxJLRDQh7KvosV5UzQjmaa034kKQ5cTnuuf535vXsqFQvFnZ5F1AnwRDCPEaxTqXc5Spg/L45KZcts1CrNqo0s8zxHRhqVWrWJbNPKUYYl2qPS+3AckjigQhOOlRrYVqSdBEvNCKfz4jBWNMLExxM6SKnAAVVOkp87R6epMkZeKNMSGuXq94kEB0rNAjftDLCeqt9eJv7lDWLtXTgJE1GsqSCLRV7MkQ5R9jsaM0mJ5rOUYCJZeisiUywx0WlCWQhfn6L/Sbdi2nWzflstt66WcRTgGE7gDGxoQAtuoA0dIODDAzzBsxEZj8aL8bpoXTGWM0fwA8bbJ0JMj40=</latexit> Aik 
+
+<latexit sha1_base64="GJuyOTd+dxpZH2pVCUgN+QKVy1Y=">AAAB7nicdVDLSsNAFL3xWeur6tLNYBFchaT2YXdVNy4r2Ae0oUymk3bIZBJmJkIJ/Qg3LhRx6/e4829M0goqeuDC4Zx7ufceN+JMacv6MFZW19Y3Ngtbxe2d3b390sFhV4WxJLRDQh7KvosV5UzQjmaa034kKQ5cTnuuf535vXsqFQvFnZ5F1AnwRDCPEaxTqXc5Spg/L45KZcts1CrNqo0s8zxHRhqVWrWJbNPKUYYl2qPS+3AckjigQhOOlRrYVqSdBEvNCKfz4jBWNMLExxM6SKnAAVVOkp87R6epMkZeKNMSGuXq94kEB0rNAjftDLCeqt9eJv7lDWLtXTgJE1GsqSCLRV7MkQ5R9jsaM0mJ5rOUYCJZeisiUywx0WlCWQhfn6L/Sbdi2nWzflstt66WcRTgGE7gDGxoQAtuoA0dIODDAzzBsxEZj8aL8bpoXTGWM0fwA8bbJ0JMj40=</latexit> Aik 
+
+<latexit sha1_base64="DfkpW+m4vb8kJ83G6qYePGzewPA=">AAAB7XicdVDLSgMxFM3UV62vqks3wSK4GjK1z12pG5cV7APaoWTStE2bSYYkI5Sh/+DGhSJu/R93/o3pQ1DRAxcO59zLvfcEEWfaIPThpDY2t7Z30ruZvf2Dw6Ps8UlLy1gR2iSSS9UJsKacCdo0zHDaiRTFYcBpO5heL/z2PVWaSXFnZhH1QzwSbMgINlZq1fvJdDLvZ3PIzXteuVSEyL1C1QoqWFLOFwtVBD0XLZEDazT62ffeQJI4pMIQjrXueigyfoKVYYTTeaYXaxphMsUj2rVU4JBqP1leO4cXVhnAoVS2hIFL9ftEgkOtZ2FgO0Nsxvq3txD/8rqxGVb8hIkoNlSQ1aJhzKGRcPE6HDBFieEzSzBRzN4KyRgrTIwNKGND+PoU/k9aedcruaXbQq5WX8eRBmfgHFwCD5RBDdyABmgCAibgATyBZ0c6j86L87pqTTnrmVPwA87bJwpaj3g=</latexit> Bkj 
+
+<latexit sha1_base64="DfkpW+m4vb8kJ83G6qYePGzewPA=">AAAB7XicdVDLSgMxFM3UV62vqks3wSK4GjK1z12pG5cV7APaoWTStE2bSYYkI5Sh/+DGhSJu/R93/o3pQ1DRAxcO59zLvfcEEWfaIPThpDY2t7Z30ruZvf2Dw6Ps8UlLy1gR2iSSS9UJsKacCdo0zHDaiRTFYcBpO5heL/z2PVWaSXFnZhH1QzwSbMgINlZq1fvJdDLvZ3PIzXteuVSEyL1C1QoqWFLOFwtVBD0XLZEDazT62ffeQJI4pMIQjrXueigyfoKVYYTTeaYXaxphMsUj2rVU4JBqP1leO4cXVhnAoVS2hIFL9ftEgkOtZ2FgO0Nsxvq3txD/8rqxGVb8hIkoNlSQ1aJhzKGRcPE6HDBFieEzSzBRzN4KyRgrTIwNKGND+PoU/k9aedcruaXbQq5WX8eRBmfgHFwCD5RBDdyABmgCAibgATyBZ0c6j86L87pqTTnrmVPwA87bJwpaj3g=</latexit> Bkj 
+
+<latexit sha1_base64="wk0AeNDIbcgn+hQkXViY58rzBT8=">AAACBXicdVDLSgMxFM34rONr1KUuUotQoQ4zbRnbXakblxXsAzqlZNK0jc08SDJCGbpx46+4caGIW//BnX9j+hBU9MCFk3PuJfceL2JUSMv60JaWV1bX1lMb+ubW9s6usbffEGHMManjkIW85SFBGA1IXVLJSCviBPkeI01vdDH1m7eECxoG13IckY6PBgHtU4ykkrrGUZa66TM3beducqPTbhW6rp61Fo+ukbFMu+AUyja0zHzeKjlT4pTLhWIB2qY1QwYsUOsa724vxLFPAokZEqJtW5HsJIhLihmZ6G4sSITwCA1IW9EA+UR0ktkVE3iilB7sh1xVIOFM/T6RIF+Ise+pTh/JofjtTcW/vHYs+6VOQoMoliTA84/6MYMyhNNIYI9ygiUbK4Iwp2pXiIeIIyxVcLoK4etS+D9p5E3bMZ2rYqZSXcSRAofgGGSBDc5BBVyCGqgDDO7AA3gCz9q99qi9aK/z1iVtMXMAfkB7+wQWupUr</latexit> (i→1, j, k )B
+
+(0 , j, k )B
+
+<latexit sha1_base64="GJuyOTd+dxpZH2pVCUgN+QKVy1Y=">AAAB7nicdVDLSsNAFL3xWeur6tLNYBFchaT2YXdVNy4r2Ae0oUymk3bIZBJmJkIJ/Qg3LhRx6/e4829M0goqeuDC4Zx7ufceN+JMacv6MFZW19Y3Ngtbxe2d3b390sFhV4WxJLRDQh7KvosV5UzQjmaa034kKQ5cTnuuf535vXsqFQvFnZ5F1AnwRDCPEaxTqXc5Spg/L45KZcts1CrNqo0s8zxHRhqVWrWJbNPKUYYl2qPS+3AckjigQhOOlRrYVqSdBEvNCKfz4jBWNMLExxM6SKnAAVVOkp87R6epMkZeKNMSGuXq94kEB0rNAjftDLCeqt9eJv7lDWLtXTgJE1GsqSCLRV7MkQ5R9jsaM0mJ5rOUYCJZeisiUywx0WlCWQhfn6L/Sbdi2nWzflstt66WcRTgGE7gDGxoQAtuoA0dIODDAzzBsxEZj8aL8bpoXTGWM0fwA8bbJ0JMj40=</latexit> Aik 
+
+<latexit sha1_base64="94mLpJYlkPofDvEYvo4kcBoWVSs=">AAAB/XicdVDLSsNAFJ34rPUVHzs3g0WoUEJS+7C7VjcuK9gHtCFMppN26OTBzESoofgrblwo4tb/cOffOGkrqOiBC4dz7uXee9yIUSFN80NbWl5ZXVvPbGQ3t7Z3dvW9/bYIY45JC4cs5F0XCcJoQFqSSka6ESfIdxnpuOPL1O/cEi5oGNzISURsHw0D6lGMpJIc/bDhJHQ8hf1+Nk8LZmF86jSyjp4zjWq5WCtZ0DTOZkhJtVgu1aBlmDPkwAJNR3/vD0Ic+ySQmCEhepYZSTtBXFLMyDTbjwWJEB6jIekpGiCfCDuZXT+FJ0oZQC/kqgIJZ+r3iQT5Qkx8V3X6SI7Eby8V//J6sfTO7YQGUSxJgOeLvJhBGcI0CjignGDJJoogzKm6FeIR4ghLFVgawten8H/SLhpWxahcl3L1i0UcGXAEjkEeWKAK6uAKNEELYHAHHsATeNbutUftRXudty5pi5kD8APa2yej15Nv</latexit> Aik 
+
+(i, 0, k )A
+
+<latexit sha1_base64="y4uR8Q5480LeY7KaZ5pGGfZakl4=">AAACA3icdVDLSsNAFJ34rPFVdaebqUWoUENS+7C7VjcuK9gHNCVMptN2zOTBzEQooeDGX3HjQhG3/oQ7/8akraCiBy4czrmXe++xA0aF1PUPZWFxaXllNbWmrm9sbm2nd3Zbwg85Jk3sM593bCQIox5pSioZ6QScINdmpG07F4nfviVcUN+7luOA9Fw09OiAYiRjyUrv162IOhNommqO5m/MzImZMfLOsVVXrXRW1yqlQrVoQF07nSIhlUKpWIWGpk+RBXM0rPS72fdx6BJPYoaE6Bp6IHsR4pJiRiaqGQoSIOygIenG1EMuEb1o+sMEHsVKHw58Hpcn4VT9PhEhV4ixa8edLpIj8dtLxL+8bigHZ72IekEoiYdniwYhg9KHSSCwTznBko1jgjCn8a0QjxBHWMaxJSF8fQr/J62CZpS18lUxWzufx5ECB+AQ5IABKqAGLkEDNAEGd+ABPIFn5V55VF6U11nrgjKf2QM/oLx9AgxJlT0=</latexit> Aik 
+
+(i, j →1, k )A
+
+Figure 1. Three spatial matrix multiplies. Left: each point reads operands 𝐴 𝑖𝑘 and 𝐵 𝑘 𝑗 directly from memory. Middle: each operand is loaded once at a boundary face, and interior points receive 𝐴 and 𝐵 systolically from neighbors. Right: each point receives its data directly from boundaries. There are typically many ways to realize data movement, but without user input the compiler must choose among them. For example, AutoSA and AlphaZ only generate code where communication is limited to between neighboring PEs. This can leave performance on the table when a different commu-nication strategy better matches the problem size or target architecture. Stellar [12], a framework for spatial accelerator design, allows users to specify dataflow and lets iteration-space points receive data from neighbors, supporting systolic patterns, but does not generalize beyond them. This paper presents the Cyclotron compiler that makes the communication schedule a first-class part of the input program. The program can express many different commu-nication patterns as recurrence equations. These include systolic exchanges, one-to-all broadcast, tree-broadcast, bidi-rectional split rings, or asymmetric, piecewise combination of communication policies, in which different subdomains of a program and processor grid carry different communication policies. A user can specify that a data tile travel via nearest-neighbor hops in one part of the processor grid, via a tree broadcast in other parts, and bidirectionally in another. In Cyclotron, the programmer writes computation as a system of recurrences that can index into tensors that live on the iteration space in addition to tensors that live in mem-ory, thus controlling data movement. Figure 1 illustrates the 3D iteration space of a matrix multiply, contrasting a pro-gram where data is accessed exclusively from tensors with two different programs where data is also obtained from points in the iteration space. What differs is how each value is obtained: directly from the tensor, from a neighboring iteration-space point, or from a boundary point via broad-casts. In Cyclotron, a value on the iteration space is named not only by which tensor element it is (e.g., 𝐴 𝑖 𝑗 ) but by the point in the iteration space at which it lives, written (𝑖, 𝑗, 𝑘 )𝐴 .Movement, like the systolic transfer (𝑖, 𝑗, 𝑘 )𝐴 ← ( 𝑖, 𝑗 −1, 𝑘 )𝐴 ,is expressed in the same coordinate system as computation: a recurrence relating a value at one point to another point is 
+
+a data movement. A separate per-dimension annotation de-clares whether each dimension is spatial (movement between PEs) or temporal (retention across steps). Data movement is not limited to nearest neighbors, and because the recur-rence is written independently of this annotation, the same program can be used to generate different spatial mappings. The user’s input recurrences are unordered. The order-ing of compute and communication operations depends on which dimensions are mapped in space and time. Cyclotron’s dependency algorithm uses this mapping to derive correct orderings, relieving users of the need to manually sequence such operations and avoiding indefinite waits caused by in-correct communication ordering. These recurrences are compiled to distributed code through a fixed pipeline: a space–time mapping folds the iteration space and inserts a temporal loop. Our dependency-management algorithm resolves data dependencies into coupled sends and receives. Synchronization-aware control flow is inserted according to the target protocol. A final pass can apply a block-cyclic decomposition and deduplicate communication. Cyclotron lets programmers explore communication strate-gies with minimal program changes. The resulting code is competitive with, and often outperforms, expert-tuned li-braries. We make the following contributions: 
+
+• A recurrence-based programming model where com-munication is a first-class programmable concern, sep-arate from computation and space–time mapping, en-abling programmers to express and compose systolic, broadcast, ring, tree, and heterogeneous piecewise communication strategies. 
+
+• A dependency-management algorithm that uses the chosen space–time mapping to order computation and communication from unordered recurrences 
+
+• A complete compilation pipeline integrating the de-pendency algorithm with transformations that han-dle synchronization, block-cyclic decomposition and communication deduplication, generating efficient dis-tributed programs. By exploring different communication schedules, we demon-strate 1 .7–1 .8× over ScaLAPACK for matrix multiply. For Cholesky on up to 16 CPU nodes, we observe 1 .34–1 .68 ×
+
+speedup over ScaLAPACK on CPUs and 1 .01 −1.24 × speedup over SLATE on GPUs (which uses CPU-side communica-tion), and 1.12–1.28 × speedup over cuSolverMp, Nvidia’s optimized multi-GPU vendor library, when only using di-rect GPU-GPU communication. We demonstrate benefits of simultaneously composing different space–time mappings and how Cyclotron natively fuses kernels. 
+
+2 Motivating Example 
+
+We use distributed, blocked Cholesky decomposition as a motivating example. Cholesky factors a symmetric positive-definite matrix into a triangular factor and its transpose. In a blocked implementation, processors operate on matrix tiles using four dense BLAS/LAPACK kernels: POTRF, TRSM, Cyclotron: A Recurrence Language for Expressing Interprocessor Communication                                     
+
+> for 𝑘 =0to 𝑁 −1do
+> POTRF (𝐿 𝑘,𝑘 )
+> for 𝑖 =𝑘 +1to 𝑁 −1do
+> TRSM (𝐿 𝑖,𝑘 , 𝐿 𝑘,𝑘 )
+> end for for 𝑖 =𝑘 +1to 𝑁 −1do
+> SYRK (𝐿 𝑖,𝑖 , 𝐿 𝑖,𝑘 )
+> for 𝑗 =𝑘 +1to 𝑖 −1do
+> GEMM (𝐿 𝑖,𝑗 , 𝐿 𝑖,𝑘 , 𝐿 𝑗,𝑘 )
+> end for end for end for
+
+(a) Right-looking 𝑘𝑖 𝑗 .                             
+
+> for 𝑖 =0to 𝑁 −1do for 𝑗 =0to 𝑖 −1do for 𝑘 =0to 𝑗 −1do
+> GEMM (𝐿 𝑖,𝑗 , 𝐿 𝑖,𝑘 , 𝐿 𝑗,𝑘 )
+> end for
+> SYRK (𝐿 𝑖,𝑖 , 𝐿 𝑖,𝑗 )
+> TRSM (𝐿 𝑖,𝑗 , 𝐿 𝑗,𝑗 )
+> end for
+> POTRF (𝐿 𝑖,𝑖 )
+> end for
+
+(b) Up-looking 𝑖 𝑗𝑘 .                                                                                    
+
+> 𝑖, 𝑗 ←rank ()
+> for 𝑘 =0to 𝑗 do if 𝑘 <𝑗 then
+> Recv 𝐿 𝑖,𝑘 :(𝑖, 𝑗 −1)
+> Send 𝐿 𝑖,𝑘 :(𝑖, 𝑗 +1)
+> if 𝑖 >𝑗 then
+> Recv 𝐿 𝑗,𝑘 :(𝑖 −1, 𝑗 )
+> GEMM (𝐿 𝑖,𝑗 , 𝐿 𝑖,𝑘 , 𝐿 𝑗,𝑘 )
+> else
+> 𝐿 𝑗,𝑘 ←𝐿 𝑖,𝑘
+> SYRK (𝐿 𝑖,𝑖 , 𝐿 𝑗,𝑘 )
+> end if
+> Send 𝐿 𝑗,𝑘 :(𝑖 +1, 𝑗 )
+> end if if 𝑘 =𝑗, 𝑖 >𝑗 then
+> Recv 𝐿 𝑗,𝑗 :(𝑗, 𝑗 )
+> TRSM (𝐿 𝑖,𝑗 , 𝐿 𝑗,𝑗 )
+> for 𝑑 =1to 𝑁 −𝑗 −1do
+> Send 𝐿 𝑖,𝑗 :(𝑖, 𝑗 +𝑑 )
+> end for end if if 𝑘 =𝑗 =𝑖 then
+> POTRF (𝐿 𝑖,𝑖 )
+> for 𝑑 =1to 𝑁 −𝑖 −1do
+> Send 𝐿 𝑖,𝑖 :(𝑖 +𝑑, 𝑖 )
+> end for end if end for
+
+(c) Per-processor lowering of 𝑖 𝑗𝑘 .
+
+Figure 2. Two Cholesky loop nests (a,b) and a distributed lowering of the up-looking nest (c). The order of the com-pute statements differs between the two sequential vari-ants, as do the number of inner loops and tensor index-ing. The distributed nest (c) adds send/recv statements. Recv 𝑋 : (𝑟, 𝑐 )/Send 𝑋 : (𝑟, 𝑐 ) name the peer. SYRK, and GEMM. Different processors execute different sequences of these operations depending on their position in the processor grid and the current step of the factoriza-tion. Moreover, these operations depend on values produced elsewhere in the grid, and those dependences can be realized using different communication strategies; communication is not simply a uniform pattern of nearest-neighbor shifts. The computation is load–imbalanced, in which critical paths oc-curring in certain portions of the grid asymmetrically affect work on downstream processors. Figure 2 shows two loop-based formulations of blocked Cholesky. Even in the serial, non-distributed case, the loop form is coupled to the dependencies among the four kernels. In other words, changing the loop ordering requires more than merely permuting loop headers, as one can for perfectly nested computation such as matrix multiplication. It changes loop bounds, the number and placement of inner loops, the ordering of kernel calls, and their indexing. In loop–based spatial frameworks, loop dimensions/nesting–order are also used to determine which parts of the computation execute across processors and which execute over time. Changing the space–time mapping can therefore require restructuring the program rather than simply changing a mapping decision. Distributing the computation makes the control flow more complex (Figure 2c). The programmer must place sends and 
+
+default_constraint = (( 𝑖, 𝑗, 𝑘 ), 𝑖 > 𝑗 > 𝑘 )(𝑖, 𝑖, 0)𝐿𝑠 ← 𝐴 𝑖𝑖 , (𝑖, 𝑗, 0)𝐿𝑔 ← 𝐴 𝑖 𝑗 
+
+(𝑖, 𝑗, 𝑗 )𝐿𝑔𝑙 ← TRSM  (𝑖, 𝑗, 𝑗 )𝐿𝑐 , (𝑖, 𝑗, 𝑗 )𝐿𝑔 
+
+
+
+(𝑖, 𝑗, 𝑘 )𝐿𝑔𝑙 ← ( 𝑖, 𝑘, 𝑘 )𝐿𝑔𝑙 (𝑖 ≥ 𝑗 )(𝑖, 𝑖, 𝑘 )𝐿𝑔𝑢 ← ( 𝑖, 𝑖, 𝑘 )𝐿𝑔𝑙 
+
+(𝑖, 𝑗, 𝑘 )𝐿𝑔𝑢 ← ( 𝑖 − 1, 𝑗, 𝑘 )𝐿𝑔𝑢 
+
+(𝑖, 𝑗, 𝑘 )𝐿𝑔 ← GEMM  (𝑖, 𝑗, 𝑘 )𝐿𝑔𝑙 , (𝑖, 𝑗, 𝑘 )𝐿𝑔𝑢 ,
+
+(𝑖, 𝑗, 𝑘 − 1)𝐿𝑔 
+
+
+
+(𝑖, 𝑖, 𝑘 )𝐿𝑠 ← SYRK  (𝑖, 𝑖, 𝑘 )𝐿𝑔𝑢 , (𝑖, 𝑖, 𝑘 − 1)𝐿𝑠 
+
+
+
+( 𝑗, 𝑗, 𝑗 )𝐿𝑐 ← POTRF  ( 𝑗, 𝑗, 𝑗 − 1)𝐿𝑠 
+
+
+
+(𝑖, 𝑗, 𝑗 )𝐿𝑐 ← ( 𝑗, 𝑗, 𝑗 )𝐿𝑐 
+
+(a) Broadcast 𝐿 𝑔𝑙 /𝐿 𝑐 , systolic 𝐿 𝑔𝑢 (matches Figure 2c).                                                      
+
+> (𝑖, 𝑘 +𝑚, 𝑘 )𝐿𝑔𝑙 =(𝑖, 𝑘, 𝑘 )𝐿𝑔𝑙 𝑚 ∈ { 1,2,3}(anchored hops)
+> (𝑖, 𝑗, 𝑘 )𝐿𝑔𝑙 =(𝑖, 𝑗 −1, 𝑘 )𝐿𝑔𝑙 (𝑗 >𝑘 +3)(relay)
+> (𝑖, 𝑗, 𝑘 )𝐿𝑔𝑢 =(𝑖 −𝑠, 𝑗, 𝑘 )𝐿𝑔𝑢 (𝑗 +𝑠 ≤𝑖 <𝑗 +2𝑠 )(tree, 𝑠 ∈ { 1,2,4} ) (𝑖, 𝑗, 𝑗 )𝐿𝑐 =(𝑖 −𝑠, 𝑗, 𝑗 )𝐿𝑐 (𝑗 +𝑠 ≤𝑖 <𝑗 +2𝑠 )(tree, 𝑠 ∈ { 1,2,4} )
+
+(b) Same compute; only communication modified 
+
+Figure 3. One Cholesky dataflow in Cyclotron, devoid of the statement ordering, inner-loop nesting, and re-indexing required across the variants in Figure 2. Panel (a) is the broad-cast/systolic spelling: with 𝑖 and 𝑗 spatial and 𝑘 temporal it lowers to Figure 2c. Panel (b) keeps every compute recur-rence and rewrites only 𝐿 𝑔𝑙 , 𝐿 𝑔𝑢 , and 𝐿 𝑐 —a depth-3 modified ring along the row and doubling trees down the column. receives, add processor- and time-dependent branches, con-struct fan-out send loops, and ensure that every receive has a matching send. Incorrect send/receive pairing can result in indefinite hangs. Changing the communication strategy may require restructuring this control flow even though the underlying computation is unchanged. Cyclotron instead separates these concerns. The computa-tion is written once in a loopless recurrence form. Figure 3 shows a Cyclotron recurrence specification of a Cholesky decomposition. It generates the exact code corresponding to Figure 2c, while the space–time mapping is specified sepa-rately. Computation and communication are both expressed as recurrences over iteration-space points, so changing the communication strategy (e.g., from systolic forwarding to broadcast or a tree) changes only the communication re-currences, not the computation. Figure 3b shows the same communication recurrences rewritten with a different com-munication strategy. The communication of 𝐿 𝑔𝑢 and 𝐿 𝑐 now uses hierarchical doubling tree-broadcasts. The communica-tion of 𝐿 𝑔𝑙 is now a modified increasing ring, where it initially broadcasts to the three nearest neighbors to its right, with the third neighbor and the remaining neighbors communicating Anonymous                                                                           
+
+> ConstInt 𝑛 Tensor 𝑡 IndexVar 𝑣
+> Index 𝑖 :: =𝑣 |𝑛 |𝑣 +𝑛
+> TensorAccess 𝑡𝑎 :: =𝑡 𝑖 1,...,𝑖 𝑑
+> IterAccess 𝑖𝑎 :: =(𝑖 1, . . . , 𝑖 𝑑 )𝑡
+> Expr 𝑒 :: =𝑡𝑎 |𝑖𝑎 |const |func (𝑒 1, . . . , 𝑒 𝑛 )|𝑒 +𝑒 |𝑒 𝑒 | · · ·
+> Recurrence 𝑟 :: =𝑖𝑎 ←𝑒
+> Constraint 𝑐 :: =𝑖 <𝑖 |𝑖 ≤𝑖 |𝑖 =𝑖 |𝑖 ≥𝑖 |𝑖 >𝑖
+> Stmt 𝑠 :: =𝑟 |𝑟 𝑐 ∗
+> Program 𝑝 :: =𝑠 |𝑠, 𝑝
+
+Figure 4. Input grammar. func does not support recursion. systolically. In the equivalent per-processor imperative pro-gram, this four-line change more than doubles the code size of the program in Figure 2c, because separate control flow is required for the modified ring (a hybrid systolic-broadcast strategy) and for the doubling tree. Finally, these recurrence specifications are unordered. Given a space–time mapping and target communication protocol, Cyclotron’s dependency-management algorithm determines a valid ordering of computation, sends, and receives. 
+
+3 Notation 
+
+Recurrences and tensor algebra have traditionally been de-fined over indexed tensors [15, 33, 34, 36]. Cyclotron aug-ments this with recurrences over iteration spaces . In conven-tional recurrence and tensor-algebra equations, each tensor access ( 𝐴 𝑖 𝑗 , or A[i][j] ) denotes a logical access to a memory hierarchy. This model maps well to von Neumann programs on a single processor, but lacks any mechanism for describ-ing data that propagates through time or across processors as every data reference is a tensor access. Cyclotron’s notation describes both computation and com-munication. First, computations are defined as recurrences over an iteration space (Section 3.1). This way, data may live on the iteration space itself, in addition to living in exter-nal tensors. Second, communication patterns are specified in that same language (Section 3.3), as a transfer between two points in the iteration space: a systolic relay, a broadcast, or a piecewise hybrid of the two is just another recurrence, distinguished only by the shape of its coordinate expressions. Figure 1 illustrates this dichotomy of accessing data from memory versus the iteration space. 
+
+3.1 Defining Recurrences over Iteration Spaces 
+
+In a spatial program, data moves laterally between processors and can be retained in fast memory across time. If processors are assigned distinct portions of a program’s iteration space, then dataflow across the iteration space corresponds directly to dataflow between processors, or to dataflow across time.                                
+
+> (𝑖, 0, 𝑘 )𝐴 ←𝐴 𝑖𝑘 inject 𝐴
+> (0, 𝑗, 𝑘 )𝐵 ←𝐵 𝑘 𝑗 inject 𝐵
+> (𝑖, 𝑗, 0)𝐶 ←0init. accumulator
+> (𝑖, 𝑗, 𝑘 )𝐴 ← ( 𝑖, 𝑗 −1, 𝑘 )𝐴 receive 𝐴 along 𝑗
+> (𝑖, 𝑗, 𝑘 )𝐵 ← ( 𝑖 −1, 𝑗, 𝑘 )𝐵 receive 𝐵 along 𝑖
+> (𝑖, 𝑗, 𝑘 )𝐶 ← ( 𝑖, 𝑗, 𝑘 )𝐴 (𝑖, 𝑗, 𝑘 )𝐵 + ( 𝑖, 𝑗, 𝑘 −1)𝐶 multiply–accum.
+> Figure 5. Cyclotron specification of a systolic matrix multiplication.
+
+Cyclotron makes data movement across an iteration space expressible by allowing tensors to be stored on the itera-tion space, in addition to in memory. Figure 4 shows Cy-clotron’s grammar. Given a three-tensor 𝐴 that lives on a three-dimensional iteration space (𝑖, 𝑗, 𝑘 ), we write (𝑖, 𝑗, 𝑘 )𝐴 
+
+to denote the value/tile of 𝐴 at point (𝑖, 𝑗, 𝑘 ) of the itera-tion space. Figure 5 uses this notation to give the complete dataflow of a systolic matrix multiply in six lines. Move-ment is encoded by coordinate differences. For example, 
+
+(𝑖, 𝑗, 𝑘 )𝐴 ← ( 𝑖, 𝑗 −1, 𝑘 )𝐴 propagates the 𝐴 one step along the second dimension 𝑗 . This step corresponds to data moving to a neighboring processor if the user declares that dimension to be spatial , or to data being retained on the same processor for the next time step if the user declares the dimension 
+
+temporal . Thus, the same recurrence specification can sup-port different space–time mappings without changing the equations. In the classical Cannon’s algorithm, 𝑖 and 𝑗 are spatial and 𝑘 temporal. This yields systolic movement of 𝐴 
+
+and 𝐵 and a temporal accumulator for 𝐶 , which is retained in a register from one timestep to another. Computation on the iteration space is expressed with func-tions over iteration-space values. For example, Figure 5 de-fines matrix multiply-accumulate as (𝑖, 𝑗, 𝑘 )𝐶 = (𝑖, 𝑗, 𝑘 )𝐴 (𝑖, 𝑗, 𝑘 )𝐵 +(𝑖, 𝑗, 𝑘 − 1)𝐶 . Because movement is carried in the same coor-dinate system as computation, it is written in the equations rather than recovered by a separate dependence analysis. In loop-based dataflow languages every data access is a tensor access, so the language can detect that a value must be broad-cast across the iteration space but has no notion of how or where the data moves; in Cyclotron the movement and the computation it serves are expressed in one grammar. Cyclotron specifications are loop-free and unordered. All iteration-space indices are in scope at every recurrence, and no loop order is imposed. The loop-order coupling dissected in Section 2 (e.g. the 𝑖 𝑗𝑘 vs 𝑘𝑖 𝑗 Cholesky loops) is not rele-vant with recurrences. A separate space–time map linearizes the dependence relation, while remaining separate from the equations to avoid overspecializing programs and to promote program reuse. 
+
+3.2 Iteration Space Boundaries and Subspaces 
+
+Different operations may be defined on subspaces or parti-tions of the iteration space. Cyclotron supports this through Cyclotron: A Recurrence Language for Expressing Interprocessor Communication <latexit sha1_base64="vcuOYHWz3H76EnB38yPpT8fhkr8=">AAAGsHiczVRdb9MwFM3GGkb52uCRlyuqVZ1aShOgoElME7zwgjRg3YqaqnIdp3Xm2MF2GSXKb+F38VN4w0m7r7bqBhISV0p8da99zs25zu3HjCrdaPxcWb2xVrBvrt8q3r5z9979jc0Hh0qMJCYtLJiQ7T5ShFFOWppqRtqxJCjqM3LUP36b5Y++Eqmo4Ad6HJNuhAacBhQjbUK9zbUfnkYJrYVp0k6h7DESaCSlOIE8/sSZZIpgrFw2QfJNJ2qstGAUgxrSQKfgecUtiBEnDAKEtZD0ew4PlYOPn94DGiDKlQY9JOBTNBAcnW7cLi6jD6fxHaCwC+HlIhzQAiLEx0A5Np+sKB+AzF59KZCPkfqHldFaY16W84oWlHGG9nnRd9J5NMRYhpctM0je8tJOe5bJthtW3cuwMSWYnFBFINbg7MBpL8+KDKvO8nYswXN3IBaUa1CE+3AB0v1ryGcLIJcLYDCr7vUFmG/TlQrA/yCBb4YDlF9DtiKOSeW4Fm7DH1wOB0zyS35+4vGYqKdXqJXBQSAFn7nVi7iq51w5ye61GCQdDC9Q9DZKjXojN5h3nKlTsqa239v45fkCjyLCNWZIqY7TiHU3QVJTzEha9EaKxAgfowHpGJejiKhukk/SFLZMxIdASPMYwfPoxRMJipQaR32zM0J6qGZzWXBRrjPSwatuQnk80oTjCVEwyv/wbCwbgSTBmo2zMYQlNbUCHiJpRpEZ3kWPkxMsIjNb/MRIm3bcblIpOdu9xMuoqE5KbpqmRitnVpl559CtO81688Pz0t6bqWrr1iPrsVWxHOultWe9s/atloULdqFWeFFo2q7dtns2mmxdXZmeeWhdMjv8DQ8TLaI=</latexit> (i, j )X → (j, j + 2) X : i > j + 2 piecewise pt 1: broadcast (j + 1 , j )X → (j, j )X
+
+Systolic 1 to all broadcast Modified depth-2 Increasing Ring 2-ring 
+
+<latexit sha1_base64="a26mtv1gh0zOtr51/Gvrji1e4y0=">AAACVXicbZBNaxRBEIZ7xxjj+pGNHr00DoYIsswsEnMMiuAxgpss7AxLTU9P0qY/hu4a49L0L/LXeBL1l3gQ7NndgyYWNLz1VhXV9VStFA6z7PsgubV1e/vOzt3hvfsPHu6O9h6dOtNZxqfMSGNnFTguheZTFCj5rLUcVCX5WXX5pq+ffeLWCaM/4LLlpYJzLRrBAKO1GL0tELx48TH4WaD7heQNgrXmiq79bO3vx5R/Rp9TNFSBXtLKGqgZOAy0KIaLUZqNs1XQmyLfiJRs4mQx+lXUhnWKa2QSnJvnWYulB4uCSR6GRed4C+wSzvk8Sg2Ku9Kvzg30WXRq2hgbn0a6cv+e8KCcW6oqdirAC3e91pv/q807bI5KL3TbIddsvajpZH90z47WwnKGchkFMCviXym7AAsMI+FhofkVMyriqX2kF+aT0h+k+fOFL/pVAn06CSFEVvl1MjfF6WScH44P379Mj19vqO2QJ+QpOSA5eUWOyTtyQqaEkS/kK/lBfg6+DX4nW8n2ujUZbGYek38i2f0Ddzm0wg==</latexit> (i, j )X → (i, 0) X 1 to many broadcast 
+
+<latexit sha1_base64="OXVBu94qZNprpzDBHjcYFGA4Qts=">AAACZnichVBNaxRBFOwdo8ZR40YRD7k0DkpEWWYWiR6DuXiMkE0Wdoalp/dN0kl/DN1vEpZmfpm/xKM30X+Qk727E8iHYEFDUVWP97rKWgqHafqjF91bu//g4fqj+PGTpxvP+pvPD51pLIcRN9LYcckcSKFhhAIljGsLTJUSjsqzvYV/dA7WCaMPcF5DodixFpXgDIM07Y9imiPzp++zD6etH7f0bS6hQmatuVg5nZ7nV8nhf5IhOu0n6SBdgt4lWUcS0mF/2r/MZ4Y3CjRyyZybZGmNhWcWBZfQxnnjoGb8jB3DJFDNFLjCL7/f0jdBmdHK2PA00qV6fcIz5dxclSGpGJ64295C/Jc3abD6XHih6wZB89WiqpEUDV10SWfCAkc5D4RxK8KtlJ8wyziGxuNcwwU3SjE986GfdjIs/HaSvZv6fLFKoE+GbdvGoazsdjV3yeFwkO0Mdr59THa/dLWtky3ymmyTjHwiu+Qr2Scjwsl38pP8Jn96v6KN6GX0ahWNet3MC3IDEf0LnBK5sw==</latexit> (j + 1 , j )X → (j, j )X
+
+(j + 2 , j )X → (j, j )X <latexit sha1_base64="zy9yXmHjNtte6Cm4V4T3z3eofJ8=">AAAC43icfVFdixMxFM2MX+v4sVUffQkWSxe1dIqsy4Kw6IuPK9jdQqcOaeZOm24mGZI71hLmF/gmvvqnfPOv+GSmO4LuqhcSDufce244mZdSWBwOvwfhlavXrt/YuRndun3n7m7n3v0TqyvDYcy11GYyZxakUDBGgRImpQFWzCWczs9eN/rpBzBWaPUONyXMCrZQIhecoafSzrdCZPQl9XfZ00Jhkuo8SQ0UTCihFv3VHk2SKEHmVk9809NV7SY17SUScmTG6DXdai1/SCPqq9fzLHxEVwrgsBYWaIk0PqQWVEZRb9c12+pf5uIfxuJZ3Cr/MR55441FLQVvDNNOdzgYboteBnELuqSt47TzI8k0rwpQyCWzdhoPS5w5ZlBwCXWUVBZKxs/YAqYeKlaAnblt9jV97JmM5tr4o5Bu2d8nHCus3RRz31kwXNqLWkP+TZtWmB/MnFBlhaD4+aK8kk18zUfSTBjgKDceMG6EfyvlS2YYR//dUaJgzXVRMJU5H2Q9Hc1cvxvvpS5pVgl03VFd15EPK74YzWVwMhrE+4P9t8+7R6/a2HbIQ/KI9ElMXpAj8oYckzHhwUHwPlgEyxDCT+Hn8Mt5axi0Mw/IHxV+/Qn0BORZ</latexit> ): piecewise pt 1: send to midpoint piecewise pt 2: systolic 
+
+<latexit sha1_base64="rjbKbBxAc9NuUCUQ/c4v+yrLDRc=">AAACNHicbVBNSxxBFOxRE80ak1WPuTQZFL0sM2tQ8STx4tFAVoWdYenpfauN/TF0v1GXZn6Av8abxJ8ieBOv/gBP6V33YDQFDUVVPd7rKkopHCbJXTQ1PfPh4+zcp8b854UvX5uLS4fOVJZDhxtp7HHBHEihoYMCJRyXFpgqJBwVZ3sj/+gcrBNG/8ZhCbliJ1oMBGcYpF4zXl3NEC7RlwI4XAgHtES6sUPd0KGRgtOahlTSSsag70k6ITGZ4KDXfM76hlcKNHLJnOumSYm5ZxYFl1A3sspByfgZO4FuoJopcLkff6amK0Hp04Gx4WmkY/X1hGfKuaEqQlIxPHVvvZH4P69b4WA790KXFYLmL4sGlaRo6KgZ2hcWOMphIIxbEW6l/JRZxjH018g0XHCjFNN9nyGru+3cr8Xpes9no1UCfdyu67oRykrfVvOeHLZb6WZr89ePePfnpLY58o18J2skJVtkl+yTA9IhnFyRa/KH3EY30X30ED2+RKeiycwy+QfR01+bwapY</latexit> piecewise pt 3: systolic 
+
+<latexit sha1_base64="ppgmhC0GoZ0LBrLvGGOQjcKP9uM=">AAACYHicbVDLahsxFJWnL3f6iNPs2o3o0JBuzIwJaekqtJvumkKdBDyD0WiuExG9kO40NWI+Kx8TuivpT2QV2fGijXNAcDjnXO7Vqa0UHvP8spc8ePjo8ZP+0/TZ8xcvNwabrw69aR2HMTfSuOOaeZBCwxgFSji2DpiqJRzVZ18W/tFPcF4Y/QPnFirFTrSYCc4wStPBt+3tEuEXBiuAw7nwQC3S4hO1RmikHnRDO1qW6b250VpuOsjyYb4EXSfFimRkhYPp4LpsDG8VaOSSeT8pcotVYA4Fl9ClZevBMn7GTmASqWYKfBWWH+/ou6g0dGZcfPGKpfrvRGDK+7mqY1IxPPV3vYV4nzdpcfaxCkLbFkHz20WzVlI0dNEibYQDjnIeCeNOxFspP2WOcYxdp6WGc26UYroJJbJuMqrCTla8n4ZysUpgyEZd16WxrOJuNevkcDQs9oZ733ez/c+r2vrkDXlLdkhBPpB98pUckDHh5IL8Jlfkb+9P0k82ks3baNJbzWyR/5C8vgEXPLcN</latexit> piecewise pt 1: point send piecewise pt 2: point send 
+
+<latexit sha1_base64="zy9yXmHjNtte6Cm4V4T3z3eofJ8=">AAAC43icfVFdixMxFM2MX+v4sVUffQkWSxe1dIqsy4Kw6IuPK9jdQqcOaeZOm24mGZI71hLmF/gmvvqnfPOv+GSmO4LuqhcSDufce244mZdSWBwOvwfhlavXrt/YuRndun3n7m7n3v0TqyvDYcy11GYyZxakUDBGgRImpQFWzCWczs9eN/rpBzBWaPUONyXMCrZQIhecoafSzrdCZPQl9XfZ00Jhkuo8SQ0UTCihFv3VHk2SKEHmVk9809NV7SY17SUScmTG6DXdai1/SCPqq9fzLHxEVwrgsBYWaIk0PqQWVEZRb9c12+pf5uIfxuJZ3Cr/MR55441FLQVvDNNOdzgYboteBnELuqSt47TzI8k0rwpQyCWzdhoPS5w5ZlBwCXWUVBZKxs/YAqYeKlaAnblt9jV97JmM5tr4o5Bu2d8nHCus3RRz31kwXNqLWkP+TZtWmB/MnFBlhaD4+aK8kk18zUfSTBjgKDceMG6EfyvlS2YYR//dUaJgzXVRMJU5H2Q9Hc1cvxvvpS5pVgl03VFd15EPK74YzWVwMhrE+4P9t8+7R6/a2HbIQ/KI9ElMXpAj8oYckzHhwUHwPlgEyxDCT+Hn8Mt5axi0Mw/IHxV+/Qn0BORZ</latexit> mid = midpoint of remaining (j)(j + mid, j )X → (j, j )X : piecewise pt 1: send to midpoint (i, j )X → (i ↑ 1, j )X
+
+Figure 6. Four sample expressible Cyclotron communication patterns, defined over (𝑖, 𝑗 ) with 𝑖 spatial and 𝑗 temporal. substitutions, which fix indices to constants or other index variables, and constraints, which specify equalities or in-equalities over the indexing variables. Substitutions describe lower-dimensional subspaces of an iteration space. In Figure 5, matrix-multiply operations (i.e., GEMM) are defined over the full rectangular iteration space 
+
+(𝑖, 𝑗, 𝑘 ), while boundary operations are defined on lower-dimensional faces. For example, (𝑖, 0, 𝑘 )𝐴 ← 𝐴 𝑖𝑘 loads tiles from memory where data enters the iteration space, and 
+
+(𝑖, 𝑗, 0)𝐶 ← 0 seeds the accumulator on the face 𝑘 = 0. Constraints describe subspaces or partitions of a rectangu-lar iteration space. The Cholesky decomposition’s inner iter-ation space is a 3D triangular pyramid defined by 𝑖 > 𝑗 > 𝑘 .Figure 3 shows that a global default constraint can apply to each recurrence, while individual recurrences may specify their own constraints to override it. Substitutions may also involve other index variables. Cholesky, for example, defines operations on diagonal subspaces such as 𝑖 = 𝑗 = 𝑘 , which form a 1D subset of the 3D iteration space in Figure 2c. We express these by gimbal-locking di-mensions: substituting one index variable for another, as in 
+
+( 𝑗, 𝑗, 𝑗 ). Each index variable has a native dimension. Here 𝑖 is the first, 𝑗 the second, and 𝑘 the third. Substituting an index in a non-native dimension equates the indices and locks the dimensions together. Thus (𝑖, 𝑖, 𝑖 ), ( 𝑗, 𝑗, 𝑗 ), and (𝑘, 𝑘, 𝑘 ) all denote the same diagonal subspace. This differs from loop-based forms, where the specific diagonal index used, such as 
+
+𝐿 𝑘𝑘 versus 𝐿 𝑖𝑖 , can depend on the surrounding loop structure. Substitutions, like per-recurrence constraints, override the default constraint when they conflict. If multiple recurrences match a point, the most specific subspace (the one with the most substitutions) takes precedence. For example, (0, 2, 2)
+
+matches a recurrence defined on (𝑖, 𝑗, 𝑗 ) over one defined on 
+
+(𝑖, 𝑗, 𝑘 ). Ties are undefined. 
+
+3.3 Specifying Communication 
+
+Because movement is written as coordinate offsets, a commu-nication pattern is determined by the recurrence’s coordinate expressions: which coordinates carry offsets, and whether the source point is named relative to the consumer or ab-solutely. Figure 6 illustrates four example shapes over an iteration space (𝑖, 𝑗 ) with 𝑖 spatial and 𝑗 temporal. We de-scribe four common patterns. 
+
+Systolic relay. A relative source such as 
+
+(𝑖, 𝑗 )𝑋 ← ( 𝑖 − 1, 𝑗 )𝑋 (1) forwards values one processor at a time. Offsets need not be unit length; unit offsets denote nearest-neighbor shifts. 
+
+Broadcast. An absolute or gimbal-locked source such as 
+
+(𝑖, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 (𝑖 > 𝑗 ), (2) causes many consumers indexed by 𝑖 to read the same source point where 𝑖 == 𝑗 . A broadcast will also result from setting the index to a constant, (i.e., (𝑖, 𝑗 )𝑋 ← ( 0, 𝑗 )𝑋 ), as (0, 𝑗 ) is similarly 1-dimensional. Broadcasts can exist in both space and time; in this example, setting 𝑖 as a spatial dimension broadcasts ( 𝑗, 𝑗 )𝑋 across processors, while naming 𝑖 in time reuses the value across all later steps. 
+
+Piecewise hybrids and direct hops Coordinate offsets may also appear on the left-hand side , naming receivers at a fixed distance from the source. This is used to express hybrids be-tween systolic and broadcast algorithms, in which an initial broadcast (a volley of direct sends) seeds systolic pathways. For example, in a modified increasing ring (1rm) shown in Figure 6, the source processor sends directly to its first and second right-side neighbors; from the second neighbor on-ward, the value is relayed systolically. We can express it with three pieces: 
+
+( 𝑗 +1, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 (3) 
+
+( 𝑗 +2, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 (4) 
+
+(𝑖, 𝑗 )𝑋 ← ( 𝑖 −1, 𝑗 )𝑋 (𝑖 > 𝑗 +2) (5) Anonymous 
+
+The result is the first and second-right side neighbors receive early and can begin computing immediately, while the source pays for only two sends rather than a broadcast. This is especially useful in solvers and decompositions, where early processors in a row gate more work than later processors, and benefit from starting early. Each point of the iteration space matches one of these pieces. The direct hops are more specific than the guarded relay and therefore take precedence; the compiler lowers the pieces to corresponding control-flow guards (i.e., if state-ments). The guards are ordered such that at runtime, each processor at each timestep binds to the most specific piece. In this case, because the first two pieces are more specific (written in terms of 1 variable, thus exhibiting gimbal lock), its guards are evaluated first. Adding ( 𝑗 + 3, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 
+
+and shifting the relay guard to 𝑖 > 𝑗 + 3 deepens the direct-send prefix to depth three, and similarly for larger depths, trading source fan-out against pipeline fill time. 
+
+Two-rings. A direct hop need not target a fixed offset. In an increasing-2-ring , the source sends to its nearest neighbor and to the midpoint of the remaining processors, creating two concurrent systolic relay chains. With 𝑚 = ⌈( 𝑃 − 𝑗 )/ 2⌉
+
+the midpoint of the processors yet to be reached, 
+
+( 𝑗 +𝑚, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 (6) 
+
+(𝑖, 𝑗 )𝑋 ← ( 𝑖 −1, 𝑗 )𝑋 (𝑖 ≠ 𝑗 +𝑚 ) (7) As shown in Figure 6, the two sends seed separate systolic rings, roughly halving the relay depth at the cost of one additional source send. Because 𝑚 depends on the iteration-space coordinate, the same form naturally generalizes to other multi-ring strategies. These patterns differ only in how guarded recurrences name their sources and receivers. By composing them, Cy-clotron can express strategies such as split rings (where systolic communication starts at a source processor and pro-ceeds in both directions), doubling broadcast trees, and het-erogeneous piecewise combinations, rather than restricting users to a fixed set of communication presets. 
+
+4 Compilation and Dependency Analysis 
+
+Compilation lowers a recurrence system and space–time mapping into one per-processor program. Algorithm 1 shows the full compilation pipeline. Spatial dimensions are bound to processor coordinates and temporal dimensions become loops. The dependency-management pass uses the space– time mapping to classify recurrence dependences as live or stale. It then topologically orders the live dependences, and then emits matching communication. Subsequent passes make communication synchronization-safe and optionally apply block-cyclic mapping and static deduplication. 
+
+Algorithm 1 Compiling recurrence to a distributed program. 
+
+Require: recurrence system R; space-time annotation 𝜎 
+
+Ensure: one guarded program run on every processor  
+
+> 1:
+
+emit a loop over the temporal dimensions of R 
+
+> 2:
+
+bind spatial coordinates from the processor rank  
+
+> 3:
+
+𝐺 ← DependenceGraph (R)  
+
+> 4:
+
+for all edges 𝑒 ∈ 𝐺 do  
+
+> 5:
+
+if Offset (𝑒 ) lies purely along a temporal dim then  
+
+> 6:
+
+mark 𝑒 stale ⊲ resident in a register  
+
+> 7:
+
+else  
+
+> 8:
+
+mark 𝑒 live ⊲ produced this timestep  
+
+> 9:
+
+end if  
+
+> 10:
+
+end for  
+
+> 11:
+
+order ← TopoSort (live edges of 𝐺 ) ⊲ emission order  
+
+> 12:
+
+for all tensor 𝑇 in order do  
+
+> 13:
+
+emit if guards for 𝑇 : from substitutions/constraints  
+
+> 14:
+
+emit 𝑇 ’s guarded block: receives, reads, kernel calls  
+
+> 15:
+
+emit endIf  
+
+> 16:
+
+end for  
+
+> 17:
+
+DeducePushes (R) emits Send s 
+
+> 18:
+
+emitEndLoop ⊲ close the temporal loop body  
+
+> 19:
+
+if block-cyclic mapping requested then ⊲ optional  
+
+> 20:
+
+BlockCyclicFold: wrap program in virtual-processor loops; add modulo indexing and guards  
+
+> 21:
+
+end if  
+
+> 22:
+
+SpecializeProgram: specialize guards/loops per rank; drop redundant sends/recvs ⊲ dedup communication  
+
+> 23:
+
+return interpreted per-processor program 
+
+4.1 The shape of generated code 
+
+The generated program is the same on every processor: a single loop over the temporal dimension, whose body is a sequence of guarded statements. Each guard is an if over the processor’s spatial coordinates and the current value of the temporal loop variable. The guards come from two sources: the case structure implied by gimbal-locking (a statement written on a boundary face such as (𝑖, 𝑖, 𝑘 ) only applies where 
+
+𝑖 = 𝑗 ), and constraints the user supplies directly (such as 𝑖 >
+
+𝑗 > 𝑘 ). They are necessary because both the temporal loop and the spatial processor grid range over the entire iteration space: every processor reaches every timestep, but only some 
+
+(processor , time ) points lie inside a given statement’s region. The guard determines whether the current processor and timestep belong to the statement’s guarded region. Within one iteration of the temporal loop, each tensor of the recurrence system owns one guarded block. A block contains everything that produces that tensor’s value for the current timestep: a receive if the value arrives from a neighboring processor, a register read if it is already resident from a prior timestep, and the kernel call that computes it. Sends are placed at the end of the loop body, after all values for the step have been produced. The compiler must Cyclotron: A Recurrence Language for Expressing Interprocessor Communication 
+
+𝐴 𝐵 𝐶    
+
+> (− 1,0)(0,0)(0,−1)
+> raw cycle
+
+𝐴 𝐵 𝐶   
+
+> 𝑖 =space, 𝑗 =time emit 𝐴, 𝐵, 𝐶
+
+𝐴 𝐵 𝐶                         
+
+> 𝑖 =time, 𝑗 =space emit 𝐵, 𝐶, 𝐴
+> 𝑖 =space, 𝑗 =time
+> copy C→Ain
+> A = F(A in )recv Bin ←A@ (𝑖 −1)
+> B = G(B in )C = H(B) send A→ ( 𝑖 +1)
+> 𝑖 =time, 𝑗 =space
+> copy A→Bin
+> B = G(B in )C = H(B) recv Ain ←C@ (𝑗 −1)
+> A = F(A in )send C→ ( 𝑗 +1)
+
+Figure 7. Left: the dependence graph of Equations 8–10 is a cycle (edges point from producer to consumer and are labeled with their offsets). The space–time mapping determines which edge is stale (dashed): a purely temporal offset refers to a value already resident from a previous timestep. Cutting the stale edge leaves an acyclic graph. The topological order determines emitted statement order. Right: the ordering of statements changes under the two mappings. therefore determine an emission order for these blocks that respects their data dependencies. 
+
+4.2 Breaking cyclic recurrence dependencies 
+
+The order matters, and it cannot be read off the source pro-gram order, because the dependence graph may be cyclic. Consider the following three-tensor system, which we use as a running example (Figure 7): 
+
+(𝑖, 𝑗 )𝐴 = 𝐹  (𝑖, 𝑗 −1)𝐶 
+
+ (8) 
+
+(𝑖, 𝑗 )𝐵 = 𝐺  (𝑖 −1, 𝑗 )𝐴 
+
+ (9) 
+
+(𝑖, 𝑗 )𝐶 = 𝐻  (𝑖, 𝑗 )𝐵 
+
+ (10) 
+
+𝐵 depends on 𝐴 , 𝐶 on 𝐵 , and 𝐴 on 𝐶 : a cycle 𝐴 → 𝐵 → 𝐶 →
+
+𝐴 . 𝐺 , 𝐻 , and 𝐹 are functions. Taken at face value, the cyclic dependencies admit no valid emission order for the current timestep; an arbitrary order can produce incorrect code. The cycle is broken by a space–time mapping. Once one dimension is declared temporal, any dependence whose off-set lies purely along the temporal dimension refers to a value from a previous timestep. That value already exists, com-puted in an earlier iteration of the temporal loop and is sitting in a register. It does not need to be produced during the cur-rent step, so it imposes no ordering constraint on the current step’s code. We call such dependence edges stale , and we remove them from the ordering graph. The read itself is not removed; it is lowered to a register read. Remaining edges, whose values are produced during the current step, are live .Deleting stale edges leaves an acyclic graph. A topological sort of the live edges yields a valid emission order. In the example, map 𝑖 to space and 𝑗 to time. The depen-dence (𝑖, 𝑗 )𝐴 ← ( 𝑖, 𝑗 −1)𝐶 has offset (0, −1): purely temporal, thus stale; the last step’s 𝐶 is already in a register. The de-pendence (𝑖, 𝑗 )𝐵 ← ( 𝑖 −1, 𝑗 )𝐴 has offset (− 1, 0) and is purely spatial. It is hence live and this step’s 𝐴 , arriving from the neighboring processor. (𝑖, 𝑗 )𝐶 ← ( 𝑖, 𝑗 )𝐵 has no offset and is live under any mapping. Cutting the stale edge leaves the chain 𝐴 → 𝐵 → 𝐶 , and the emitted order is 𝐴, 𝐵, 𝐶 .The flipped mapping, with 𝑖 to time and 𝑗 to space, results in a different emitted order. Every offset keeps its spelling but changes its meaning. The dependence (𝑖, 𝑗 )𝐴 ← ( 𝑖, 𝑗 −1)𝐶 is now spatial , and the dependence (𝑖, 𝑗 )𝐵 ← ( 𝑖 −1, 𝑗 )𝐴 is now 
+
+temporal and the source of the cut. The surviving chain is 
+
+𝐵 → 𝐶 → 𝐴 , different than the original A,B,C order. This reordering is necessary for correctness, not a stylis-tic choice. Suppose we kept the source order 𝐴, 𝐵, 𝐶 under the flipped mapping. 𝐵 ’s dependence on (𝑖 −1, 𝑗 )𝐴 is stale: it must read the value of register 𝐴 left over from the previous timestep. But the block for 𝐴 has already run and overwrit-ten that register with the current step’s value. 𝐵 silently consumes a value one timestep too new, resulting in incor-rect output. The stale value must be read before the operation that clobbers its register is emitted. The topological sort in lines 3-11 of Algorithm 1 guaran-tees this. With 𝑖 mapped in time, the stale edge 𝐴 → 𝐵 is deleted, its consumer 𝐵 loses its only incoming edge and becomes a leaf of the ordering graph, so it is emitted first, before the block that overwrites 𝐴 . This is not a coincidence of the example. The stale edge closes the cycle, so the surviv-ing live edges form a path from the stale edge’s consumer (𝐵 ) back around to its producer ( 𝐴 ); any topological order of that path places the consumer before the producer. In other words, sorting on live edges alone also enforces the read-before-clobber constraint of the stale edge, for free. The same structure appears at full scale in Cholesky. In this case the cycle is 𝐿 𝑠 → 𝐿 𝑐 → 𝐿 𝑔𝑙 → 𝐿 𝑔𝑢 → 𝐿 𝑠 . The cut again changes with the space–time mapping. The resulting topological orders correspond to the different compute or-ders required by the loop variants in Figure 2. The topological algorithm produces those orderings directly. Fixed traversals of the source program (depth-first from any starting tensor) cannot produce correct orders for all mappings, because it must cut the cycle, and the correct cut is determined by the space–time mapping, not program order. 
+
+4.3 Emitting Communication 
+
+Once blocks are lowered, cross-processor dependences are emitted as receives. If 𝑖 is spatial, (𝑖, 𝑗 )𝑋 ← ( 𝑖 − 1, 𝑗 )𝑋 means processor 𝑖 receives 𝑋 from processor 𝑖 − 1. The user does not write the corresponding send; the compiler inverts the relation and inserts a send from processor 𝑖 − 1 to 𝑖 .Anonymous 
+
+Table 1. Send synthesis in DeducePushes. Each receive ( dst ← src ) is classified by its coordinate and matched with a send.                                                         
+
+> Pattern Receive & window (dst ←src) Relay test Originates at Send & guard (src →dst)
+> Temporal carry (𝑖, 𝑗 ) ← ( 𝑖, 𝑗 −1)—— (register persists) — none; value stays resident Systolic relay (𝑖, 𝑗 ) ← ( 𝑖 −1, 𝑗 ),lo ≤𝑖 <hi hi −lo >stride receiver (each PE forwards) (𝑖, 𝑗 ) → ( 𝑖 +1, 𝑗 ),lo ≤𝑖 +1<hi
+> Scatter (non-relay) (𝑖, 𝑗 ) ← ( 𝑖 −stride , 𝑗 ),lo ≤𝑖 <hi hi −lo ≤stride each holder, one stride up (𝑖, 𝑗 ) → ( 𝑖 +stride , 𝑗 ),lo ≤𝑖 +stride <hi
+> Anchored (𝑗 +1, 𝑗 ) ← ( 𝑗, 𝑗 )—source PE (𝑗, 𝑗 ) → ( 𝑗 +1, 𝑗 )
+> Broadcast (𝑖, 𝑗, 𝑘 ) ← ( 𝑖, 𝑘, 𝑘 )—source PE (fan-out) (𝑖, 𝑘, 𝑘 ) → ( 𝑖, 𝑗, 𝑘 ) ∀ 𝑗
+
+Table 1 shows how sends are synthesized, depending on the dependence. Temporal dependencies require no send be-cause the value remains locally resident. Anchored receives such as ( 𝑗 + 1, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 name the destination directly in terms of the source coordinate, so the source emits a send to 𝑗 + 1. Broadcasts such as (𝑖, 𝑗 )𝑋 ← ( 𝑗, 𝑗 )𝑋 map many receivers 𝑖 to the same source 𝑗 , so source 𝑗 emits sends to each receiver. Same-base offset receives like (𝑖, 𝑗 ) ← ( 𝑖 −1, 𝑗 )
+
+require one additional test to check if receivers also forward the value (producing a systolic relay), or only receive. Consider a receive (𝑖, 𝑗 )𝑋 ← ( 𝑖 − 𝑠𝑡𝑟𝑖𝑑𝑒, 𝑗 )𝑋 defined over the window 𝑙𝑜𝑤 ≤ 𝑖 < ℎ𝑖 . If 𝑠𝑡𝑟𝑖𝑑𝑒 < ℎ𝑖 − 𝑙𝑜𝑤 , then some re-ceivers read from another point within the window, meaning some receivers also forward the value. If 𝑠𝑡𝑟𝑖𝑑𝑒 ≥ ℎ𝑖 − 𝑙𝑜𝑤 ,every sender remains outside the window, so receivers do not forward; this produces a scatter. Cyclotron uses scatters to construct recursive-doubling tree broadcast. The user never writes sends or send-side constraints. Cy-clotron simply copies the receiver’s if guards onto the syn-thesized send, ensuring the sender fires only when its des-tination is a receiver. Duplicate sends are suppressed when multiple rules would serve the same destination. 
+
+4.4 Minimizing communication 
+
+Triangular iteration spaces like Cholesky’s are load imbal-anced under a one-tile-per-processor mapping. Cyclotron therefore supports a 2D block-cyclic decomposition, which maps the virtual processor grid onto a smaller physical grid in round-robin fashion. This both balances work and exposes redundant communication. If several virtual processors on the same physical processor require the same tile from an-other processor, only one network receive is necessary and the remaining consumers/virtual processors can reuse the same local copy. Cyclotron applies this decomposition in two phases. The first is a post-processing pass that wraps each processor program with loops over its resident virtual processors and inserts the required modulo and guard logic. Afterwards, the generated code is specialized to each physi-cal processor; control flow is removed, as well as redundant sends, receives, and guards. The resulting per-processor pro-grams remain small because each generated operation corre-sponds to a coarse-grained tiled computation. An alternative is to eliminate redundant communication with a runtime cache, but this introduces additional runtime overhead. 
+
+5 System and Implementation 
+
+The Cyclotron front-end language and compiler are imple-mented in Python, while the runtimes that execute generated programs are native C++ and Rust. Cyclotron has three back-ends: a C++ backend for CPU clusters, a C++ backend for GPU clusters, and a Rust backend built with DAM [42], a framework for modeling dataflow architectures in which PEs communicate over channels. Each backend interprets the same portable Protobuf program, allowing a generated exe-cutable to run unchanged across backends. The Rust backend is used primarily for simulation. It reproduces the commu-nication behavior of the cluster backends, including sim-ulated MPI protocol behavior, without requiring payloads. This allows Cyclotron to detect indefinite hangs and model communication and kernel latencies without executing on a cluster. The simulator can also execute with real payloads and produce correct results, although this mode is disabled by default because it runs on a single processor. The Rust backend can be used to simulate spatial-processors composed of interlinked PEs; this exploration is future work. 
+
+6 Evaluation 
+
+We evaluate performance on CPU and GPU clusters. Both are hosted on Perlmutter, a supercomputer at Lawrence Berkeley National Laboratory. GPU experiments use 16 A100 GPUs, four per node, connected by NVLink within a node and HPE Slingshot 11 across nodes. CPU experiments use 16 Perlmut-ter nodes connected by Slingshot. We compare against Cray ScaLAPACK, SLATE, and cuSolverMp using matched preci-sion, tile sizes, BLAS/LAPACK kernels, thread counts, and MPI communication. Each configuration uses two warmups and four measured trials; we report the best runtime. 
+
+6.1 Comparing Communication Strategies 
+
+For a specific program, the best communication schedule is rarely fixed; the fastest one will depend on factors including the network topology and processor architecture (CPUs vs GPUs), in addition to tile size, tiles per rank, and input size. Cyclotron: A Recurrence Language for Expressing Interprocessor Communication c=2 N=32768 c=4 N=65536 
+
+0.0 0.5 1.0 1.5 
+
+> Speedup over SLATE
+> 15.1 TF
+> 1.01x SLATE
+> 31.1 TF
+> 1.24x SLATE
+
+Host-staged Cyclotron vs SLATE (GPU) 16 A100 (4 nodes), tile=4096, fp32, matched transport 
+
+> SLATE potrf bcast systolic 1rm 1rm_all 1rm_all_3 2ring sring tree_cols tree_1rm tree_1rm_3
+
+c=2 N=32768 c=4 N=65536 
+
+024
+
+> Speedup over SLATE
+> 15.1 TF
+> 4.57x SLATE 1.12x cuMp
+> 31.1 TF
+> 4.74x SLATE 1.28x cuMp
+
+Device-resident + out-of-order Cyclotron (GPU) 16 A100 (4 nodes), tile=4096, fp32 
+
+> SLATE potrf cuSolverMp (GDR) bcast systolic 1rm 1rm_all 1rm_all_3 2ring sring tree_cols tree_1rm tree_1rm_3
+
+Figure 8. Block-cyclic Cholesky on four GPU nodes (16 A100s, 1 rank/GPU, so 𝑃 =4): Left: speedup over SLATE, with host-staged communication. Right: speedup over Nvidia cuSolverMp and SLATE, with device-device direct communication. tilesize=4096, with block-cyclic factor 𝑐 =2 and 𝑐 =4 (right). Each process owns 𝑐 ×𝑐 tiles, so 𝑁 = 𝑃 𝑐 · tile; SLATE and cuSolverMp use the same block size ( =tile) and the same 𝑐 . Bars are the fastest steady cycle; whiskers reach slowest. P = 4, 1 thr N=16384     
+
+> P= 4, 4 thr N=16384
+> P= 4, 16 thr N=16384
+> P= 8, 4 thr N=32768
+> P= 8, 16 thr N=32768
+> 0.0 0.5 1.0 1.5
+> Speedup over best-NB  ScaLAPACK
+> 1.2 TF
+> 1.05x
+> 2.1 TF
+> 1.43x
+> 2.4 TF
+> 1.34x
+> 7.7 TF
+> 1.61x
+> 8.7 TF
+> 1.68x
+
+Cyclotron vs ScaLAPACK Cholesky (CPU) 16 Perlmutter nodes, 256-tile, c = 16, fp32  
+
+> ScaLAPACK (best NB )bcast (best) systolic 1rm 1rm_all 1rm_all_3 2ring sring tree_cols tree_1rm tree_1rm_3
+
+Figure 9. Cyclotron Cholesky speedup over ScaLAPACK on 16 CPU nodes. 𝑃 × 𝑃 ranks, tilesize=256, 16 tiles/rank; “thr” denotes threads/rank. Whiskers show run-time variation The relative performance of schedules also changes; we ob-served a single schedule can perform over twice as fast as an alternative on CPUs, while the alternative often performs faster than the other on GPUs. We compare a sample set of eleven Cyclotron Cholesky variants that differ only in communication strategy, includ-ing broadcasts, systolic relays, 2-rings, bidirectional split-rings (sring), modified rings (1rm), and trees, against ScaLA-PACK and SLATE. We use an 𝑖 𝑗 spatial mapping here because it enables communication deduplication, which is fundamen-tally not possible in other Cholesky spatial mappings. G=2 P=4 N=4096 G=4 P=16 N=8192 0.0 0.5 1.0 1.5 2.0 2.5  
+
+> Speedup over ScaLAPACK psgemm
+> 2.0 TF 7.8 TF 3.7 TF 13.2 TF 2.7 TF 8.9 TF 2.1 TF 6.9 TF
+> Straight matmul weak scaling, tile=2048 Perlmutter CPU cores (threaded T=32, 1 rank/node)
+
+ScaLAPACK Broadcast Hybrid Systolic 
+
+Figure 10. Cyclotron GEMM vs. ScaLAPACK on 4 and 16 CPU nodes, with systolic, broadcast, and hybrid schedules 
+
+CPU Results. Figure 9 compares 11 Cyclotron Cholesky communication schedules against ScaLAPACK on 16 CPU nodes using 𝑃 × 𝑃 grids, 𝑃 ∈ { 4, 8}, with 4 or 16 threads/rank. We also include an effectively serial control ( 𝑃 = 4, 1 thread/rank), where communication choice has little effect and all Cy-clotron schedules perform similarly to ScaLAPACK. ScaLAPACK’s block size 𝑁 𝐵 was swept; the best was 256 in all cases, which we use as the baseline. Cyclotron also uses 
+
+𝑁 𝐵 = 256, giving 𝑐 = 16. As per-rank computation becomes more parallel, communication becomes increasingly impor-tant: some schedules perform worse than ScaLAPACK, while the best Cyclotron schedule achieves 1 .34–1 .68 × speedup across the remaining configurations. The winning communi-cation strategy also changes with the configuration, and schedules that perform well in one regime can perform Anonymous 
+
+poorly in another. This demonstrates that communication policy becomes a first-order performance choice once compu-tation is sufficiently optimized. The choice of communication policy is also heavily machine dependent. On Perlmutter’s 16 nodes, the broadcast policy performed poorly. However, on a separate 4-node machine (with nodes connected via InfiniBand), the broadcast schedule was universally best. We postulate this is due to the 4-nodes being densely connected, making 1 to all broadcasts practical. 
+
+GPU Results. Figure 8 (left) compares Cyclotron against SLATE using host-staged communication on 16 A100 GPUs. We use tile size 4096 and evaluate block-cyclic factors 𝑐 = 2and 𝑐 = 4. We use host staging here because SLATE (on Perlmutter) does not support GPU-direct communication, giving both systems the same communication path. Under this matched transport, Cyclotron is competitive with SLATE at 𝑐 = 2 and reaches up to 1 .24 × SLATE at 𝑐 = 4. The relatively smaller spread among Cyclotron’s communication schedules contrasts with the CPU results; the importance of communication strategy is architecture dependent. Figure 8 (right) evaluates Cyclotron on 16 A100s with device-resident GPU-direct communication and out-of-order execution, and compares against Nvidia cuSolverMp, which likewise uses GPU-direct communication. Cyclotron reaches 4.57 × and 4 .74 × SLATE, and 1 .12 × and 1 .28 × cuSolverMp. The difference with cuSolverMp appears to come largely from execution scheduling. cuSolverMp is closed source, but profiling shows that its communication is performed us-ing NCCL broadcast collectives, with communication and computation proceeding in bulk-synchronous stages. Cy-clotron instead emits dependency-driven code that naturally overlaps communication and computation, and out-of-order execution further increases this overlap. 
+
+CPU Matrix Multiply. We also evaluate three different matrix multiply schedules against ScaLAPACK on our 16-node CPU backend. We compare systolic, broadcast, and hybrid schedules (broadcast in 1 dimension, systolic in the other). Figure 10 shows the broadcast variant working best. 
+
+6.2 Generating Different Spatial Mappings 
+
+The space–time annotation of Section 3 is a retag, not a rewrite. The same blocked triangular-solve recurrences pro-duce two complementary wavefronts depending on which index is spatial: an 𝑖 -spatial pipelines the solution 𝑋 , while a 𝑘 -spatial pipelines the right-hand side 𝐵 . Each leaves a region of processors idle while waiting for its wavefront, but these idle regions are complementary. One can therefore in-terleave the two mappings by changing only the space–time annotation between successive right-hand-side chunks. Table 2 evaluates this “ping-pong” schedule. Even-numbered chunks use one spatial mapping and odd-numbered chunks use the other, allowing work from one wavefront to fill much of the other’s pipeline imbalance. In isolation, the Cyclotron 128×8192 512×8192 2048×8192 8192×8192 8192×2048 8192×512 8192×128           
+
+> 0510
+> M/N= 1
+> 1.08× 1.14× 1.13× 1.02× 1.17× 1.41× 2.00×
+> Throughput: TFLOP/s Weight Vs OS M×K×N GEMM
+> OS (moves A) WS (A resident)
+> 128×8192 512×8192 2048×8192 8192×8192 8192×2048 8192×512 8192×128
+> 10 1
+> 10 0
+> Communication Volume Gigabytes moved
+> OS (~ M×K)WS (~ K×N)
+> M×Ntile dims ( K=M); aspect M/N= 1/64 64
+
+Figure 11. Weight-stationary ( 𝑖𝑘 -spatial) versus output-stationary ( 𝑖 𝑗 -spatial) GEMM on 16 CPU nodes. As 𝑁 de-creases relative to 𝑀 = 𝐾 , weight-stationary increasingly wins by keeping the larger 𝐴 tiles stationary. 
+
+Table 2. Blocked trsm throughput on four CPU nodes (Perl-mutter), tile 1024 × 1024, 1024 right-hand sides). Entries are GFLOPS/proc. Overlap is ping-pong time against the sum of the two isolated systolic times. ScaLAPACK is pstrsm on the same 𝑃 ×1 grid and the same number of solves (20) 
+
+𝑃 = 4 (1/node) 𝑃 = 8 (2/node) 
+
+𝑖 -spatial systolic 54.37 49.95 
+
+𝑘 -spatial systolic 54.54 50.36 broadcast 55.70 51.86 modified ring (1rM) 55.39 50.75 increasing 2-ring 55.92 49.89 ping-pong systolic 93.65 91.98 
+
+ScaLAPACK pstrsm 47.55 44.33 overlap speedup 1.72 × 1.83 ×
+
+vs. ScaLAPACK 1.97 × 2.07 ×
+
+variants perform similarly: changing the spatial dimension or replacing a systolic relay with a broadcast, modified ring, or 2-ring has little effect on the critical path of a single solve. Interleaving the two complementary systolic mappings, how-ever, improves throughput by 1 .72 × at 𝑃 = 4 and 1 .83 × at 
+
+𝑃 = 8 relative to running them back-to-back, reaching 1 .97 ×
+
+and 2 .07 × the throughput of ScaLAPACK. The ping-pong throughput remains similar across the two placements (93.65 vs. 91.98 GFLOPS/proc), indicating that the benefit does not arise merely from packing multiple ranks onto a node. Figure 11 compares two spatial mappings of the same systolic matrix multiply and shows that the better mapping depends on tile shape. We compute 𝐶 = 𝐴𝐵 on a 4 × 4processor grid, where 𝐴 is 𝑀 × 𝐾 , 𝐵 is 𝐾 × 𝑁 , and 𝐶 is 𝑀 × 𝑁 .We fix 𝑀 = 𝐾 (square 𝐴 tiles) and sweep 𝑁 . When 𝑀 = 𝐾 =
+
+𝑁 , both dataflows perform equivalently. As 𝑁 shrinks, 𝐴 
+
+becomes much larger than 𝐵 and 𝐶 : the output-stationary mapping moves 𝐴 and 𝐵 , whereas the weight-stationary mapping keeps the larger 𝐴 tiles fixed and moves only the Cyclotron: A Recurrence Language for Expressing Interprocessor Communication 
+
+Table 3. Fused systolic Cholesky + TRSM versus ScaLAPACK 
+
+pspotrf then pstrsm (𝑁 = 4096, 4 × 4 grid, 16 ranks). Times in milliseconds. Hidden is the fraction of our standalone 2-D solve absorbed by fusion, 1 − ( 𝑡 fused − 𝑡 chol )/ 𝑡 trsm .                   
+
+> 𝑐 =1 (tile 1024) 𝑐 =4 (block-cyclic, tile 256)
+> 𝑛 rhs fused hidden vs. scala fused hidden vs. scala 256 180 ms 90% 1.17 ×48 ms 23% 1.62 ×
+> 512 182 ms 90% 1.34 ×58 ms 18% 1.30 ×
+
+smaller 𝐵 and 𝐶 tiles. Consequently, the weight-stationary mapping outperforms output-stationary as 𝑁 decreases. 
+
+6.3 Fusion 
+
+Each PE in a Cyclotron program eagerly executes an opera-tion as soon as its dependencies are satisfied. Consequently, running subsequent kernels does not introduce a global bar-rier between them: operations from the second kernel can begin before the first kernel has completed across all PEs. The preceding ping-pong TRSM experiment demonstrated this effect across successive instances of the same kernel, where pipeline imbalances in adjacent solves overlap natu-rally without an explicit user-directed fusion primitive. The same mechanism applies across different kernels; we also execute a Cholesky followed by a multi-right-hand-side triangular solve. Table 3 reports this experiment on four CPU nodes in both block-cyclic and non-block-cyclic regimes. In the non-block-cyclic configuration, Cholesky is load-imbalanced, and processors in earlier rows and columns of the processor grid finish their assigned factorization work substantially earlier than others. Because Cyclotron executes operations as soon as their dependencies are satisfied, por-tions of the subsequent triangular solve can begin on these processors while Cholesky is still running elsewhere. This combination of load imbalance and dependency-driven fu-sion hides about 90% of the standalone solve time, allowing the solve to execute nearly for free. In the block-cyclic con-figuration, work is more evenly balanced across processors, leaving less idle time to exploit; fusion therefore hides only 18–23% of the solve, while still outperforming sequential ScaLAPACK Cholesky followed by TRSM by 1 .30–1 .62 ×.
+
+7 Related Work 
+
+Systolic arrays were introduced by Kung and Leiserson [16, 17]. Rajopadhye, Fujimoto, and Purushothaman [29–31], as well as Quinton [26, 27] established how to synthesize them from uniform and affine recurrence equations. There is a long history of dataflow compilers based on the polyhedral and affine models. AutoSA [37] and PolySA [9] use the polyhedral model to find unit-length read distances among loop nests and then compile the equations to dataflow. They primarily target matrix multiply and convolution, and do not handle recurrences (equations with dependencies) beyond the LU decomposition, whose dataflow resembles matrix multiply. Lam did early work on systolic-array compilation, while Lam and Wolfe studied locality optimization [21, 22]. AlphaZ [39–41] is the closest equational system, instan-tiating recurrence equations on distributed-memory ma-chines. Users explicitly provide space–time maps, including statement-ordering dimensions that Cyclotron instead infers. Its distributed backend emits nearest-neighbor systolic halo exchanges using blocking MPI_Send and MPI_Recv , whereas Cyclotron expresses broadcasts, relays, and piecewise rings directly in the recurrence system. Legion [3] also derives communication from programmer-declared data dependen-cies, but does so dynamically at runtime rather than stati-cally. Its programs also explicitly order per-timestep kernel launches, whereas Cyclotron derives this ordering from the space–time mapping. Thus, Cyclotron’s ordering algorithm is complementary to Legion and could sit above it. Our IR is an extension and re-imagining of the assignment-free notation from the Algorithms of Informatics textbook by Gyires [13]. Their notation is array-style, similar to Halide’s input language [28] (e.g. 𝐴 (𝑖, 𝑗, 𝑘 ), as opposed to our (𝑖 𝑗𝑘 )𝐴 ). Halide’s notation is adapted by the Stellar [12] and Gem-mini [11] work for designing matrix-multiply systolic arrays. Cyclotron extends this style of notation to express multiple communication patterns, combinations of them, and gimbal-locked indexing. Calyx [24] and Dahlia [23] provide IRs for synthesizing accelerators with explicit control and mem-ory pipelines, but do not reason about affine recurrences or induce space–time schedules. The Wavefront Array Proces-sor [18] was a programmable systolic array whose language resembled the per-PE programs Cyclotron generates. DISTAL [38] is a tensor-algebra compiler, built on TACO [15], that generates distributed matrix-multiplication kernels. DIS-TAL separates tensor distribution from computation sched-uling, with communication inferred from these choices; it supports only output-stationary programs without output de-pendencies. Matrix-multiply algorithms include Cannon [6], SUMMA [35], and PUMMA [8], COSMA [20], Johnson [1], and Solomonik [32]. Early work by [14] explored distributed triangular solve, and [19] and [2] investigated communication-optimal Cholesky. The distributed linear-algebra libraries ScaLAPACK [7], SLATE [10], Elemental [25] and DPLASMA [4, 5] implement variants of matrix multiply and solvers. 
+
+8 Conclusion 
+
+We present Cyclotron, a language and compiler that makes communication an expressible, first-class part of distributed tiled algorithms. By separating communication from compu-tation and space–time mapping, Cyclotron lets programmers change how data moves without rewriting the computa-tion itself, and makes it practical to explore a broad space of communication schedules. Across CPUs and GPUs, this Anonymous 
+
+flexibility allows Cyclotron to match and often outperform hand-optimized distributed linear algebra libraries, while showing that the best schedule depends on the machine, algorithm, and problem size. This work opens the door to deeper exploration of communication strategies for general networks of interacting processing elements, from multi-die GPU systems to wafer-scale engines and spatial dataflow accelerators. We believe this can enable software to better express and adapt to increasingly heterogeneous commu-nication patterns as the hierarchies and interconnects of distributed computing platforms continue to diversify. 
+
+Acknowledgments 
+
+The authors used generative AI tools to assist with code generation and debugging, as well as copyediting, wording, condensation, and proofreading. All technical ideas, exper-imental design, analysis, claims, and final decisions were produced and verified by the authors. 
+
+References 
+
+[1] Ramesh C Agarwal, Susanne M Balle, Fred G Gustavson, Mahesh Joshi, and Prasad Palkar. 1995. A three-dimensional approach to parallel matrix multiplication. IBM Journal of Research and Development 39, 5 (1995), 575–582. [2] Grey Ballard, James Demmel, Olga Holtz, and Oded Schwartz. 2009. Communication-optimal parallel and sequential Cholesky decomposi-tion. In Proceedings of the twenty-first annual symposium on Parallelism in algorithms and architectures . 245–252. [3] Michael Bauer, Sean Treichler, Elliott Slaughter, and Alex Aiken. 2012. Legion: Expressing Locality and Independence with Logical Regions. In Proceedings of the International Conference on High Performance Computing, Networking, Storage and Analysis (SC) . IEEE. [4] George Bosilca, Aurelien Bouteiller, Anthony Danalis, Mathieu Faverge, Azzam Haidar, Thomas Herault, Jakub Kurzak, Julien Langou, Pierre Lemarinier, Hatem Ltaief, et al. 2011. Flexible development of dense linear algebra algorithms on massively parallel architectures with DPLASMA. In 2011 IEEE International Symposium on Parallel and Distributed Processing Workshops and Phd Forum . IEEE, 1432–1441. [5] George Bosilca, Aurelien Bouteiller, Anthony Danalis, Mathieu Faverge, Thomas Hérault, and Jack J Dongarra. 2013. Parsec: Ex-ploiting heterogeneity to enhance scalability. Computing in Science & Engineering 15, 6 (2013), 36–45. [6] Lynn Elliot Cannon. 1969. A cellular computer to implement the Kalman filter algorithm . Montana State University. [7] Jaeyoung Choi, Jack J Dongarra, Roldan Pozo, and David W Walker. 1992. ScaLAPACK: A scalable linear algebra library for distributed memory concurrent computers. In The Fourth Symposium on the Fron-tiers of Massively Parallel Computation . IEEE Computer Society, 120– 121. [8] Jaeyoung Choi, David W Walker, and Jack J Dongarra. 1994. PUMMA: Parallel universal matrix multiplication algorithms on distributed memory concurrent computers. Concurrency: Practice and Experience 
+
+6, 7 (1994), 543–570. [9] Jason Cong and Jie Wang. 2018. PolySA: Polyhedral-based systolic array auto-compilation. In 2018 IEEE/ACM International Conference on Computer-Aided Design (ICCAD) . IEEE, 1–8. [10] Mark Gates, Jakub Kurzak, Ali Charara, Asim YarKhan, and Jack Don-garra. 2019. SLATE: Design of a modern distributed and accelerated linear algebra library. In Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis . 1–18. [11] Hasan Genc, Seah Kim, Alon Amid, Ameer Haj-Ali, Vighnesh Iyer, Pranav Prakash, Jerry Zhao, Daniel Grubb, Harrison Liew, Howard Mao, et al. 2021. Gemmini: Enabling systematic deep-learning archi-tecture evaluation via full-stack integration. In 2021 58th ACM/IEEE Design Automation Conference (DAC) . IEEE, 769–774. [12] Hasan Nazim Genc, Hansung Kim, Prashanth Ganesh, and Yakun Sophia Shao. 2024. Stellar: An Automated Design Framework for Dense and Sparse Spatial Accelerators. In 2024 57th IEEE/ACM In-ternational Symposium on Microarchitecture (MICRO) . IEEE, 409–422. [13] János P. Gyires. 2013. Systolic Systems. In Algorithms of Informat-ics, Volume 2 . University of Debrecen. https://gyires.inf.unideb.hu/ KMITT/a52/ch16.html Accessed: 2025-11-10. [14] Michael T. Heath and Charles H. Romine. 1988. Parallel So-lution of Triangular Systems on Distributed-Memory Multipro-cessors. SIAM J. Sci. Statist. Comput. 9, 3 (1988), 558–588. arXiv:https://doi.org/10.1137/0909037 doi: 10.1137/0909037 
+
+[15] Fredrik Kjolstad, Shoaib Kamil, Stephen Chou, David Lugato, and Saman Amarasinghe. 2017. The tensor algebra compiler. Proceedings of the ACM on Programming Languages 1, OOPSLA (2017), 1–29. [16] Hsiang-Tsung Kung. 1982. Why systolic architecture? Design Research Center, Carnegie-Mellon University Pittsburgh, PA, USA. [17] Hsiang Tsung Kung and Charles E Leiserson. 1979. Systolic arrays (for VLSI). In Sparse Matrix Proceedings 1978 , Vol. 1. Society for industrial and applied mathematics Philadelphia, PA, USA, 256–282. [18] Sun-Yuan Kung, Arun, Gal-Ezer, and Bhaskar Rao. 1982. Wavefront Ar-ray Processor: Language, Architecture, and Applications. IEEE Trans. Comput. C-31, 11 (1982), 1054–1066. doi: 10.1109/TC.1982.1675922 
+
+[19] Grzegorz Kwasniewski, Marko Kabic, Tal Ben-Nun, Alexandros Niko-laos Ziogas, Jens Eirik Saethre, André Gaillard, Timo Schneider, Maciej Besta, Anton Kozhevnikov, Joost VandeVondele, et al. 2021. On the parallel i/o optimality of linear algebra kernels: Near-optimal matrix factorizations. In Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis . 1–15. [20] Grzegorz Kwasniewski, Marko Kabić, Maciej Besta, Joost VandeVon-dele, Raffaele Solcà, and Torsten Hoefler. 2019. Red-blue pebbling revisited: near optimal parallel matrix-matrix multiplication. In Pro-ceedings of the International Conference for High Performance Comput-ing, Networking, Storage and Analysis . 1–22. [21] Monica S Lam and Michael E Wolf. 2004. A data locality optimizing algorithm. ACM SIGPLAN Notices 39, 4 (2004), 442–459. [22] Monica Sin-Ling Lam. 1987. A systolic array optimizing compiler .Carnegie Mellon University. [23] Rachit Nigam, Sachille Atapattu, Samuel Thomas, Zhijing Li, Theodore Bauer, Yuwei Ye, Apurva Koti, Adrian Sampson, and Zhiru Zhang. 2020. Predictable accelerator design with time-sensitive affine types. In Proceedings of the 41st ACM SIGPLAN Conference on Programming Language Design and Implementation . 393–407. [24] Rachit Nigam, Samuel Thomas, Zhijing Li, and Adrian Sampson. 2021. A compiler infrastructure for accelerator generators. In Proceedings of the 26th ACM International Conference on Architectural Support for Programming Languages and Operating Systems . 804–817. [25] Jack Poulson, Bryan Marker, Robert A Van de Geijn, Jeff R Hammond, and Nichols A Romero. 2013. Elemental: A new framework for dis-tributed memory dense matrix computations. ACM Transactions on Mathematical Software (TOMS) 39, 2 (2013), 1–24. [26] P. Quinton. 1984. Automatic Synthesis of Systolic Arrays from Uni-form Recurrent Equations. In 11th Annual International Symposium on Computer Architecture, Ann Arbor . 208–214. [27] Patrice Quinton and Vincent Van Dongen. 1989. The mapping of linear recurrence equations on regular arrays. Journal of VLSI Signal Processing 1, 2 (1989), 95–113. Cyclotron: A Recurrence Language for Expressing Interprocessor Communication 
+
+[28] Jonathan Ragan-Kelley, Connelly Barnes, Andrew Adams, Sylvain Paris, Frédo Durand, and Saman Amarasinghe. 2013. Halide: a lan-guage and compiler for optimizing parallelism, locality, and recompu-tation in image processing pipelines. Acm Sigplan Notices 48, 6 (2013), 519–530. [29] S. V. Rajopadhye. 1986. Synthesis, Optimization and Verification of Systolic Architectures . Ph. D. Dissertation. University of Utah, Salt Lake City, Utah 84112. [30] Sanjay V Rajopadhye and Richard M Fujimoto. 1990. Synthesizing systolic arrays from recurrence equations. Parallel computing 14, 2 (1990), 163–189. [31] S. V. Rajopadhye, S. Purushothaman, and R. M. Fujimoto. 1986. On Synthesizing Systolic Arrays from Recurrence Equations with Linear Dependencies. In Proceedings, Sixth Conference on Foundations of Soft-ware Technology and Theoretical Computer Science . Springer Verlag, LNCS 241, New Delhi, India, 488–503. [32] Edgar Solomonik and James Demmel. 2011. Communication-optimal parallel 2.5 D matrix multiplication and LU factorization algorithms. In European Conference on Parallel Processing . Springer, 90–109. [33] Shiv Sundram, Muhammad Usman Tariq, and Fredrik Kjolstad. 2024. Compiling Recurrences over Dense and Sparse Arrays. Proc. ACM Program. Lang. 8, OOPSLA1, Article 103 (April 2024), 26 pages. doi: 10. 1145/3649820 
+
+[34] Muhammad Usman Tariq, Shiv Sundram, and Fredrik Kjolstad. 2025. REPTILE: Performant Tiling of Recurrences. Proc. ACM Program. Lang. 
+
+9, OOPSLA2, Article 296 (Oct. 2025), 27 pages. doi: 10.1145/3763074 
+
+[35] Robert A Van De Geijn and Jerrell Watts. 1997. SUMMA: Scalable universal matrix multiplication algorithm. Concurrency: Practice and Experience 9, 4 (1997), 255–274. [36] Bala Vinaithirthan, Shiv Sundram, Sneha Goenka, and Fredrik Kjol-stad. 2026. Compiling Bioinformatics Recurrences. arXiv preprint arXiv:2607.06225 (2026). [37] Jie Wang, Licheng Guo, and Jason Cong. 2021. AutoSA: A Poly-hedral Compiler for High-Performance Systolic Arrays on FPGA. In Proceedings of the ACM/SIGDA International Symposium on Field-Programmable Gate Arrays (FPGA) .[38] Rohan Yadav, Alex Aiken, and Fredrik Kjolstad. 2022. DISTAL: the distributed tensor algebra compiler. In Proceedings of the 43rd ACM SIGPLAN International Conference on Programming Language Design and Implementation (San Diego, CA, USA) (PLDI 2022) . Association for Computing Machinery, New York, NY, USA, 286–300. doi: 10.1145/ 3519939.3523437 
+
+[39] Tomofumi Yuki, Gautam Gupta, DaeGon Kim, Tanveer Pathan, and Sanjay Rajopadhye. 2012. AlphaZ: A System for Design Space Ex-ploration in the Polyhedral Model. In Languages and Compilers for Parallel Computing (LCPC) .[40] T. Yuki, G. Gupta, DG. Kim, T. Pathan, and S. Rajopadhye. 2012. Alp-haZ: A System for Design Space Exploration in the Polyhedral Model. In Proceedings of the 25th International Workshop on Languages and Compilers for Parallel Computing . Tokyo, Japan. [41] T. Yuki and S. Rajopadhye. 2013. Parametrically Tiled Distributed Memory Parallelization of Polyhedral Programs . Technical Report CSU-CS-13-105. Colorado State University, Computer Science Department. [42] Nathan Zhang, Rubens Lacouture, Gina Sohn, Paul Mure, Qizheng Zhang, Fredrik Kjolstad, and Kunle Olukotun. 2024. The Dataflow Abstract Machine Simulator Framework. In 2024 ACM/IEEE 51st An-nual International Symposium on Computer Architecture (ISCA) . IEEE, 532–547. 
+
+Received 2 June 2026
