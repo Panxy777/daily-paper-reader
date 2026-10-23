@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-22</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-23</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 3 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
     <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>3</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-22 22:17:39 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-23 22:08:59 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,9 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今天速读 3 篇系统与网络方向论文，均获 6.0 分，暂无精读。</p>
-<p>最值得看的是两篇通信优化：《TALLOP》在限时联邦学习下联合优化本地训练与通信压缩，《Cyclotron》用递推语言表达处理器间通信，另《SigmaTrace》给出跨 CPU/GPU 发起 RDMA 的通用可观测方案。</p>
-<p>普通读者可先从 TALLOP 入手了解联邦学习通信瓶颈，再按兴趣补读另两篇的摘要与方法部分。</p>
+<p>今日速读两篇 6.0 分论文，聚焦异构地理分布式资源上的基础模型训练与空间数据中心 MoE 推理。值得关注 GeoTrain 的能耗感知自动并行策略，以及无线供电传输支撑低延迟 MoE 推理的思路。普通读者可先看两篇摘要中的能耗与延迟对比结论，再决定是否深入。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -93,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">3 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Cyclotron: A Recurrence Language for Expressing Interprocessor Communication">Cyclotron: A Recurrence Language for Expressing Interprocessor Communication</span></li><li><span class="dpr-home-dashboard-paper-title" title="TALLOP: Joint Optimization of Local Training and Communication Compression for Time-Constrained Federated Learning">TALLOP: Joint Optimization of Local Training and Communication Compression for Time-Constrained Federated Learning</span></li><li><span class="dpr-home-dashboard-paper-title" title="SigmaTrace: Library-Agnostic Observability for CPU/GPU-Initiated RDMA Communication">SigmaTrace: Library-Agnostic Observability for CPU/GPU-Initiated RDMA Communication</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="GeoTrain: Energy-Aware Automatic Parallelism for Foundation Model Training on Heterogeneous Geo-Distributed Resources">GeoTrain: Energy-Aware Automatic Parallelism for Foundation Model Training on Heterogeneous Geo-Distributed Resources</span></li><li><span class="dpr-home-dashboard-paper-title" title="Low-Latency MoE Inference in Space Data Centers: A Wireless-Power-Transfer Perspective">Low-Latency MoE Inference in Space Data Centers: A Wireless-Power-Transfer Perspective</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>3</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>2</strong></span></div>
 </section>
 </div>
 

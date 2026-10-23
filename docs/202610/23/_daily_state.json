@@ -1,0 +1,41 @@
+{
+  "date": "20261023",
+  "date_label": "",
+  "generated_at": "2026-10-23 22:08:59 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.26178v1",
+      "route": "202610/23/2610.26178v1-geotrain-energy-aware-automatic-parallelism-for-foundation-model-training-on-heterogeneous-geo-distributed-resources",
+      "title": "GeoTrain: Energy-Aware Automatic Parallelism for Foundation Model Training on Heterogeneous Geo-Distributed Resources",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "面向异构地理分布式训练集群的自动并行配置",
+      "first_seen_at": "2026-10-23 22:08:59 UTC",
+      "updated_at": "2026-10-23 22:08:59 UTC"
+    },
+    {
+      "paper_id": "2610.30923v1",
+      "route": "202610/23/2610.30923v1-low-latency-moe-inference-in-space-data-centers-a-wireless-power-transfer-perspective",
+      "title": "Low-Latency MoE Inference in Space Data Centers: A Wireless-Power-Transfer Perspective",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "专家激活偏斜导致分布式MoE专家间计算功耗不均",
+      "first_seen_at": "2026-10-23 22:08:59 UTC",
+      "updated_at": "2026-10-23 22:08:59 UTC"
+    }
+  ]
+}
