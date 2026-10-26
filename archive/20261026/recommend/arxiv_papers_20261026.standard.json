@@ -1,0 +1,103 @@
+{
+  "mode": "standard",
+  "generated_at": "2026-10-26T23:39:39.581225+00:00",
+  "stats": {
+    "mode": "standard",
+    "tag_count": 1,
+    "deep_divecandidates": 0,
+    "deep_cap": 6,
+    "deep_selected": 0,
+    "quick_candidates": 2,
+    "quick_skim_target": 11,
+    "quick_selected": 2
+  },
+  "deep_dive": [],
+  "quick_skim": [
+    {
+      "id": "2610.27598v1",
+      "source": "arxiv",
+      "title": "Meta Expert: Cross-Layer Expert Sharing for Storage- and Retrieval-Efficient MoE",
+      "abstract": "As model parameters scale up, sparsely activated Mixture-of-Experts (MoE) approaches have become essential for model scaling. However, mainstream models currently adopt hierarchical architectures, where experts in different layers, although topologically independent, exhibit substantial similarity and redundancy in their stored content. Compared to the hierarchically arranged \\textbf{Local Expert} in existing mainstream models, we hypothesize that inter-layer shared \\textbf{Meta Expert} hold greater potential. To this end, we conduct a multi-dimensional empirical comparison between Local and Meta Experts, and find that models incorporating Meta Experts exhibit lower parameter redundancy, together with lower cross-entropy loss and higher downstream task accuracy. With the activated quantity and the expert granularity held fixed, \\textbf{our model matches the performance of Vanilla MoE using only 70--80\\% of the experts}, substantially improving the model's scaling potential. Beyond removing inter-layer redundancy among experts and improving information storage efficiency, our theoretical analysis further shows that, compared with Local Experts, Meta Experts provide hidden states with more flexible residual pathways, thereby improving information retrieval efficiency.",
+      "authors": [
+        "Ermo Hua",
+        "Xiangyu Hong",
+        "Baiting Wu",
+        "Che Jiang",
+        "Haozheng Hou",
+        "Yicheng Gu",
+        "Hanjing Wang",
+        "Qirui Zeng",
+        "Ming Zhang",
+        "Ning Ding",
+        "Qipeng Guo",
+        "Youbang Sun",
+        "Biqing Qi",
+        "Bowen Zhou"
+      ],
+      "primary_category": "cs.AI",
+      "categories": [
+        "cs.AI"
+      ],
+      "published": "2026-10-20T04:05:56+00:00",
+      "link": "https://arxiv.org/pdf/2610.27598v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 7.0,
+      "llm_evidence_en": "cross-layer expert sharing for storage-efficient MoE",
+      "llm_evidence_cn": "面向存储高效MoE的跨层专家共享",
+      "llm_evidence": "面向存储高效MoE的跨层专家共享",
+      "canonical_evidence": "面向存储高效MoE的跨层专家共享",
+      "llm_tldr_en": "Meta Expert shows that sharing experts across MoE layers reduces parameter redundancy and storage while lowering loss and improving downstream performance compared with local experts.",
+      "llm_tldr_cn": "主流MoE模型采用分层架构，不同层的专家虽拓扑独立却在存储内容上高度相似冗余，制约存储与检索效率。本文提出跨层共享的Meta Expert，并与分层Local Expert进行多维实证对比。结果显示引入Meta Expert的模型参数冗余更低、交叉熵损失更低且下游表现更好。该工作为存储与检索高效的MoE专家组织方式提供了新思路，对专家并行与放置具有参考价值。",
+      "llm_tldr": "主流MoE模型采用分层架构，不同层的专家虽拓扑独立却在存储内容上高度相似冗余，制约存储与检索效率。本文提出跨层共享的Meta Expert，并与分层Local Expert进行多维实证对比。结果显示引入Meta Expert的模型参数冗余更低、交叉熵损失更低且下游表现更好。该工作为存储与检索高效的MoE专家组织方式提供了新思路，对专家并行与放置具有参考价值。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "MoE expert parallelism",
+      "matched_requirement_id": "req-5",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "7"
+    },
+    {
+      "id": "2610.31383v1",
+      "source": "arxiv",
+      "title": "Pipelining vs. Combining in Aggregation Tasks",
+      "abstract": "We study the aggregation task (convergecast) in networks in the case that the values to be aggregated do not fit in a single message. We assume that every node starts with an input value, and there is an aggregation operator that is commutative, associative, and length-preserving, i.e., the result of aggregating two values has the same length as each of the input values. Since values do not fit in a message, they are transferred in a ``train'' of pipelined messages, which must be terminated whenever we want to aggregate values. The goal is to minimize the makespan time of aggregating all values. We present general lower bounds on the problem and optimal algorithms for several prevalent parallel computing architectures, including the hypercube and complete bipartite graphs, under both the splittable and unsplittable flows models. We also present an $O(\\log n)$ approximation for general graphs in the unsplittable flows model.",
+      "authors": [
+        "Gabriel Marques Domingues",
+        "Claire Mathieu",
+        "Boaz Patt-Shamir"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.DS"
+      ],
+      "published": "2026-10-22T14:52:00+00:00",
+      "link": "https://arxiv.org/pdf/2610.31383v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "Studies aggregation and convergecast communication with pipelining and combining",
+      "llm_evidence_cn": "研究聚合与汇聚通信中的流水线和合并策略",
+      "llm_evidence": "研究聚合与汇聚通信中的流水线和合并策略",
+      "canonical_evidence": "研究聚合与汇聚通信中的流水线和合并策略",
+      "llm_tldr_en": "Analyzes convergecast aggregation when values span multiple messages, deriving lower bounds and optimal pipelining and combining algorithms for parallel architectures.",
+      "llm_tldr_cn": "论文针对聚合值无法装入单条消息的汇聚通信场景，研究流水线传输与合并聚合之间的权衡，目标是最小化聚合所有值的总完成时间。作者给出该问题的通用下界，并为超立方体、完全二部图等常见并行结构设计最优聚合算法。结果明确了不同网络拓扑下流水线与合并策略的适用条件，为集合通信原语的通信调度优化提供了理论依据。",
+      "llm_tldr": "论文针对聚合值无法装入单条消息的汇聚通信场景，研究流水线传输与合并聚合之间的权衡，目标是最小化聚合所有值的总完成时间。作者给出该问题的通用下界，并为超立方体、完全二部图等常见并行结构设计最优聚合算法。结果明确了不同网络拓扑下流水线与合并策略的适用条件，为集合通信原语的通信调度优化提供了理论依据。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    }
+  ]
+}

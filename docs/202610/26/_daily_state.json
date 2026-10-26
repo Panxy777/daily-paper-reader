@@ -1,0 +1,41 @@
+{
+  "date": "20261026",
+  "date_label": "",
+  "generated_at": "2026-10-26 23:39:55 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.27598v1",
+      "route": "202610/26/2610.27598v1-meta-expert-cross-layer-expert-sharing-for-storage--and-retrieval-efficient-moe",
+      "title": "Meta Expert: Cross-Layer Expert Sharing for Storage- and Retrieval-Efficient MoE",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 7.0,
+      "evidence": "面向存储高效MoE的跨层专家共享",
+      "first_seen_at": "2026-10-26 23:39:55 UTC",
+      "updated_at": "2026-10-26 23:39:55 UTC"
+    },
+    {
+      "paper_id": "2610.31383v1",
+      "route": "202610/26/2610.31383v1-pipelining-vs-combining-in-aggregation-tasks",
+      "title": "Pipelining vs. Combining in Aggregation Tasks",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "研究聚合与汇聚通信中的流水线和合并策略",
+      "first_seen_at": "2026-10-26 23:39:55 UTC",
+      "updated_at": "2026-10-26 23:39:55 UTC"
+    }
+  ]
+}
