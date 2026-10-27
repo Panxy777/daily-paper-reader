@@ -1,0 +1,41 @@
+{
+  "date": "20261027",
+  "date_label": "",
+  "generated_at": "2026-10-27 23:08:23 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.34721v1",
+      "route": "202610/27/2610.34721v1-prefetch-steered-routing-deterministic-cache-aware-expert-selection-for-offloaded-mixture-of-experts-decoding",
+      "title": "Prefetch-Steered Routing: Deterministic Cache-Aware Expert Selection for Offloaded Mixture-of-Experts Decoding",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "卸载式MoE解码中的缓存感知专家选择与预取重叠",
+      "first_seen_at": "2026-10-27 23:08:23 UTC",
+      "updated_at": "2026-10-27 23:08:23 UTC"
+    },
+    {
+      "paper_id": "2610.34731v1",
+      "route": "202610/27/2610.34731v1-mcf-a-memory--and-communication-aware-co-designed-framework-for-long-context-llm-inference",
+      "title": "MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "通过通信感知调度将KV传输延迟隐藏在注意力计算之后",
+      "first_seen_at": "2026-10-27 23:08:23 UTC",
+      "updated_at": "2026-10-27 23:08:23 UTC"
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "mode": "standard",
+  "generated_at": "2026-10-27T23:08:03.240418+00:00",
+  "stats": {
+    "mode": "standard",
+    "tag_count": 1,
+    "deep_divecandidates": 0,
+    "deep_cap": 6,
+    "deep_selected": 0,
+    "quick_candidates": 2,
+    "quick_skim_target": 11,
+    "quick_selected": 2
+  },
+  "deep_dive": [],
+  "quick_skim": [
+    {
+      "id": "2610.34721v1",
+      "source": "arxiv",
+      "title": "Prefetch-Steered Routing: Deterministic Cache-Aware Expert Selection for Offloaded Mixture-of-Experts Decoding",
+      "abstract": "When a Mixture-of-Experts (MoE) model does not fit in GPU memory, batch-1 decoding is dominated by copying expert weights from host memory. Cache-aware routing reduces these copies by biasing the router toward resident experts, but combined with asynchronous prefetching it makes the model's outputs depend on transfer timing, so a harness that does not simulate that timing no longer evaluates the deployed model. We propose prefetch-steered routing (PSR): routing conditions on a deterministic logical cache, into which at most n experts predicted by the next layer's router are inserted per layer and token; physical copies affect only latency. On OLMoE-1B-7B with 50% and 25% of experts resident on an RTX 4090, PSR decodes 2.2-2.3x faster than exact routing with LRU and 25-30% faster than the Cache-Prior operating point, with mean benchmark differences of +0.1 and +0.5 points (95% lower bounds -0.8 and -0.3). In greedy generation its lead over Cache-Prior depends on the workload and reverses on HumanEval at 50% residency. On Moonlight-16B-A3B, PSR is 1.9x faster than exact routing with LRU at 37.5% residency and, at the latency of Cache-Prior, significantly better on three of eight benchmarks. On Qwen3.6-35B-A3B, where copies are cheap relative to computation, PSR keeps its advantage over Cache-Prior on the likelihood benchmarks but not its speed. Distillation-trained gates did not help. Speculative decoding with block-level expert selection was slower than PSR with a 1B autoregressive drafter on OLMoE, but with a block drafter on Qwen3.6 it was 2.1-2.9x faster than any autoregressive configuration with at most its GPU memory on the 64 prompts we timed.",
+      "authors": [
+        "Siming Huang"
+      ],
+      "primary_category": "cs.AI",
+      "categories": [
+        "cs.AI"
+      ],
+      "published": "2026-10-26T02:19:12+00:00",
+      "link": "https://arxiv.org/pdf/2610.34721v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "cache-aware expert selection and prefetch overlap for offloaded MoE decoding",
+      "llm_evidence_cn": "卸载式MoE解码中的缓存感知专家选择与预取重叠",
+      "llm_evidence": "卸载式MoE解码中的缓存感知专家选择与预取重叠",
+      "canonical_evidence": "卸载式MoE解码中的缓存感知专家选择与预取重叠",
+      "llm_tldr_en": "Offloaded MoE decoding is dominated by expert weight transfers; prefetch-steered routing conditions routing on a deterministic logical cache so prefetch timing affects only latency, not outputs, while cutting copies.",
+      "llm_tldr_cn": "当MoE模型无法完整驻留GPU时，单批次解码主要受限于从主机内存拷贝专家权重的开销。缓存感知路由虽可减少拷贝，但与异步预取结合会使输出依赖传输时序，导致评测失真。作者提出预取引导路由PSR，让路由基于确定性的逻辑缓存，物理拷贝只影响延迟。在OLMoE-1B-7B上该方案在部分专家驻留时有效降低拷贝量，为专家放置与传输计算重叠提供了确定性方案。",
+      "llm_tldr": "当MoE模型无法完整驻留GPU时，单批次解码主要受限于从主机内存拷贝专家权重的开销。缓存感知路由虽可减少拷贝，但与异步预取结合会使输出依赖传输时序，导致评测失真。作者提出预取引导路由PSR，让路由基于确定性的逻辑缓存，物理拷贝只影响延迟。在OLMoE-1B-7B上该方案在部分专家驻留时有效降低拷贝量，为专家放置与传输计算重叠提供了确定性方案。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to overlap communication with computation and optimize expert placement?",
+      "matched_requirement_id": "req-7",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.34731v1",
+      "source": "arxiv",
+      "title": "MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference",
+      "abstract": "This paper presents Memory- and Communication-Aware Framework for Long-Context LLM Inference (MCF) that optimizes long-context inference through communication-aware and stage-adaptive KV-cache layout transitions. At the core of MCF is {Memory-Aware Replication and Scheduling} (MARS), a dynamic orchestration mechanism for chunked prefill. MARS exploits early-stage memory headroom by selectively replicating highly reused KV blocks, improving locality and hiding KV propagation latency behind attention computation. As prefill progresses and memory pressure increases, MARS progressively drains redundant replicas and converges the KV cache into a sharded decode-ready layout, avoiding expensive layout conversion at the prefill--decode boundary. For decoding, MCF adopts a query-centric execution model in which KV shards remain stationary while lightweight query tensors are routed across workers. This changes communication from KV-cache-dependent transfer to query-dependent transfer, reducing communication growth with context length. MCF further integrates a hardware-software co-designed execution layer based on an FPGA compute-NIC datapath, enabling metadata-driven KV routing and collective operations directly in the network path. Experiments show that MCF improves TTFT, throughput, and scalability over state-of-the-art distributed inference systems, with larger benefits as context length and cluster size increase.",
+      "authors": [
+        "Huaizhi Zhang",
+        "Jiacheng Zhu",
+        "Xuqi Zhu",
+        "Junkyu Lee",
+        "Klaus McDonald-Maier",
+        "Xiaojun Zhai"
+      ],
+      "primary_category": "cs.AR",
+      "categories": [
+        "cs.AR"
+      ],
+      "published": "2026-10-26T02:30:02+00:00",
+      "link": "https://arxiv.org/pdf/2610.34731v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "hides KV propagation latency behind attention computation via communication-aware scheduling",
+      "llm_evidence_cn": "通过通信感知调度将KV传输延迟隐藏在注意力计算之后",
+      "llm_evidence": "通过通信感知调度将KV传输延迟隐藏在注意力计算之后",
+      "canonical_evidence": "通过通信感知调度将KV传输延迟隐藏在注意力计算之后",
+      "llm_tldr_en": "Long-context LLM inference suffers from KV-cache transfer and memory pressure. MCF co-designs memory-aware replication and scheduling with stage-adaptive KV layout transitions, hiding KV propagation latency behind attention compute and avoiding costly layout conversion at the prefill-decode boundary.",
+      "llm_tldr_cn": "长上下文大语言模型推理中，KV缓存传输与显存压力使延迟居高不下，现有方案缺乏通信与内存的协同设计。作者提出MCF框架及其核心MARS机制，在分块预填充早期复制高复用KV块以提升局部性，并随内存压力增大逐步回收副本、收敛为分片式解码布局。摘要表明该阶段自适应布局可把KV传播延迟隐藏在注意力计算之后，并避免预填充到解码边界的高昂布局转换。这为分布式长上下文推理的通信与计算重叠提供了可复用的系统设计思路。",
+      "llm_tldr": "长上下文大语言模型推理中，KV缓存传输与显存压力使延迟居高不下，现有方案缺乏通信与内存的协同设计。作者提出MCF框架及其核心MARS机制，在分块预填充早期复制高复用KV块以提升局部性，并随内存压力增大逐步回收副本、收敛为分片式解码布局。摘要表明该阶段自适应布局可把KV传播延迟隐藏在注意力计算之后，并避免预填充到解码边界的高昂布局转换。这为分布式长上下文推理的通信与计算重叠提供了可复用的系统设计思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "communication computation overlap",
+      "matched_requirement_id": "req-3",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    }
+  ]
+}

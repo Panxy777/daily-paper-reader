@@ -1,0 +1,498 @@
+Title: MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference
+
+URL Source: https://arxiv.org/pdf/2610.34731v1
+
+Published Time: Tue, 27 Oct 2026 01:52:41 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference 
+
+Huaizhi Zhang 
+
+University of Essex United Kingdom 
+
+hz24245@essex.ac.uk 
+
+Jiacheng Zhu 
+
+University of Essex United Kingdom 
+
+jz23222@essex.ac.uk 
+
+Xuqi Zhu 
+
+University of Essex United Kingdom 
+
+xz18173@essex.ac.uk 
+
+Junkyu Lee 
+
+University of Essex United Kingdom 
+
+j.lee@essex.ac.uk 
+
+Klaus McDonald-Maier 
+
+University of Essex United Kingdom 
+
+kdm@essex.ac.uk 
+
+Xiaojun Zhai 
+
+University of Essex United Kingdom 
+
+xzhai@essex.ac.uk 
+
+Abstract 
+
+This paper presents Memory- and Communication-Aware Framework for Long-Context LLM Inference (MCF) that optimizes long-context inference through communication-aware and stage-adaptive KV-cache layout transitions. At the core of MCF is Memory-Aware Replication and Scheduling (MARS), a dynamic orchestration mechanism for chunked prefill. MARS exploits early-stage memory headroom by se-lectively replicating highly reused KV blocks, improving locality and hiding KV propagation latency behind atten-tion computation. As prefill progresses and memory pres-sure increases, MARS progressively drains redundant repli-cas and converges the KV cache into a sharded decode-ready layout, avoiding expensive layout conversion at the prefill–decode boundary. For decoding, MCF adopts a query-centric execution model in which KV shards remain station-ary while lightweight query tensors are routed across work-ers. This changes communication from KV-cache-dependent transfer to query-dependent transfer, reducing communi-cation growth with context length. MCF further integrates a hardware-software co-designed execution layer based on an FPGA compute-NIC datapath, enabling metadata-driven KV routing and collective operations directly in the network path. Experiments show that MCF improves TTFT, through-put, and scalability over state-of-the-art distributed inference systems, with larger benefits as context length and cluster size increase. 
+
+Keywords: LLM Serving, Distributed Inference, KV-Cache Management, In-Network Computing, Zero-copy Communi-cation 
+
+1 Introduction 
+
+Long-context inference is becoming a critical workload for Large Language Models (LLMs). Applications such as re-trieval augmented generation [9], code generation [14], doc-ument analysis [17], and agentic reasoning often require prompts with tens of thousands of tokens. For such work-loads, the prefill stage becomes a dominant contributor to Time-To-First-Token (TTFT), because the system must pro-cess the entire input context and materialize the correspond-ing Key-Value (KV) cache before decoding can begin. Many existing distributed inference systems rely on ten-sor parallelism and pipeline parallelism. Tensor parallelism partitions model weights across devices, while pipeline par-allelism partitions model layers. These techniques are effec-tive for scaling model parameters and computation, but they do not directly address the sequence-dependent KV-cache growth in long-context inference. During prefill, each new query chunk must attend to all historical KV blocks. During decode, every generated token must access the increased KV cache. As a result, long-context inference introduces dif-ferent types of memory and communication bottleneck to conventional model-parallel weight partitioning. Context parallelism addresses this issue by partitioning the sequence dimension and distributing KV cache across workers. However, existing context-parallel designs [12, 13] often rely on static KV sharding and fixed communication patterns, such as ring-style KV propagation. While such de-signs preserve a memory-efficient layout, they repeatedly move historical KV blocks during inference. As the num-ber of chunks grows, this repeated communication becomes increasingly expensive under bandwidth-constrained dis-tributed inference. It would also be inefficient in heteroge-neous or dynamically changing communication environ-ments, where link bandwidth, latency, or node availability can vary over time. Moreover, we observe that prefill is not a uniform exe-cution phase. Early in prefill, the accumulated KV cache is small and each worker has substantial memory headroom. At the same time, early KV blocks have the highest future reuse because they will be attended by many subsequent chunks. Near the end of prefill, memory pressure increases and the system must recover a compact KV layout suitable  
+
+> 1arXiv:2610.34731v1 [cs.AR] 26 Oct 2026 EuroSys ’27, April 2027, Rabat, Morocco Zhang et al.
+
+for decode. This temporal asymmetry suggests that a single static KV-cache layout is suboptimal. We thus propose MCF, a Memory-Communication-Aware Distributed Inference Framework for Long-Context LLMs to response to this challenge. At the core of MCF is MARS, a stage-aware KV-cache orchestrator that dynamically con-trols KV replication and convergence during chunked prefill. MARS temporarily replicates high-reuse KV blocks when memory headroom is available, reduces the frequency of re-mote KV accesses and the critical-path latency of KV trans-fers in later chunks, and progressively retires redundant replicas as their reuse window expires. By the end of pre-fill, MARS guarantees that all KV blocks converge to an owner-only sharded layout, enabling efficient KV-stationary decode. MCF further introduces a distributed chunked-prefill ex-ecution model that pipelines local computation with KV propagation and missing-block fetching. Rather than treat-ing communication as a serialized phase after computation, MCF overlaps chunk execution with dynamic KV movement. This improves TTFT for long-context inference. To realize this dynamic execution efficiently, we design a hardware-software co-designed unified execution frame-work. The software runtime emits MARS metadata, includ-ing routing identifiers, operation codes, KV block identifiers, and destination sets. The hardware maps this metadata to an FPGA compute-NIC datapath that performs KV propagation, collective communication, and decode-state reduction in the data plane. This design translates MARS’s dynamic schedul-ing decisions into high-performance distributed inference. This paper makes three key contributions: 
+
+• We propose MARS , a stage-aware KV-cache orchestra-tor that dynamically replicates, drains, and converges KV blocks across prefill stages, exploiting early mem-ory headroom while guaranteeing a sharded decode-ready layout. 
+
+• We design a distributed chunked-prefill execu-tion model that pipelines local computation with KV propagation and remote KV-cache fetching, improving compute-communication overlap and reducing TTFT for long-context inference. 
+
+• We design a hardware-software co-designed uni-fied execution framework that bridges MARS and hardware execution. By integrating a metadata-driven FPGA compute-NIC datapath, the framework realizes dynamic KV routing and collective operations in hard-ware, enabling high-performance distributed infer-ence. 
+
+2 Background and Motivation 
+
+In this section, we first discuss distributed LLM inference from the perspective of KV-cache memory requirements. We then briefly review tensor parallelism, pipeline parallelism, sequence parallelism, and context parallelism. Finally, we identify the key bottlenecks in existing long-context LLM inference systems, particularly those arising from static KV-cache layouts, and use these limitations to motivate our work. 
+
+2.1 Distributed LLM Inference 
+
+Large language model inference is commonly divided into two stages: prefill and decode. Given an input prompt of length 𝑆 , the prefill stage processes all prompt tokens and materializes KV cache for every transformer layer. The de-code stage then generates output tokens autoregressively, where each new query attends to the accumulated KV cache. As context length increases, the KV cache becomes a major memory and communication bottleneck. For a model with 
+
+𝐿 transformer layers, 𝐻 𝑘𝑣 KV heads, head dimension 𝑑 , and element size 𝑏 , the KV-cache memory per token is 
+
+𝑀 token = 2𝐿𝐻 𝑘𝑣 𝑑𝑏 (1) where the factor of two corresponds to keys and values. Therefore, the KV-cache footprint grows linearly with se-quence length. Long-context inference further amplifies this issue because each prefill chunk must attend to all histori-cal KV blocks, while every decode step must access the full accumulated KV cache. This makes long-context inference fundamentally different from short-context inference: the system is no longer dominated only by model weights and matrix multiplication, but also by the placement, movement, and reuse of KV-cache states. 
+
+2.2 Tensor Parallelism 
+
+Tensor parallelism (TP) is a widely used method for scaling large transformer models across multiple accelerators. TP partitions large matrix operations within each transformer layer across devices. For example, linear projections in at-tention and feed-forward networks can be split along col-umn or row dimensions, and devices exchange partial results through collective communication such as all-reduce or all-gather. This approach is effective for distributing model pa-rameters and compute within a layer, and has been adopted in systems such as Megatron-LM [24]. 
+
+2.3 Pipeline Parallelism 
+
+Pipeline parallelism (PP) partitions a transformer model along the layer dimension. Each device stores and executes a subset of layers, and microbatches are pipelined across stages. PP is effective for distributing model weights across devices and increasing throughput for batched workloads. It has been combined with tensor and data parallelism in large-scale systems such as Megatron-LM [19]. 
+
+2.4 Sequence Parallelism 
+
+Sequence parallelism (SP) partitions tensors along the se-quence dimension. Instead of replicating the entire sequence  
+
+> 2MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference EuroSys ’27, April 2027, Rabat, Morocco
+
+on every device, SP distributes sequence tokens or activa-tions across workers. This can reduce activation memory and expose additional parallelism for long-sequence trans-former computation. Megatron-style sequence parallelism has been used to reduce activation memory overhead in large transformer training [7]. More recent long-context systems further explore SP as a way to scale sequence length beyond the memory capacity of a single accelerator. 
+
+2.5 Context Parallelism 
+
+Context parallelism (CP) can be viewed as a sequence-parallel strategy specialized for long-context attention and KV-cache management. In CP, the input context and KV cache are partitioned across devices. Each worker owns a subset of the sequence and participates in distributed attention computation. This layout is attractive because it reduces per-device KV-cache memory from 𝑂 (𝑆 ) to approxi-mately 𝑂 (𝑆 /𝑁 ) for 𝑁 workers. Existing context parallelism methods mainly differ in how they communicate attention states across devices. Two representative approaches are Ring Attention[13] and DeepSpeed-Ulysses[6]. 
+
+Ring Attention. Ring Attention partitions the sequence into blocks and arranges workers in a logical ring. During at-tention computation, each worker computes partial attention using local KV blocks while KV blocks are circulated around the ring. This blockwise design enables overlap between KV communication and attention computation, and allows long sequences to be processed across multiple devices [13]. Ring Attention is memory efficient because each KV block can remain owned by one worker. However, during chunked pre-fill, historical KV blocks may be repeatedly streamed across workers for later chunks. As the length of input sequence increases, the total KV movement can grow rapidly. If the prompt is divided into 𝐶 chunks and each chunk at-tends to all previous chunks, a ring-style design may commu-nicate prefix KV blocks repeatedly. The cumulative number of prefix-block accesses grows as 
+
+> 𝐶
+
+∑︁ 
+
+> 𝑐 =1
+
+𝑐 = 𝐶 (𝐶 + 1)
+
+2 = 𝑂 (𝐶 2) (2) This repeated static communication can substantially in-crease TTFT during long-context prefill, particularly under bandwidth-constrained interconnects, when KV-transfer la-tency cannot be fully hidden behind block-level attention computation. 
+
+DeepSpeed-Ulysses. DeepSpeed-Ulysses is another long-sequence parallelism approach that partitions the sequence dimension and uses collective communication to redistribute tensors for attention computation [6]. Ulysses uses all-to-all communication to transform distributed tensor layouts so that attention heads or sequence partitions can be pro-cessed efficiently. Compared with naive sequence parallelism, Ulysses improves scalability for long-sequence training by carefully designing communication and layout transforma-tions. However, Ulysses-style all-to-all communication still re-lies on relatively structured collective operations. For long-context inference, especially chunked prefill followed by decode, the optimal communication pattern can change over time. Early in prefill, memory pressure is low and historical KV blocks have high future reuse. Later in prefill, mem-ory pressure increases and the system must converge to a compact sharded KV layout for decode. A fixed commu-nication/layout strategy cannot fully exploit this temporal structure. 
+
+2.6 Limitations of Static KV Layouts 
+
+The above approaches demonstrate that distributing the se-quence dimension is necessary for long-context inference. However, most existing designs rely on relatively static ex-ecution layouts. Ring Attention keeps an owner-only KV layout and repeatedly propagates KV blocks. Ulysses-style systems rely on structured all-to-all layout transformations. These approaches are effective for regular distributed atten-tion computation, but they do not explicitly optimize the temporal reuse pattern of chunked prefill. The key observation behind MCF is that prefill is not a uni-form phase. At the beginning of prefill, only a small number of KV blocks have been generated, so each worker has mem-ory headroom. At the same time, early KV blocks have the highest future reuse because they will be attended by many subsequent chunks. Near the end of prefill, memory pres-sure becomes high, and the system must recover a balanced sharded KV layout for decode. This temporal asymmetry suggests that neither pure sharding nor full replication is optimal. Pure sharding minimizes memory usage but can repeatedly fetch or stream historical KV blocks. Full replication reduces remote KV access but is not memory scalable and leaves an inefficient layout for decode. The desired design should temporarily use available memory to replicate high-reuse KV blocks during early prefill, then progressively retire redundant replicas and converge to a sharded layout before decode. 
+
+2.7 Motivation for MCF 
+
+MCF is motivated by the need for a dynamic, stage-aware ex-ecution layout for long-context inference. Instead of treating KV placement as a fixed policy, MCF treats it as a runtime scheduling problem. Its core mechanism, MARS, divides pre-fill into multiple stages and dynamically orchestrates KV-cache replication, draining, and convergence according to memory headroom and expected future reuse. During early prefill, MARS(Section 4) creates temporary replicas for high-reuse KV blocks to reduce repeated remote KV access. During middle prefill, MARS adjusts replica fac-tors as memory pressure increases. By the end of prefill, 
+
+> 3
+
+EuroSys ’27, April 2027, Rabat, Morocco Zhang et al. 
+
+MARS guarantees that each KV block converges to its owner-only shard, producing the same decode-ready layout as con-ventional context-parallel inference. MCF further combines this dynamic software policy with a hardware-software co-designed execution substrate. Run-time scheduling decisions are encoded as compact metadata describing routing, operation, and tensor layout information. The FPGA compute-NIC datapath then uses this metadata to perform KV dissemination, collective communication and decode-state reduction. 
+
+3 MCF Architecture Overview 
+
+MCF is a distributed long-context LLM inference frame-work that coordinates KV-cache placement, communica-tion, and hardware execution across prefill and decode. Its central design principle is that the preferred KV layout is stage-dependent. During chunked prefill, early KV blocks are reused by many later chunks, while late KV blocks have limited remaining reuse. MCF therefore allows temporary replication of high-reuse KV blocks when memory headroom is available. Before decode begins, these temporary replicas are progressively drained, leaving a balanced owner-only sharded KV layout. Memory-Aware Replication and Scheduling              
+
+> Node 1
+> Local Memory KV pool Compute Engine Smart NIC
+> Dynamic KV Layout
+> Node 0Node 1Node n
+> Chunk 0Chunk 1Chunk n
+> Token 0Token 1Token n
+> Chunk n+1
+> Token n+1
+> Node 0
+> KV-Cache propagation
+> Workload allocation
+> draining draining owned
+> owned duplicated draining
+> Node 0
+> Node 1
+> Node 2
+> Prefill stage Decoding stage owned duplicated duplicated
+> KV block 0KV block 1KV block 2
+> Temporary replicas are created in early and converged to owner shards before decode.
+> Algorithm flow
+> Dynamic Routing & collective operations
+> Node 0
+> Local Memory KV pool Compute Engine Smart NIC
+> Mesh Topology
+> Payload + meta data
+> System structure
+> KV block transmission in Prefill Local max / exp-sum in Decoding
+
+Figure 1. MCF Overview: MCF dynamically schedule the KV cache propagation and replication to balance the communi-cation cost and memory overhead in context parallelism by using Memory-Aware Replication and Scheduling (MARS). Figure 1 shows the overall design of MCF. The framework consists of two components. The first is MARS, a runtime scheduler that determines the replica factor, owner node, and routing decision for each KV block according to mem-ory capacity, expected reuse, and communication cost. The second is a metadata-driven FPGA compute-NIC datapath that executes these decisions by coupling local transformer computation with in-network KV routing and state reduc-tion. 
+
+3.1 Progressive KV Layout 
+
+MCF processes the input prompt in chunks. For each gen-erated KV block, MARS assigns a permanent owner node according to the final sharding policy. The owner copy is never removed. In addition, MARS may create temporary replicas during prefill to reduce later remote KV accesses. These replicas are most beneficial for early KV blocks be-cause they have the largest future reuse window. As prefill progresses, accumulated KV-cache memory in-creases and the benefit of replicating newly generated blocks decreases. MARS therefore gradually reduces replica factors and marks redundant replicas for draining. Draining replicas may still serve in-flight computation, but they are excluded from future scheduling decisions and are removed once no longer needed. This process avoids bulk layout conversion: because the owner copy always remains valid, convergence only requires retiring temporary replicas rather than migrat-ing KV data. At the end of prefill, all temporary replicas are removed and each KV block remains only on its owner node. This owner-only layout is decode-ready. During decode, MCF keeps KV shards stationary and routes only the current query or compact partial attention states across nodes. Each node computes attention over its local KV shard, and the partial results are reduced to form the global attention output. 
+
+3.2 Compute-NIC Execution Substrate 
+
+To execute this progressive layout efficiently, each MCF node integrates a local compute engine, a KV memory pool, and a metadata-driven FPGA compute-NIC datapath. The com-pute engine performs local transformer computation and emits either KV blocks during prefill or compact partial at-tention states during decode. The KV memory pool stores both permanent owner blocks and temporary replicas. The MARS runtime attaches compact metadata to each tensor payload, including the execution stage, operation type, KV-block identifier, route identifier, destination set, and re-duction operator. The FPGA NIC datapath interprets this metadata to perform the corresponding communication ac-tion, such as KV propagation during prefill or partial-state reduction during decode. By moving routing and collective operations into the datapath, MCF avoids host-side commu-nication control on the critical path and enables computation and communication to proceed in a pipelined manner. Overall, MCF uses different communication policies for different inference stages: prefill uses memory-aware tempo-rary KV replication to reduce exposed remote access latency, while decode uses a KV-stationary sharded layout to avoid moving accumulated KV cache. This progressive transition is the basis for the MARS scheduling algorithm described in the following section. 
+
+4 MARS: Memory-Aware Replication and Scheduling 
+
+MCF relies on dynamic KV-cache layouts whose effective-ness depends on choosing appropriate runtime parameters, 
+
+4MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference EuroSys ’27, April 2027, Rabat, Morocco 
+
+including the prefill chunk size, KV block granularity, replica factor, and replica convergence schedule. A naive config-uration can either under-utilize the interconnect, causing pipeline stalls, or over-replicate KV blocks, increasing mem-ory pressure and unnecessary communication. To guide these decisions, we introduce MARS, a Memory-Aware Repli-cation and Scheduling algorithm that jointly considers mem-ory capacity, compute throughput, interconnect bandwidth, and future KV reuse. The goal of MARS is to minimize time-to-first-token (TTFT) under bounded KV-cache memory ca-pacity while ensuring that all temporary replicas eventually converge to a decode-friendly sharded KV layout. We consider a distributed inference system with 𝑁 worker nodes. Each node — whose detailed design we defer to Sec-tion 5 — composed of an accelerator for transformer com-putation and a communication engine for KV-cache routing. Given an input prompt of 𝑆 tokens, MCF performs chunked prefill with chunk size 𝐵 , producing 𝐶 = 𝑆 /𝐵 prefill chunks. For a transformer-based model with 𝐿 layers, 𝐻 𝑞 query heads, 
+
+𝐻 𝑘𝑣 KV heads (e.g., in group query attention [2], 𝐻 𝑞 ≠ 𝐻 𝑘𝑣 ), head dimension 𝑑 , and element size 𝑏 bytes, the KV-cache footprint per token is 𝑀 token (Equation 1). Therefore, the bytes required for KV-cache generated by each chunk are: 
+
+𝑀 chunk = 𝐵𝑀 token (3) The accumulated historical KV-cache size from the first to the 𝑐 -th chunk is 
+
+𝑀 hist (𝑐 ) = 𝑐𝑀 chunk (4) MCF assigns each KV block a unique owner ( 𝑜 𝑖 ) according to the final sharding strategy, while allowing for replication across multiple nodes during the prefill stage. Let 𝑟 (𝑐 ) de-note the replica factor of the KV block generated at chunk 
+
+𝑐 . Thus, 1 ≤ 𝑟 (𝑐 ) ≤ 𝑁 , where 𝑟 (𝑐 ) = 1 corresponds to a fully sharded layout and 𝑟 (𝑐 ) = 𝑁 corresponds to full repli-cation. MARS dynamically determines 𝑟 (𝑐 ) based on two observations: 1) In the initial stage, when memory is abun-dant, early KV blocks are accessed repeatedly by subsequent chunks, thereby yielding the highest benefit from temporary replication (e.g., 𝑟 (0) = 𝑁 ); 2) As the accumulated context lengthens and memory pressure intensifies, the system pro-gressively curtails redundant replicas to alleviate resource contention. Furthermore, the distributed nature of KV cache facilitates more efficient scaling, thereby enhancing overall system scalability. The chunk size 𝐵 determines both the computation gran-ularity and the KV propagation granularity. A larger chunk improves accelerator utilization by increasing arithmetic in-tensity, but also increases the size of each KV block and the burst communication latency which is limited by hardware. Conversely, a smaller chunk reduces per-message latency but may provide insufficient computation to hide commu-nication overhead. MARS therefore chooses 𝐵 by balancing compute-communication overlap and buffering capacity. The KV block produced by one chunk must fit within the avail-able communication buffer: 
+
+𝐵𝑀 token ≤ 𝑀 buf , (5) where 𝑀 buf is the buffer capacity reserved for KV propaga-tion. In addition, the computation time of a chunk should be large enough to overlap with the time required to dissemi-nate its KV block, so that the communication overhead can be sufficiently hidden. The attention computation time of chunk 𝑐 can be approximated as 
+
+𝑇 attn (𝐵, 𝑐 ) = 4𝐿𝐻 𝑞 𝑑 · 𝐵 · 𝑐𝐵 𝑁 𝑃 node 
+
+, (6) where 𝑃 node is the effective compute throughput of one node. The factor 4 comes from the two dominant attention oper-ations, 𝑄𝐾 𝑇 and 𝑃𝑉 , each contributing approximately two floating-point operations per multiply-add. The KV propa-gation time with replica factor 𝑟 𝑐 is modeled as 
+
+𝑇 prop (𝐵, 𝑟 𝑐 ) = 𝑀 chunk 𝐻 prop (𝑟 𝑐 )
+
+𝐵𝑊 eff 
+
++ 𝐷 crit (𝑟 𝑐 )𝜏 link , (7) where 𝐵𝑊 eff is the effective interconnect bandwidth, 
+
+𝐻 prop (𝑟 𝑐 ) is the distance-weighted cost of the selected propagation path, 𝐷 crit (𝑟 𝑐 ) is the critical-path depth, and 
+
+𝜏 link is the per-link latency. MARS selects the minimum feasible chunk size satisfying 
+
+𝐵 ★ = min 𝐵 
+
+s.t. 𝑇 attn (𝐵, 𝑐 ) ≥ 𝛾𝑇 prop (𝐵, 𝑟 𝑐 ), (8) 
+
+𝐵𝑀 token ≤ 𝑀 buf 
+
+where 𝛾 is an overlap safety factor which can be determined empirically. The choice of 𝐵 ★ favors the possible smallest chunk that can still hide KV propagation latency, avoiding excessive buffering and scheduling overhead. Given a chunk size, MARS next determines the feasible replica factor under memory constraints. Let 𝑆 node be the per-node memory budget available for KV cache. At chunk 
+
+𝑐 , the average per-node KV memory footprint is 
+
+𝑀 node (𝑐 ) = 𝑀 chunk 
+
+𝑁 
+
+> 𝑐
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑟 (𝑐 ) (9) MARS enforces 
+
+𝑀 node (𝑐 ) ≤ 𝑆 node , (10) which guarantees that temporary replication never exceeds the available KV-cache memory budget. If all historical KV blocks use the same replica factor at chunk 𝑐 , a memory-bounded replica factor can be derived as 
+
+𝑟 mem (𝑐 ) =
+
+ 𝑁 𝑆 node 
+
+𝑀 hist (𝑐 )
+
+
+
+(11) The feasible replica factor is then 
+
+𝑟 𝑐 = max (1, min (𝑁 , 𝑟 mem (𝑐 ))) (12) This rule naturally creates a progressive convergence be-havior. During early prefill, 𝑀 hist (𝑐 ) is small, so 𝑟 𝑐 can be  
+
+> 5EuroSys ’27, April 2027, Rabat, Morocco Zhang et al.
+
+large and MCF can aggressively replicate KV blocks. As the context length increases, 𝑀 hist (𝑐 ) grows linearly, causing 𝑟 𝑐 
+
+to decrease. Eventually, 𝑟 𝑐 converges to one, producing the fully sharded layout required for memory-efficient decoding. Memory capacity alone, however, is insufficient to decide which KV blocks should be replicated. A KV block generated early in prefill will be reused by many subsequent chunks, while a KV block generated near the end of prefill has limited future reuse. MARS therefore incorporates a reuse-aware criterion. Suppose there are 𝐶 kv blocks, for the KV block generated at chunk 𝑐 , the number of future chunks that may reuse it is 
+
+𝑅 𝑐 = 𝐶 − 𝑐 (13) Replicating this block is beneficial only if the future com-munication savings exceed the one-time replication cost. Let ℎcopy be the average propagation cost of creating an ad-ditional replica, and let ℎsave be the average propagation distance saved when future accesses are served locally or from a closer replica. The break-even condition is 
+
+(𝐶 − 𝑐 )ℎsave > ℎcopy (14) This condition implies that earlier KV blocks should be repli-cated more aggressively than later KV blocks. MARS captures this effect using a reuse-bounded replica factor: 
+
+𝑟 reuse (𝑐 ) = max (1, min (𝑁 , 1 + ⌊ 𝛼 (𝐶 − 𝑐 )⌋)) (15) where 𝛼 controls the aggressiveness of reuse-based replica-tion. The final replica factor is selected by jointly considering memory capacity and future reuse: 
+
+𝑟 (𝑐 ) = max (1, min (𝑁 , 𝑟 mem (𝑐 ), 𝑟 reuse (𝑐 ))) (16) This formulation biases the system toward replicating early, high-reuse KV blocks while keeping late KV blocks close to the final sharded layout. MARS models the communication cost as the sum of two components: KV propagation cost and remote KV access cost. The propagation cost is paid when a newly generated KV block is replicated to additional nodes. For the KV block generated at chunk 𝑐 , the distance-weighted propagation cost is 
+
+𝐶 rep (𝑐 ) = 𝑀 chunk (𝑟 (𝑐 ) − 1) ℎdis (𝑐 ) (17) where ℎdis (𝑖 ) represents the average physical cost of the mesh-aware propagation path. The total propagation traffic over the prefill stage is 
+
+𝐶 rep,total =
+
+> 𝐶
+
+∑︁ 
+
+> 𝑐 =1
+
+𝑀 chunk (𝑟 (𝑐 ) − 1) ℎdis (𝑐 ) (18) Remote KV access cost is incurred when a node needs a historical KV block that is not locally available. Assuming uniform replica placement, the number of nodes without a local replica of block 𝑐 is 𝑁 − 𝑟 (𝑐 ). Therefore, the distance-weighted access cost at chunk 𝑐 is 
+
+𝐶 access (𝑐 ) =
+
+> 𝑐
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑀 chunk (𝑁 − 𝑟 (𝑖 )) ℎnear (𝑖 ) (19) where ℎnear (𝑖 ) is the average distance from a non-replica node to the nearest available replica. The total communica-tion cost of MARS is 
+
+𝐶 MARS = 𝐶 rep,total +
+
+> 𝐶
+
+∑︁ 
+
+> 𝑐 =1
+
+𝐶 access (𝑐 ) (20) This expression exposes the trade-off controlled by MARS. Increasing the replica factor raises the first term because more replicas must be constructed, but reduces the second term because fewer future accesses need to traverse the network. In contrast, a ring-based KV streaming baseline has 𝑟 (𝑐 ) = 1, resulting in no replica construction but repeated remote KV movement: 
+
+𝐶 ring = 𝑀 chunk (𝑁 − 1)ℎring 
+
+𝐶 (𝐶 + 1)
+
+2 (21) Full replication has 𝑟 (𝑐 ) = 𝑁 , eliminating repeated remote accesses but requiring full KV replication: 
+
+𝐶 full = 𝑀 chunk (𝑁 − 1)ℎdis 𝐶 (22) MARS lies between these two extremes. It avoids the qua-dratic repeated communication pattern of ring-based execu-tion while preventing the memory explosion of full replica-tion. The impact on TTFT can be modeled through the chunk-level execution time. Since TTFT is dominated by prefill latency, we approximate 
+
+𝑇 TTFT ≈ 𝑇 prefill =
+
+> 𝐶
+
+∑︁ 
+
+> 𝑐 =1
+
+𝑇 chunk (𝑐 ) (23) Each chunk consists of computation, communication, and synchronization. Because MCF overlaps KV propagation with local chunk computation, MARS models chunk latency as 
+
+𝑇 chunk (𝑐 ) = max  𝑇 comp (𝑐 )𝑇 comm (𝑐 ) + 𝑇 sync (𝑐 ) (24) The communication latency is approximated by 
+
+𝑇 comm (𝑐 ) = 𝐶 rep (𝑐 ) + 𝐶 access (𝑐 )
+
+𝐵𝑊 eff 
+
++ 𝐷 crit (𝑐 )ℎdis (25) Here, 𝐷 crit (𝑐 ) captures the critical path of the selected prop-agation and access routes. For ring-based propagation, the critical path grows approximately linearly with 𝑁 . For tree or butterfly-style propagation, the logical propagation depth grows as 𝑂 (log 𝑁 ), although the realized latency on a physi-cal mesh also depends on hop distance and link contention. Therefore, MARS selects mesh-aware paths that reduce both hop-weighted traffic and critical-path depth. Overall, MARS solves the following constrained schedul-ing problem with constrains: min     
+
+> 𝐵,𝑟 𝑖 (𝑐 ),𝑃 𝑖 (𝑐 )
+> 𝐶
+
+∑︁ 
+
+> 𝑐 =1
+
+max  𝑇 comp (𝑐 ),𝑇 comm (𝑐 ) , (26) 
+
+𝑀 node (𝑐 ) ≤ 𝑆 node , ∀𝑐, (27) 
+
+𝐵𝑀 token ≤ 𝑀 buf , (28)  
+
+> 6MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference EuroSys ’27, April 2027, Rabat, Morocco
+
+𝑟 (𝐶 ) = 1 (29) The final constraint ensures that all temporary replicas cre-ated during prefill are removed before decoding begins, leav-ing a fully sharded KV-cache layout. To enforce this convergence safely, MARS incorporates Progressive Replica Convergence as its runtime mechanism. Each temporary KV replica is associated with a lifecycle state. A valid replica can serve local attention computation. When the replica factor decreases, redundant replicas are marked as draining rather than immediately invalidated. A draining replica remains readable by in-flight chunks but is excluded from future scheduling decisions. Once all dependent chunks complete, the replica is invalidated and its buffer space is returned to the memory manager. This metadata-driven con-vergence avoids bulk KV migration because the owner shard is never removed. As a result, replica shrinking primarily involves directory updates and buffer-state transitions rather than additional data movement. After convergence, MARS exposes a decode-ready lay-out: each KV block has a unique owner and the accumu-lated KV cache is evenly sharded across workers. Decode therefore uses a KV-stationary execution model. Each node attends over its local KV shard and emits compact online-softmax states, such as the local maximum, normalization sum, and partial output, which are reduced across nodes to obtain the global attention result. Thus, MARS bridges the layout mismatch between communication-optimized prefill and memory-scalable decode without requiring an explicit KV redistribution phase. 
+
+5 Unified Progressive Execution Layout 
+
+MARS produces a progressive KV-cache layout that changes across execution stages. To execute this dynamic layout ef-ficiently, MCF introduces a Unified Progressive Execution Layout that maps MARS scheduling decisions into a FPGA-based cluster. The central design principle is to avoid treating compu-tation and communication as separate runtime phases. In-stead, each FPGA node integrates a local compute engine with a SmartNIC. The compute engine produces either KV-cache blocks during prefill or compact partial attention states during decode. These outputs are packetized with MARS-generated metadata and sent directly to the NIC datapath through an AXI-Stream interface. The NIC then decodes the metadata and performs the required communication opera-tion, such as multicast, all-to-all exchange, or all-reduce. In this way, MARS decisions are enforced directly in the data plane, bypassing host-side control flow latency and enabling full pipelining. Figure 2 shows the architecture of a single FPGA node in MCF. Each node consists of a PS-side MARS runtime core and a PL-side compute-communication datapath. The MARS run-time core generates metadata, including route_id , opcode ,Programmable Logic External DRAM Smart NIC Processing System            
+
+> Memory-Aware Replication and
+> Scheduling
+> Memory
+> Budget
+> Bandwigth Compute Throughput replica factor owner route id opcode
+> KV cache
+> Weights Activation
+> Accelerator
+> MatMul RMSnorm Softmax
+> Payload FIFO Metadata FIFO
+> AXI-Lite
+> All-to-All All-reduce Multicast
+> Max( ,,)Sum( ,,)
+> Ping-Pong
+> Buffer
+
+Figure 2. FPGA node architecture for Unified Progressive Ex-ecution Layout. The memory frontend streams local chunks through ping-pong buffers to sustain high-throughput com-putation. During prefill, the compute engine outputs KV-cache chunks; and for decoding stage, it produces partial attention states derived from computations over the local KV cache. MARS-generated metadata is attached to each payload and interpreted by the NIC datapath to perform collective operations. 
+
+KV id , destination set, and collective type, and delivers it to the PL through AXI-Lite. This metadata later determines how each packet should be processed by the on-chip SmartNIC. Inside the PL, a ping-pong DMA loader streams weights, activations, and local KV blocks from external DRAM through AXI-Full/AXI-MM. The loader uses double buffering to overlap burst memory reads with kernel execution: while one buffer feeds the GEMM/attention kernel, the other is refilled from DRAM. This design hides DRAM latency and improves memory bandwidth utilization. The GEMM kernel performs QKV projection and local attention computation, then pushes computed payloads into a packetization buffer. The buffer maintains separate payload and metadata FIFOs and emits AXI-Stream packets to the SmartNIC. During prefill, the payload contains KV-cache blocks for MARS-controlled propagation. During decode, it contains compact partial attention states such as local maxi-mum, exponential sum, and partial output. The SmartNIC decodes the metadata and performs the corresponding oper-ation, including forwarding, multicast, all-to-all, all-reduce, or max/sum/merge reduction. By decoupling the compute kernel from NIC communication, MCF allows computation and communication to proceed asynchronously and overlap in time. The compute engine performs the local transformer com-putation required by both prefill and decode. During prefill, the core consumes the current local chunk, computes QKV projections, and writes the generated KV block into the local KV buffer as its owner shard. If MARS determines that the block should be temporarily replicated, the same KV block is  
+
+> 7EuroSys ’27, April 2027, Rabat, Morocco Zhang et al.
+
+also emitted to the packetization buffer as a communication payload. During local attention computation, the core reads locally available KV blocks, including both owner shards and valid temporary replicas, according to the local replica directory. During decode, after MARS has converged the KV cache to a uniform sharded layout, the core computes attention over the local KV shard and emits compact partial softmax states, such as the local maximum, local exponential sum, and partial output vector. These states are later reduced across nodes to form the exact global attention result. The output of the compute engine is decoupled from the NIC by a packetization buffer. This buffer contains a payload FIFO and a metadata FIFO. The payload FIFO stores activa-tion tensors, including prefill KV blocks and decode partial states. The metadata FIFO stores the control information generated from MARS, including routing identifiers, opcode, collective type, destination set, KV block identifier, and re-duction operator. The packetizer combines the payload and metadata into an AXI-Stream packet. This design allows the compute pipeline to continue producing data even when the NIC experiences temporary congestion, as long as the packetization buffer has sufficient capacity. Each outgoing packet follows a unified format: Packet = {Meta , Payload },where the Meta describes how the payload should be pro-cessed by the NIC: Meta = {stage, op, src, dst, kv_id, route_id, collective, reduce_op}. The stage field distinguishes prefill and decode. The op 
+
+field specifies whether the packet carries a KV replica, a replica invalidation request, a query or state packet, or a re-duction message. The src , dst , and route_id fields identify the routing action selected by MARS. The collective field indicates whether the packet participates in point-to-point forwarding, multicast dissemination, all-to-all exchange, or all-reduce. The reduce_op field specifies the operation re-quired during decode, such as maximum comparison, sum-mation, or online-softmax state merge. The NIC datapath is metadata-driven. When an AXI-Stream packet arrives from the packetization buffer, the packet parser separates metadata from payload. The metadata decoder then dispatches the packet to the appro-priate hardware engine. KV replication packets are sent to the forwarding or multicast engine, which follows the mesh-aware route generated by MARS. Collective packets are handled by the all-to-all engine. Decode partial-state packets are sent to the reduction engine, which performs the maximum and summation operations required to merge distributed softmax statistics. Since the NIC performs these operations directly in hardware, the host CPU is removed from the critical path of KV routing and decode-state reduction. This unified packetized interface supports both stages of inference. During prefill, the payload is dominated by KV-cache data. MARS may assign a high replica factor to early high-reuse KV blocks, and the corresponding metadata instructs the NIC to multicast these KV blocks through a mesh-aware dissemination path. When memory pressure increases, MARS reduces the replica factor and generates metadata that marks redundant replicas as draining or in-valid. Since the owner shard is never removed, replica con-vergence only requires directory updates and buffer-state transitions, avoiding bulk KV migration. During decode, the same datapath switches to a KV station-ary execution mode. The accumulated KV cache is already evenly sharded across nodes by MARS, so the system avoids moving or replicating bulk KV data. Instead, each node com-putes attention over its local KV shard and exchanges only lightweight query or partial-state packets. The reduction engine merges local softmax states using online-softmax-compatible operations. This behavior is similar to distributed Flash-Decoding-style execution: the long KV dimension is partitioned across workers, local attention is computed inde-pendently, and compact partial states are reduced to obtain the final attention output. The benefit of this design is that prefill and decode share the same hardware communication substrate while using different metadata policies. Prefill uses KV-centric dissemina-tion to exploit early memory headroom and reduce repeated remote KV access. Decode uses query/state-centric routing over a stationary, balanced KV layout. The transition be-tween the two does not require a separate data redistribution phase because MARS guarantees that all temporary replicas have converged to owner shards by the end of prefill. Overall, Unified Progressive Execution Layout turns MARS from an analytical scheduling algorithm into an executable hardware protocol. MARS determines the layout, route, and operation type; the compute core produces the corresponding payload; the packetization buffer attaches metadata; and the NIC datapath executes the required communication or reduction operation. By fusing local computation with metadata-driven communication, MCF supports communication-efficient chunked prefill and distributed Flash-Decoding-style decode within a single FPGA execution framework. 
+
+6 Evaluation 
+
+6.1 Experimental Setup 
+
+We evaluate MCF on a cluster of AMD-Xilinx KR260 FPGA boards. Each board contains a Zynq UltraScale+ MPSoC with programmable logic and external DDR memory. The FPGA fabric implements the transformer compute core, packeti-zation buffer, and metadata-driven NIC datapath described in Section 5. The ARM cores are used only for initialization and for running the MARS control logic; they are not in-volved in critical-path tensor movement. We adopt Qwen2.5-1.5B as our benchmark model: it follows a standard decoder-only Transformer architecture and, despite its compact size, exhibits the prefill and decode behavior representative of 
+
+> 8
+
+MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference EuroSys ’27, April 2027, Rabat, Morocco 1000 2000 3000 4000 5000 6000 7000 8000 
+
+> sequence length
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30 0.35
+> TTFT (s)
+> MARS Ring Attention Zigzag Attention PD disaggregation
+
+Figure 3. Prefill TTFT comparison up to 8K sequence length. MCF achieves lower TTFT than Ring Attention, Zigzag At-tention, and PD disaggregation by using temporary KV repli-cation and scheduled remote KV movement during prefill. modern long-context LLMs. Unless otherwise specified, the model weights and KV-cache entries are quantized to INT4 in the fixed-point format natively supported by our FPGA compute core. We sweep the input sequence length from short to long contexts and evaluate several prefill chunk sizes to characterize the interplay among compute granular-ity, communication overhead, and on-chip memory usage. We compare MCF against three baselines. Ring Atten-tion [13] streams KV blocks across nodes in a ring-like pattern during prefill. Zigzag Attention [16] uses an alternative sequence layout to reduce causal attention load imbalance. PD disaggregation [29] separates the prefill and decode stages across different compute instances to improve system-level resource utilization. We compare against dataflow-equivalent implementations of these baselines. Each baseline follows the KV placement and communication pattern proposed in the corresponding work while using the same compute core and communication interface. MCF dynamically chooses replica factors using MARS and progressively converges temporary replicas to the final sharded layout before decode. 
+
+6.2 End-to-End Prefill Latency 
+
+Figure 3 reports the prefill TTFT as the input sequence length increases up to 8K. MCF achieves the lowest TTFT for medium and long contexts and shows a much flatter latency curve than the baselines as the sequence length increases. Ring Attention, Zigzag Attention and PD disaggregation exhibit rapidly increasing TTFT because longer prompts re-quire more historical KV blocks to be streamed or handed off during prefill. By pairing heavy blocks at the tail of the se-quence (i.e., those attending to many preceding tokens under the causal mask) with light blocks at the head, Zigzag At-tention exploits the asymmetric workload inherent to causal LLMs and thereby achieves a moderate performance gain. 0 1 2 3 4 5 6 7         
+
+> prefill local step
+> 510 15 20 25 30 35
+> KV memory per rank (MiB)
+> (a) MARS, N=8 Owner-only baseline, N=8 MARS, N=16 Owner-only baseline, N=16
+> 01234567
+> prefill local step
+> 246810 12 14
+> average active replica factor
+> (b) N=8 N=16
+
+Figure 4. Memory behavior of MARS during 16K prefill for 𝑁 = 8 and 𝑁 = 16. Subfigure (a) compares the actual per-rank KV memory usage with the theoretical owner-only baseline without temporary replicas. Subfigure (b) shows the average active replica factor over prefill steps. MARS temporarily increases KV memory during early prefill and converges to the owner-only layout before decode. In contrast, MCF reduces the exposed latency of remote KV access by using temporary replication and scheduled KV movement. For short sequences, the benefit of MCF is less pronounced and may even be partially offset by schedul-ing and replication overhead. This is because the number of chunks is small and the fixed chunk/block granularity does not provide enough reuse opportunities to amortize the cost of replica creation. Meanwhile, memory pressure is low in the early prefill stage, so MARS tends to assign a larger replica factor to early KV blocks. These additional temporary replicas increase communication and metadata-processing overhead, which can make MCF less efficient for very short prompts. As the sequence length grows, however, the repli-cated KV blocks are reused by more subsequent chunks, and the replication overhead is amortized over a larger amount of attention computation. The improvement of MCF comes from two properties. First, MARS creates temporary KV replicas for high-reuse blocks in the early prefill stage, allowing later chunks to access a larger fraction of historical KV blocks locally or through a shorter pre-scheduled datapath. Second, because the required historical KV blocks are known before each chunk is computed, MCF can schedule remote KV move-ment ahead of use instead of handling it as reactive demand fetch. This reduces the communication exposed on the prefill critical path. Unlike Ring Attention and Zigzag Attention, which repeatedly stream historical KV blocks during atten-tion computation, MCF trades temporary memory usage and modest additional communication for lower visible remote-KV access latency in the long-context regime. 
+
+6.3 Memory Usage and Layout Convergence 
+
+Figure 4 shows the memory behavior of MARS under 16K prefill for 𝑁 = 8 and 𝑁 = 16 logical nodes. The left subfigure compares the actual per-rank KV memory usage with an owner-only baseline, where each rank stores only its locally owned KV blocks and no temporary replicas are created. 
+
+9EuroSys ’27, April 2027, Rabat, Morocco Zhang et al. 2000 4000 6000 8000 10000 12000 14000 16000                
+
+> sequence length
+> 012345
+> TTFT (s)
+> (a) B= 128
+> B= 256
+> B= 512
+> 2000 4000 6000 8000 10000 12000 14000 16000
+> sequence length
+> 0100 200 300 400 500
+> communication volume (MiB)
+> (b) B= 128
+> B= 256
+> B= 512
+
+Figure 5. Impact of prefill chunk size on MARS. Subfig-ure (a) shows the TTFT under different chunk sizes, while Subfigure (b) shows the corresponding communication vol-ume. Larger chunks reduce the number of chunk-processing rounds and metadata-guided KV movements, leading to lower TTFT and lower total communication volume. MARS uses more memory than this baseline during the early and middle prefill stages because it intentionally replicates high-reuse KV blocks. However, the memory footprint de-creases as prefill progresses and eventually converges to the owner-only layout. The right subfigure explains this behavior by showing the average active replica factor. At the beginning of prefill, early KV blocks have the highest future reuse, so MARS assigns a larger replica factor. As more chunks are processed, memory pressure increases and the scheduler gradually reduces the replica factor. At the end of prefill, all temporary replicas are drained, and only the owner KV blocks remain. This confirms that MCF does not introduce permanent KV replication and that the decode stage starts from a KV-stationary, owner-only sharded layout. 
+
+6.4 Impact of Chunk Size 
+
+Figure 5 evaluates how the prefill chunk size affects MARS. Larger chunk sizes provide lower TTFT and lower commu-nication volume across the tested sequence lengths. This is because smaller chunks increase the number of prefill rounds. More rounds lead to more frequent scheduling de-cisions, more metadata processing, more replica updates, and more remote KV movements. Larger chunks amortize these overheads over more tokens and reduce the number of inter-chunk KV accesses. This result highlights an important trade-off in chunked prefill. Smaller chunks offer finer scheduling granularity and can reduce per-chunk working-set size, but they also increase communication and scheduling overhead. Larger chunks reduce these overheads, but may reduce scheduling flexibility and increase the latency of each individual chunk. In our evaluated range, larger chunks provide better performance because the reduction in communication and scheduling overhead dominates. 
+
+6.5 Scalability with Number of Nodes 
+
+Table 1 reports 16K prefill performance under different log-ical node counts. MARS reduces TTFT as the number of nodes increases, from 1 .68s at two nodes to 0 .62s at sixteen nodes. This shows that MCF benefits from distributing prefill computation and KV storage across more nodes. The scaling is not perfectly linear because communication, synchroniza-tion, and replica-management overheads increase with the node count. MCF achieves lower TTFT than Ring Attention and Zigzag Attention at all evaluated node counts. At sixteen nodes, MCF reaches 0 .62s, while Ring Attention and Zigzag Atten-tion require 1 .91s and 1 .81s, respectively. This corresponds to approximately 3 .1× speedup over Ring Attention and 2.9× speedup over Zigzag Attention. The communication volume of MCF is slightly higher than the streaming base-lines at larger node counts. For example, at sixteen nodes, MCF transfers 5 .12GiB, while Ring Attention and Zigzag Attention transfer about 4 .40GiB. This is consistent with the design of MARS: MCF does not aim to minimize total trans-ferred bytes. Instead, it trades additional replica-creation and prefetch traffic for lower exposed communication latency on the prefill critical path. 
+
+Table 1. TTFT and communication volume for 16K prefill across different logical node counts. MCF achieves lower TTFT than the streaming baselines while using slightly higher communication volume due to temporary replica creation and scheduled KV prefetch. Scheme Nodes TTFT (s) Comm (GiB) MARS 2 1.68 2.13 4 1.16 3.02 8 0.97 3.71 16 0.62 5.12 Ring Attention 2 3.96 1.94 4 2.46 2.99 8 2.29 3.70 16 1.91 4.40 Zigzag Attention 2 3.81 1.94 4 2.35 2.99 8 2.18 3.69 16 1.81 4.40 These results show that MCF improves long-context prefill latency by using temporary memory headroom to place high-reuse KV blocks closer to future consumers. The temporary replicas are progressively removed, so the final KV layout remains owner-only sharded and decode-friendly. 
+
+> 10
+
+MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference EuroSys ’27, April 2027, Rabat, Morocco 
+
+Table 2. Performance and Metrics Comparison of DDR-Based FPGA LLM Accelerators                                                                                                                                                                         
+
+> DDR-Based Cloud FPGA DDR-Based Embedded FPGA Ours
+> ChatOPU LightMamba Hummingbird Li et al. LlamaF Hummingbird TeLLMe MEADOW SECDA-LLM F-BFQ OD-Qwen MCF †
+> [28] [25] [10] [11] [27] [10] [21] [18] [5] [4] [26] (4 Nodes) Device U200 VCK190 U250 KV260 ZCU102 ZCU104/KV260 KV260 ZCU102 PYNQ-Z1 KV260 KV260 KR260
+> BW(GB/s) 19.2 12/76.8 76.8 19.2 19.2 34.1/19.2 19.2 ≤19.2 0.4 19.2 19.2 19.2
+> LUT 755K 107K 168K 78K 164K 66K/26K –––81%* –82K ‡
+> FF 998K 130K 218K 105K 171K 92K/35K –––––88K ‡
+> DSP 1091 228 771 291 528 362/179 –––14%* –127 ‡
+> B/URAM 417/540 912/61 361/76 37/10 223/– 133/40, 59/18 –––81%* –129/20 ‡
+> MHz 300 400 300 300 205 266/300 250 –––300 200
+> W–3.2 14.61 6.57 5.08 7.09/3.81 <5<10 –––4.52 ‡
+> Model opt-350m mamba2-2.7b llama3-8b llama2-7b llama-1.1b llama3-8b BitNet-0.7b OPT-1.3b TinyLlama-1.1b TinyLlama-1.1b Qwen2.5-0.5b Qwen2.5-1.5B
+> Quant. SparseW16 W4 W4 W4 W8 W4 W1.58A8 INT8 BFP-Q3_K BFP-Q2/Q3_K W4 (AWQ) W4
+> Token/s 43.2 7.21 19.4 4.9 1.48 8.6/4.8 25 2.0 0.58 5.2 5.1 17.3 †
+> PW. Eff. –0.87 1.51 0.74 0.09 1.39/1.44 ∼5.0 ∼0.20 –––0.81
+> †
+
+MCF results are obtained on a cluster of 4 KR260 nodes. Token/s denotes the end-to-end throughput of the cluster. 
+
+> ‡
+
+Resource utilization and power are reported per single KR260 node; all 4 nodes share an identical bitstream and configuration. 
+
+> ∗
+
+F-BFQ reports resource utilization as a percentage of the KV260 board capacity rather than absolute counts. 
+
+6.6 Decoding Performance and Power Report 
+
+Table 2 compares MCF with existing DDR-based FPGA LLM accelerators. MCF achieves 17 .3 token/s on Qwen2.5-1.5B using a cluster of four KR260 nodes. Compared with prior embedded FPGA accelerators, MCF supports a larger model than several KV260/ZCU102-based systems and provides competitive end-to-end decoding throughput. This result demonstrates that the proposed KV-stationary decode path can effectively use multiple low-power FPGA nodes for dis-tributed LLM inference. The power efficiency of MCF is not the highest among the listed systems. This is expected because MCF integrates not only the compute engine, but also the packetization buffer, and NIC-side communication datapath required for distributed inference. These modules increase LUT/BRAM usage and consume additional power compared with single-board accelerators that only optimize local model execution. In addition, MCF exchanges query vectors, softmax statistics, and partial attention states during decode, so part of the sys-tem power is spent on communication rather than pure ma-trix computation. As a result, MCF trades some single-board power efficiency for the ability to scale KV-cache storage and decode computation across multiple FPGA nodes. Overall, Table 2 shows that MCF provides competitive de-code throughput on a distributed embedded-FPGA platform while supporting communication-aware KV-stationary exe-cution. Although its power efficiency is lower than highly optimized single-node designs, MCF targets a different de-sign point: scalable long-context inference with distributed KV storage and communication integrated into the FPGA datapath. 
+
+7 Related Work 
+
+We discuss related work for context parallelism algorithm and dynamic memory management for LLM inference, and then draw the difference between state of the art approach and MCF. 
+
+7.1 Context Parallelism Algorithms 
+
+Context parallelism partitions maximum sequence dimen-sion across devices. For example, Li et al. [12] proposed Ring Self-Attention (RSA) in which each device stores only a subsequence, rather than the full sequence. RSA circulated key embeddings across devices to compute attention scores. After that, it circulates value embeddings to compute the attention outputs. This way, RSA improved scalability for long-sequence training to some extent. However, RSA still re-quired the distributed attention-score blocks to be explicitly stored in memory. To avoid storing explicitly attention-score blocks in mem-ory, Liu et al. [13] proposed Ring Attention, which imple-mented ring-based sequence parallelism by combining KV-block circulation with blockwise Transformer computation. In Ring Attention, the input sequence is partitioned across devices, so that each device keeps a local Q, K, and V block initially. Then, KV blocks circulate based on a ring structure while each query block fixed to an associated device. As each KV block arrives, the device performs partial at-tention on these KVcache and update the attention score in a flashattention manner [3]. This reduces the peak activa-tion memory per device to depend primarily on the local block size rather than the full sequence length. However, existing ring-based methods still impose a static communi-cation structure. RSA and Ring Attention assume that KV blocks traverse a predetermined ring. This is efficient when devices are homogeneous and communication can be fully 
+
+11 EuroSys ’27, April 2027, Rabat, Morocco Zhang et al. 
+
+overlapped with blockwise computation. In practice, long-context inference can be more dynamic: memory pressure changes across prefill and decoding; different context blocks have different reuse patterns; and bandwidth, latency, or device availability can vary across the system. A fixed ring traversal can therefore become inefficient when some links are slower or when certain KV blocks would benefit from temporary replication rather than repeated circulation. ZigZag Attention[16] addresses this bottleneck by reorder-ing the sequence blocks to balance the workload. Instead of a linear traversal, it employs a "zigzag" scheduling strat-egy that pairs computation-heavy blocks (near the end of the sequence) with computation-light blocks (near the be-ginning) within the same communication step. By ensuring that the workload is approximately equal across all devices in the ring, ZigZag Attention achieves nearly 2 × higher computational efficiency compared to unoptimized causal Ring Attention, all while maintaining the same communi-cation overhead and memory benefits. While ZigZag op-timizes the load balance within a static ring, it does not address the fundamental resource tension between the two distinct phases of long-context inference. The Prefill phase is highly compute-bound, requiring massive throughput to process the prompt, whereas the Decoding phase is strictly memory-bandwidth bound (IO-bound) and sensitive to per-token latency. Attempting to manage both within a single, fixed ring often leads to "prefill-stalls," where long context processing blocks the generation of shorter requests. Prefill-Decoding Disaggregation[29] resolves this by decoupling the two phases into distinct hardware pools: prefill nodes use TP/PP/CP for high-throughput ingestion on premium GPUs, while decoding nodes specialize in autoregressive genera-tion. KV cache is handed off between pools over high-speed interconnects. This separation enables independent scaling and optimizes TCO. The proposed MCF addresses this limitation by treating context parallelism not merely as a static sequence-partitioning method, but as a dynamic memory-communication scheduling problem. Instead of forcing every KV block to follow the same fixed traversal pattern, MCF dynamically decides whether a context block should be sharded, replicated, migrated, or circulated according to the current inference stage, memory pressure, expected reuse, and communication cost. In this sense, MCF generalises ring-based context parallelism: it preserves the benefit of distributing long-context attention across devices, but removes the assumption that one fixed ring schedule is always optimal. 
+
+7.2 Dynamic Memory Management for LLM Inference 
+
+Efficient LLM serving requires careful management of model weights, intermediate activations, attention buffers, and the KV cache. For long-context inference, the KV cache is par-ticularly important because it grows with the number of processed tokens and must be repeatedly accessed during decoding. Kwon et al. [8] proposed PagedAttention, which treats KV-cache storage using a paging-inspired mechanism, reducing memory fragmentation and enabling flexible KV-cache sharing across requests. Sheng et al. [23] proposed FlexGen for high-throughput generation by coordinating GPU, CPU, and disk memory. Such related work discusses that LLM inference performance is strongly constrained by memory placement and scheduling. Agrawal et al. [1] introduces chunked prefill and stall-free scheduling. DistServe and Splitwise separate prefill and decoding across different GPU resources [20, 29]. Other work focuses directly on KV-cache movement and reuse. Liu et al. [15] compressed and streamed KV caches to reduce context-loading delay when reusing long contexts across requests. Qin et al. [22] proposed a KV-cache-centric serving architecture by separating prefill and decoding clus-ters and using CPU, DRAM, SSD, and NIC resources to build a distributed KV-cache pool. These systems recognised that KV-cache movement could be a main bottleneck in LLM serving. Unlike these systems, which focus on KV reuse and memory hierarchy, MCF introduces stage-aware KV place-ment inside CP itself: MARS temporarily replicates high-reuse blocks during low-pressure prefill stages and falls back to sharding as memory tightens MCF exploits these stage-dependent changes through MARS: high-reuse blocks can be temporarily replicated when memory pressure is low, while the system can fall back to sharding when memory becomes scarce. Thus, MCF introduces a dynamic memory-management layer inside CP, rather than treating KV-cache layout as fixed once the sequence has been partitioned. 
+
+8 Conclusion 
+
+We propose MARS, a stage-aware KV-cache orchestrator, that dynamically replicates, removes, and converges KV blocks across prefill stages. MARS improves access locality for highly reused historical KV blocks while ensuring that temporary replication remains memory-bounded and that the final layout is compatible with efficient sharded decoding. We further introduced a distributed chunked-prefill execu-tion model that pipelines local attention computation with KV propagation and remote KV-cache fetching, allowing communication latency to be hidden behind useful compu-tation whenever feasible. For example, prior work did not explicitly identify the runtime conditions under which com-munication overhead could be hidden, as formulated in Equa-tion (8). We also propose a hardware-software co-designed execution framework that connects MARS-level scheduling decisions to the underlying distributed execution substrate. By using a metadata-driven FPGA compute-NIC datapath, the framework supports dynamic KV routing, replication, 
+
+> 12
+
+MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference EuroSys ’27, April 2027, Rabat, Morocco 
+
+and collective operations in hardware, reducing software overhead and enabling high-performance distributed infer-ence. Overall, our work shifts distributed long-context LLM inference from static-level KV orchestration framework to dynamic-level memory- and computing-aware KV-cache or-chestration framework. Therefore, we believe that our frame-work will provide a practical initial road map for improv-ing long-context TTFT under dynamically varying intercon-nect bandwidth and memory constraints while preserving a decode-ready KV layout for subsequent generation. 
+
+References 
+
+[1] Amey Agrawal, Nitin Kedia, Ashish Panwar, Jayashree Mohan, Nipun Kwatra, Bhargav Gulavani, Alexey Tumanov, and Ramachandran Ram-jee. 2024. Taming {Throughput-Latency } tradeoff in {LLM } inference with {Sarathi-Serve }. In 18th USENIX symposium on operating systems design and implementation (OSDI 24) . 117–134. [2] Joshua Ainslie, James Lee-Thorp, Michiel De Jong, Yury Zemlyanskiy, Federico Lebrón, and Sumit Sanghai. 2023. Gqa: Training general-ized multi-query transformer models from multi-head checkpoints. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing . 4895–4901. [3] Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. 2022. Flashattention: Fast and memory-efficient exact attention with io-awareness. Advances in neural information processing systems 35, 16344–16359. [4] Jude Haris and José Cano. 2025. F-BFQ: Flexible Block Floating-Point Quantization Accelerator for LLMs. arXiv preprint arXiv:2510.13401 
+
+(2025). [5] Jude Haris, Rappy Saha, Wenhao Hu, and José Cano. 2024. Designing ef-ficient llm accelerators for edge devices. arXiv preprint arXiv:2408.00462 
+
+(2024). [6] Sam Ade Jacobs, Masahiro Tanaka, Chengming Zhang, Minjia Zhang, Shuaiwen Leon Song, Samyam Rajbhandari, and Yuxiong He. 2023. DeepSpeed Ulysses: System Optimizations for Enabling Training of Extreme Long Sequence Transformer Models. arXiv preprint arXiv:2309.14509 (2023). [7] Vijay Korthikanti, Jared Casper, Sangkug Lym, Lawrence McAfee, Michael Andersch, Mohammad Shoeybi, and Bryan Catanzaro. [n. d.]. Reducing activation recomputation in large transformer models, 2022. 
+
+URL https://arxiv. org/abs/2205.05198 .[8] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. 2023. Efficient memory management for large language model serving with pagedattention. In Proceedings of the 29th symposium on operating systems principles . 611–626. [9] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-tau Yih, Tim Rocktäschel, et al. 2020. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in neural information processing systems 33, 9459–9474. [10] Jindong Li, Tenglong Li, Ruiqi Chen, Guobin Shen, Dongcheng Zhao, Qian Zhang, and Yi Zeng. 2025. Hummingbird: A Smaller and Faster Large Language Model Accelerator on Embedded FPGA. (2025), 1–9. [11] Jindong Li, Tenglong Li, Guobin Shen, Dongcheng Zhao, Qian Zhang, and Yi Zeng. 2025. Pushing up to the limit of memory bandwidth and capacity utilization for efficient llm decoding on embedded fpga. (2025), 1–7. [12] Shenggui Li, Fuzhao Xue, Chaitanya Baranwal, Yongbin Li, and Yang You. 2023. Sequence parallelism: Long sequence training from system perspective. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 2391–2404. [13] Hao Liu, Matei Zaharia, and Pieter Abbeel. 2024. Ringattention with blockwise transformers for near-infinite context. In International Con-ference on Learning Representations , Vol. 2024. 3992–4008. [14] Tianyang Liu, Canwen Xu, and Julian McAuley. 2024. Repobench: Benchmarking repository-level code auto-completion systems. In In-ternational Conference on Learning Representations , Vol. 2024. 47832– 47850. [15] Yuhan Liu, Hanchen Li, Yihua Cheng, Siddhant Ray, Yuyang Huang, Qizheng Zhang, Kuntai Du, Jiayi Yao, Shan Lu, Ganesh Anantha-narayanan, et al. 2024. Cachegen: Kv cache compression and streaming for fast large language model serving. In Proceedings of the ACM SIG-COMM 2024 Conference . 38–56. [16] Zhuorui Liu, Chen Zhang, and Dawei Song. 2025. Zigzagattention: Efficient long-context inference with exclusive retrieval and streaming heads. arXiv preprint arXiv:2508.12407 (2025). [17] Yubo Ma, Yuhang Zang, Liangyu Chen, Meiqi Chen, Yizhu Jiao, Xinze Li, Xinyuan Lu, Ziyu Liu, Yan Ma, Xiaoyi Dong, et al. 2024. Mmlongbench-doc: Benchmarking long-context document under-standing with visualizations. Advances in Neural Information Processing Systems 37, 95963–96010. [18] Abhishek Moitra et al. 2025. MEADOW: Memory-efficient Dataflow and Data Packing for Low Power Edge LLMs. In MLSys .[19] Deepak Narayanan, Mohammad Shoeybi, Jared Casper, Patrick LeGres-ley, Mostofa Patwary, Vijay Korthikanti, Dmitri Vainbrand, Prethvi Kashinkunti, Julie Bernauer, Bryan Catanzaro, et al. 2021. Efficient large-scale language model training on gpu clusters using megatron-lm. In Proceedings of the international conference for high performance computing, networking, storage and analysis . 1–15. [20] Pratyush Patel, Esha Choukse, Chaojie Zhang, Aashaka Shah, Íñigo Goiri, Saeed Maleki, and Ricardo Bianchini. 2024. Splitwise: Efficient generative llm inference using phase splitting. In 2024 ACM/IEEE 51st Annual International Symposium on Computer Architecture (ISCA) . IEEE, 118–132. [21] Ye Qiao, Zhiheng Chen, Yifan Zhang, Yian Wang, and Sitao Huang. 2025. Tellme: An energy-efficient ternary llm accelerator for prefilling and decoding on edge fpgas. arXiv preprint arXiv:2504.16266 (2025). [22] Ruoyu Qin, Zheming Li, Weiran He, Jialei Cui, Feng Ren, Mingxing Zhang, Yongwei Wu, Weimin Zheng, and Xinran Xu. 2025. Mooncake: Trading more storage for less computation—a {KVCache-centric }
+
+architecture for serving {LLM } chatbot. In 23rd USENIX conference on file and storage technologies (FAST 25) . 155–170. [23] Ying Sheng, Lianmin Zheng, Binhang Yuan, Zhuohan Li, Max Ryabinin, Beidi Chen, Percy Liang, Christopher Ré, Ion Stoica, and Ce Zhang. 2023. Flexgen: High-throughput generative inference of large language models with a single gpu. In International Conference on Machine Learning . PMLR, 31094–31116. [24] Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. 2019. Megatron-lm: Training multi-billion parameter language models using model parallelism. arXiv preprint arXiv:1909.08053 (2019). [25] Renjie Wei, Songqiang Xu, Linfeng Zhong, Zebin Yang, Qingyu Guo, Yuan Wang, Runsheng Wang, and Meng Li. 2025. Lightmamba: Effi-cient mamba acceleration on fpga with quantization and hardware co-design. In 2025 Design, Automation & Test in Europe Conference (DATE) . IEEE, 1–7. [26] Maoyang Xiang, Ramesh Fernando, and Bo Wang. 2025. On-device Qwen2. 5: Efficient LLM inference with model compression and hard-ware acceleration. arXiv preprint arXiv:2504.17376 (2025). [27] Han Xu, Yutong Li, and Shihao Ji. 2024. Llamaf: An efficient llama2 architecture accelerator on embedded fpgas. (2024), 1–7. [28] Tiandong Zhao, Shaoqiang Lu, Chen Wu, and Lei He. 2024. ChatOPU: An FPGA-based overlay processor for large language models with un-structured sparsity. In Proceedings of the 43rd IEEE/ACM International 
+
+13 EuroSys ’27, April 2027, Rabat, Morocco Zhang et al. 
+
+Conference on Computer-Aided Design . 1–9. [29] Yinmin Zhong, Shengyu Liu, Junda Chen, Jianbo Hu, Yibo Zhu, Xu-anzhe Liu, Xin Jin, and Hao Zhang. 2024. {DistServe }: Disaggregating prefill and decoding for goodput-optimized large language model serving. In 18th USENIX Symposium on Operating Systems Design and Implementation (OSDI 24) . 193–210. 14

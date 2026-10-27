@@ -1,0 +1,39 @@
+{
+  "label": "2026-10-27",
+  "date": "2026-10-27",
+  "generated_at": "2026-10-27T23:08:24",
+  "count": 2,
+  "papers": [
+    {
+      "paper_id": "202610/27/2610.34721v1-prefetch-steered-routing-deterministic-cache-aware-expert-selection-for-offloaded-mixture-of-experts-decoding",
+      "section": "quick",
+      "title_en": "Prefetch-Steered Routing: Deterministic Cache-Aware Expert Selection for Offloaded Mixture-of-Experts Decoding",
+      "authors": "Siming Huang",
+      "date": "2026-10-26",
+      "pdf": "https://arxiv.org/pdf/2610.34721v1",
+      "score": "6.0",
+      "evidence": "卸载式MoE解码中的缓存感知专家选择与预取重叠",
+      "tldr": "MoE模型超出显存时，batch-1解码受专家权重拷贝主导。提出prefetch-steered routing（PSR），让路由基于确定性的逻辑缓存，每层每token最多插入下一层路由器预测的n个专家，物理拷贝只影响延迟、不影响输出。在OLMoE-1B-7B上50%与25%驻留时比LRU精确路由快2.2-2.3倍，比Cache-Prior快25-30%，精度差异在噪声内。意义是让缓存感知路由在异步预取下仍可复现评估。",
+      "tags": "query:ccl",
+      "abstract_en": "When a Mixture-of-Experts (MoE) model does not fit in GPU memory, batch-1 decoding is dominated by copying expert weights from host memory. Cache-aware routing reduces these copies by biasing the router toward resident experts, but combined with asynchronous prefetching it makes the model's outputs depend on transfer timing, so a harness that does not simulate that timing no longer evaluates the deployed model. We propose prefetch-steered routing (PSR): routing conditions on a deterministic logical cache, into which at most n experts predicted by the next layer's router are inserted per layer and token; physical copies affect only latency. On OLMoE-1B-7B with 50% and 25% of experts resident on an RTX 4090, PSR decodes 2.2-2.3x faster than exact routing with LRU and 25-30% faster than the Cache-Prior operating point, with mean benchmark differences of +0.1 and +0.5 points (95% lower bounds -0.8 and -0.3). In greedy generation its lead over Cache-Prior depends on the workload and reverses on HumanEval at 50% residency. On Moonlight-16B-A3B, PSR is 1.9x faster than exact routing with LRU at 37.5% residency and, at the latency of Cache-Prior, significantly better on three of eight benchmarks. On Qwen3.6-35B-A3B, where copies are cheap relative to computation, PSR keeps its advantage over Cache-Prior on the likelihood benchmarks but not its speed. Distillation-trained gates did not help. Speculative decoding with block-level expert selection was slower than PSR with a 1B autoregressive drafter on OLMoE, but with a block drafter on Qwen3.6 it was 2.1-2.9x faster than any autoregressive configuration with at most its GPU memory on the 64 prompts we timed.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "paper_id": "202610/27/2610.34731v1-mcf-a-memory--and-communication-aware-co-designed-framework-for-long-context-llm-inference",
+      "section": "quick",
+      "title_en": "MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference",
+      "authors": "Huaizhi Zhang, Jiacheng Zhu, Xuqi Zhu, Junkyu Lee, Klaus McDonald-Maier, Xiaojun Zhai",
+      "date": "2026-10-26",
+      "pdf": "https://arxiv.org/pdf/2610.34731v1",
+      "score": "6.0",
+      "evidence": "通过通信感知调度将KV传输延迟隐藏在注意力计算之后",
+      "tldr": "长上下文 LLM 推理面临 KV 缓存通信与显存压力。MCF 采用阶段自适应 KV 布局迁移：预填充早期由 MARS 复制高复用 KV 块以隐藏传输延迟，后期收敛为分片解码布局。解码时改为以查询为中心，KV 分片驻留、查询张量路由，并借助 FPGA compute-NIC 在网路径执行元数据驱动路由与集合通信。实验显示 TTFT、吞吐和扩展性均优于现有分布式系统，且上下文与集群越大收益越明显。",
+      "tags": "query:ccl",
+      "abstract_en": "This paper presents Memory- and Communication-Aware Framework for Long-Context LLM Inference (MCF) that optimizes long-context inference through communication-aware and stage-adaptive KV-cache layout transitions. At the core of MCF is {Memory-Aware Replication and Scheduling} (MARS), a dynamic orchestration mechanism for chunked prefill. MARS exploits early-stage memory headroom by selectively replicating highly reused KV blocks, improving locality and hiding KV propagation latency behind attention computation. As prefill progresses and memory pressure increases, MARS progressively drains redundant replicas and converges the KV cache into a sharded decode-ready layout, avoiding expensive layout conversion at the prefill--decode boundary. For decoding, MCF adopts a query-centric execution model in which KV shards remain stationary while lightweight query tensors are routed across workers. This changes communication from KV-cache-dependent transfer to query-dependent transfer, reducing communication growth with context length. MCF further integrates a hardware-software co-designed execution layer based on an FPGA compute-NIC datapath, enabling metadata-driven KV routing and collective operations directly in the network path. Experiments show that MCF improves TTFT, throughput, and scalability over state-of-the-art distributed inference systems, with larger benefits as context length and cluster size increase.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "errors": []
+}

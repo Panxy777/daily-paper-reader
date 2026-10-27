@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-09-28 ~ 2026-10-27</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-27</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 25 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 2 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>17</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>8</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>2</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-27 08:16:39 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-27 23:08:23 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>本期日报梳理了25篇论文，其中精读17篇，重点看两篇满分研究：TopoEP从拓扑感知角度优化专家并行MoE训练负载均衡，RailWave做专家并行通信的自适应时空调度。最值得关注的是专家并行MoE训练与通信调度这个方向，速读中GPU发起的通信和MoE推理受拓扑、并行度、拥塞控制联合影响的研究也可作为背景。普通读者可先读TopoEP和RailWave，再按需补充速读材料。</p>
+<p>今日速读两篇 6.0 分论文，聚焦 MoE 专家选择与长上下文推理优化。值得关注两点：Prefetch-Steered Routing 用缓存感知的确定性路由提升卸载式 MoE 解码效率；MCF 通过内存与通信协同设计加速长上下文 LLM 推理。普通读者可先看两篇的架构图与实验对比，再判断是否深入。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">17 篇</strong>
+    <strong class="dpr-home-dashboard-count">0 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="TopoEP: Topology-Aware Load Balancing for Expert-Parallel MoE Training">TopoEP: Topology-Aware Load Balancing for Expert-Parallel MoE Training</span></li><li><span class="dpr-home-dashboard-paper-title" title="RailWave: Adaptive Spatial and Temporal Scheduling for Expert-Parallel Communication">RailWave: Adaptive Spatial and Temporal Scheduling for Expert-Parallel Communication</span></li><li><span class="dpr-home-dashboard-paper-title" title="Expert Coupling in MoE Pretraining: Reducing All-to-All Overhead with Correlated Placement and Token Shuffling">Expert Coupling in MoE Pretraining: Reducing All-to-All Overhead with Correlated Placement and Token Shuffling</span></li></ul>
+<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>17</strong></span></div>
+
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">8 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Joint Effects of GPU Server Topology, Parallelism, and Congestion Control on MoE Inference: A Controlled Simulation Study">Joint Effects of GPU Server Topology, Parallelism, and Congestion Control on MoE Inference: A Controlled Simulation Study</span></li><li><span class="dpr-home-dashboard-paper-title" title="MoSE: Mode-Switching Expander for Mixed LLM Training and Inference">MoSE: Mode-Switching Expander for Mixed LLM Training and Inference</span></li><li><span class="dpr-home-dashboard-paper-title" title="GPU-Initiated Communication: Dissecting Down to the Bone">GPU-Initiated Communication: Dissecting Down to the Bone</span></li></ul>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="Prefetch-Steered Routing: Deterministic Cache-Aware Expert Selection for Offloaded Mixture-of-Experts Decoding">Prefetch-Steered Routing: Deterministic Cache-Aware Expert Selection for Offloaded Mixture-of-Experts Decoding</span></li><li><span class="dpr-home-dashboard-paper-title" title="MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference">MCF: A Memory- and Communication-Aware Co-Designed Framework for Long-Context LLM Inference</span></li></ul>
   </div>
-  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>8</strong></span></div>
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>2</strong></span></div>
 </section>
 </div>
 
