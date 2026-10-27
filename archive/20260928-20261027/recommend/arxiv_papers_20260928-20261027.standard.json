@@ -1,0 +1,994 @@
+{
+  "mode": "standard",
+  "generated_at": "2026-10-27T08:05:02.738033+00:00",
+  "stats": {
+    "mode": "standard",
+    "tag_count": 1,
+    "deep_divecandidates": 20,
+    "deep_cap": 6,
+    "deep_selected": 17,
+    "quick_candidates": 8,
+    "quick_skim_target": 11,
+    "quick_selected": 8
+  },
+  "deep_dive": [
+    {
+      "id": "2609.35481v1",
+      "source": "arxiv",
+      "title": "TopoEP: Topology-Aware Load Balancing for Expert-Parallel MoE Training",
+      "abstract": "Dynamic routing creates severe load imbalance in large-scale expert-parallel Mixture-of-Experts (MoE) training, turning GPUs that host hot experts into stragglers. As each MoE layer waits for its slowest rank, these stragglers prolong the expert-parallel stage and reduce overall training efficiency. Existing expert-parallelism load-balancing (EPLB) systems commonly compute load-balancing plans on the CPU, incurring device--host data transfers and cross-rank synchronization that make scheduling at every layer and microbatch expensive. Their planning formulations also overlook the hierarchical communication costs of modern scale-up and scale-out GPU clusters.   We present \\textit{TopoEP}, a GPU-native, topology-aware load-balancing system for large-scale MoE training. At each MoE layer and training microbatch, \\textit{TopoEP} converts the current routing result into hot-expert replication and token-rerouting decisions and executes the resulting plan without data-dependent host synchronization, reducing critical-path overhead. To generate these decisions, \\textit{TopoEP} uses a deterministic GPU solver that performs inter-node placement followed by intra-node refinement, allowing all ranks to independently produce bitwise-identical plans. On a 32-GPU NVIDIA H800 cluster, integrating \\textit{TopoEP} with Megatron-LM improves end-to-end training throughput by 6.2\\%--11.4\\% across three representative MoE models.",
+      "authors": [
+        "Jiacheng Zhu",
+        "Xie Zhao",
+        "Gongming Zhao",
+        "Hongli Xu",
+        "Yao Fei",
+        "Jin Fang"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-09-28T15:57:31+00:00",
+      "link": "https://arxiv.org/pdf/2609.35481v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 10.0,
+      "llm_evidence_en": "GPU-native topology-aware load balancing for expert-parallel MoE training",
+      "llm_evidence_cn": "面向专家并行MoE训练的GPU原生拓扑感知负载均衡",
+      "llm_evidence": "面向专家并行MoE训练的GPU原生拓扑感知负载均衡",
+      "canonical_evidence": "面向专家并行MoE训练的GPU原生拓扑感知负载均衡",
+      "llm_tldr_en": "TopoEP is a GPU-native, topology-aware load-balancing system for expert-parallel MoE training that plans per-layer per-microbatch schedules on device while accounting for hierarchical scale-up and scale-out communication costs.",
+      "llm_tldr_cn": "动态路由在专家并行MoE训练中造成严重负载不均，承载热门专家的GPU成为拖慢整个专家并行阶段的落后者。现有负载均衡系统多在CPU上计算调度方案，带来设备与主机间数据传输和跨rank同步开销，且忽略了现代GPU集群的分层通信代价。TopoEP提出GPU原生的拓扑感知负载均衡系统，可在每层每个微批上高效生成调度方案，显著缓解专家并行阶段的拖尾并提升大规模MoE训练效率。",
+      "llm_tldr": "动态路由在专家并行MoE训练中造成严重负载不均，承载热门专家的GPU成为拖慢整个专家并行阶段的落后者。现有负载均衡系统多在CPU上计算调度方案，带来设备与主机间数据传输和跨rank同步开销，且忽略了现代GPU集群的分层通信代价。TopoEP提出GPU原生的拓扑感知负载均衡系统，可在每层每个微批上高效生成调度方案，显著缓解专家并行阶段的拖尾并提升大规模MoE训练效率。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "expert load balancing",
+      "matched_requirement_id": "req-1",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.03415v1",
+      "source": "arxiv",
+      "title": "RailWave: Adaptive Spatial and Temporal Scheduling for Expert-Parallel Communication",
+      "abstract": "Irregular All-to-All communication is a major bottleneck in expert-parallel Mixture-of-Experts (MoE) models. Even with fixed expert routing and placement, uneven utilization of parallel network Rails and incast can limit communication performance. We present RailWave, a phase-adaptive communication layer built on DeepEP that addresses these bottlenecks below the routing layer through spatial and temporal traffic shaping. RailBalance redistributes source traffic across eligible Rails using source-local information, while a reusable, topology-derived permutation schedule limits concurrent senders per receiver without rebuilding demand-dependent schedules for each communication phase. A lightweight calibrated selector chooses an execution path according to each phase's traffic characteristics and offline profiling results. On training-derived communication workloads from the 106B GLM-4.5-Air model, RailWave delivers up to 5.84x speedup on H800 and 4.36x on H20 over Native. Code is available at https://github.com/CyberSecurityErial/RailWave-EP.",
+      "authors": [
+        "Chutian Wang",
+        "Wenhao He",
+        "Jingmin Zhu",
+        "Qingyu Yin",
+        "Heng Xu",
+        "Xiuyu Li"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-02T15:02:00+00:00",
+      "link": "https://arxiv.org/pdf/2610.03415v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 10.0,
+      "llm_evidence_en": "phase-adaptive spatial and temporal traffic shaping for expert-parallel all-to-all communication",
+      "llm_evidence_cn": "面向专家并行All-to-All通信的阶段自适应时空流量整形",
+      "llm_evidence": "面向专家并行All-to-All通信的阶段自适应时空流量整形",
+      "canonical_evidence": "面向专家并行All-to-All通信的阶段自适应时空流量整形",
+      "llm_tldr_en": "RailWave is a phase-adaptive communication layer on DeepEP that shapes expert-parallel all-to-all traffic spatially and temporally to balance network rails and suppress incast.",
+      "llm_tldr_cn": "专家并行MoE中的不规则All-to-All通信是主要瓶颈，即使路由与专家放置固定，网络Rail利用不均与incast仍限制性能。RailWave是构建在DeepEP之上的阶段自适应通信层，在路由层之下做空间与时间上的流量整形：RailBalance用源端局部信息重分配流量，拓扑导出的可复用置换调度限制每接收方的并发发送者，轻量校准选择器挑选执行方案。该方法无需按阶段重建需求相关调度即可缓解拥塞。其贡献在于提升大规模MoE专家并行通信效率。",
+      "llm_tldr": "专家并行MoE中的不规则All-to-All通信是主要瓶颈，即使路由与专家放置固定，网络Rail利用不均与incast仍限制性能。RailWave是构建在DeepEP之上的阶段自适应通信层，在路由层之下做空间与时间上的流量整形：RailBalance用源端局部信息重分配流量，拓扑导出的可复用置换调度限制每接收方的并发发送者，轻量校准选择器挑选执行方案。该方法无需按阶段重建需求相关调度即可缓解拥塞。其贡献在于提升大规模MoE专家并行通信效率。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "all-to-all optimization",
+      "matched_requirement_id": "req-4",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.09372v1",
+      "source": "arxiv",
+      "title": "Expert Coupling in MoE Pretraining: Reducing All-to-All Overhead with Correlated Placement and Token Shuffling",
+      "abstract": "Mixture-of-Experts (MoE) layers replace the feed-forward block of a Transformer with E expert networks, and each token is routed to k of these experts. Under expert parallelism (EP) the experts are distributed across GPUs, and every MoE layer runs all-to-all collectives in the forward and backward passes to dispatch tokens to their experts and then combine the results. On a cluster with 8 AMD Instinct MI300X GPUs per node, these collectives can take 45% of the training step at EP32 with top-2 routing and 60% with top-6 routing. We find that early in pretraining routers have already learned to assign tokens to experts in correlated patterns, both within a layer and across layers. At top-2, 0.8% of the expert pairs in a layer are selected together by 42% of tokens, and the experts a token selects at one layer predict the experts it selects at the next layer. We use these correlations to keep more token--expert assignments on the token's own GPU, which reduces communication across GPUs and across nodes. Correlated expert placement puts experts that are often selected together on the same GPU. Combined with a dispatcher that sends each token to each GPU once, it removes up to 58% of dispatched rows. Token shuffling applies when sequence parallelism shards tokens across the EP group. It moves each token to the GPU predicted to hold its next-layer experts during the reduce-scatter that follows attention. On one node this raises the share of token--expert assignments served on the token's GPU from 12.5% to 59%. In Megatron-LM, across EP degrees from 8 to 64 with top-2 and top-6 routing, the two methods reduce all-to-all time by 1.16-2.63X and end-to-end step time by up to 1.41X. Neither method changes the models' underlying routing decisions or expert parameters.",
+      "authors": [
+        "Radha Gulhane",
+        "Quentin Anthony",
+        "Beren Millidge"
+      ],
+      "primary_category": "cs.CL",
+      "categories": [
+        "cs.CL",
+        "cs.DC"
+      ],
+      "published": "2026-10-07T03:26:24+00:00",
+      "link": "https://arxiv.org/pdf/2610.09372v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 10.0,
+      "llm_evidence_en": "reducing all-to-all overhead in MoE expert parallelism via correlated expert placement and token shuffling",
+      "llm_evidence_cn": "通过相关专家放置与token重排降低MoE专家并行中的All-to-All开销",
+      "llm_evidence": "通过相关专家放置与token重排降低MoE专家并行中的All-to-All开销",
+      "canonical_evidence": "通过相关专家放置与token重排降低MoE专家并行中的All-to-All开销",
+      "llm_tldr_en": "Expert Coupling exploits correlated token routing learned early in MoE pretraining to co-place coupled experts and shuffle tokens, cutting the all-to-all collectives that consume up to 60% of a step.",
+      "llm_tldr_cn": "在专家并行下，MoE每层前向与反向都要执行All-to-All集合通信来分发与合并token，在8卡MI300X节点上EP32时这类通信可占训练步的45%，top-6路由时达60%。作者发现预训练早期路由器就已学出层内与跨层的相关专家分配模式，据此提出相关专家放置与token重排相结合的方案，把常被共同激活的专家放在一起以减少跨设备流量。该工作在不改变模型语义的前提下显著降低了MoE预训练的All-to-All开销。",
+      "llm_tldr": "在专家并行下，MoE每层前向与反向都要执行All-to-All集合通信来分发与合并token，在8卡MI300X节点上EP32时这类通信可占训练步的45%，top-6路由时达60%。作者发现预训练早期路由器就已学出层内与跨层的相关专家分配模式，据此提出相关专家放置与token重排相结合的方案，把常被共同激活的专家放在一起以减少跨设备流量。该工作在不改变模型语义的前提下显著降低了MoE预训练的All-to-All开销。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.14798v1",
+      "source": "arxiv",
+      "title": "Accelerating MoE Training through Expert Placement and Replica Coordination",
+      "abstract": "Distributed training of sparsely activated mixture-of-experts (MoE) models is often bottlenecked by workload imbalance and all-to-all (A2A) communication induced by dynamic token routing. Existing token deduplication, expert placement, and replication techniques alleviate these bottlenecks but do not jointly capture their distinct load semantics. Under hierarchical token deduplication, communication counts each token once per destination group at each hierarchy level, whereas expert computation processes every token-expert assignment. With replication, both costs depend jointly on physical layout and token-to-copy mapping, making separate optimization suboptimal. We present PlaceMoE to address this coupling. First, we formulate the joint optimization of expert layout and source-aware token-to-copy mapping for E experts distributed across P devices, accounting for both hierarchical communication traffic and expert-compute load. Second, we develop a solver that combines co-selection-aware expert grouping, bounded dynamic programming for replica allocation, and alternating refinement of layout and mapping. Third, PlaceMoE overlaps replica-gradient synchronization with attention backward. We evaluate PlaceMoE on a 32-GPU cluster and a 64-NPU cluster using Qwen3-VL and DeepSeek-V3. Experimental results show that PlaceMoE achieves up to a 6.94x speedup in A2A communication and 1.74-2.33x speedups in end-to-end training over the state-of-the-art training framework VeOmni.",
+      "authors": [
+        "Zhiqiang Tan",
+        "Maoxin Wang",
+        "Wenxiang Lin",
+        "Sijie Wang",
+        "Qiang Wang",
+        "Shaohuai Shi",
+        "Bo Li"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-10T10:43:05+00:00",
+      "link": "https://arxiv.org/pdf/2610.14798v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 10.0,
+      "llm_evidence_en": "joint expert placement and replication to cut all-to-all traffic and workload imbalance in MoE training",
+      "llm_evidence_cn": "联合专家放置与副本协调以降低MoE训练中的All-to-All通信与负载不均",
+      "llm_evidence": "联合专家放置与副本协调以降低MoE训练中的All-to-All通信与负载不均",
+      "canonical_evidence": "联合专家放置与副本协调以降低MoE训练中的All-to-All通信与负载不均",
+      "llm_tldr_en": "PlaceMoE jointly optimizes expert placement and replica coordination, capturing distinct communication and computation load semantics to relieve all-to-all bottlenecks in distributed MoE training.",
+      "llm_tldr_cn": "针对MoE分布式训练中动态路由导致的负载不均与All-to-All通信瓶颈，本文指出现有令牌去重、专家放置与复制技术未能联合刻画通信与计算的不同负载语义。为此提出PlaceMoE，将专家放置与副本协调建模为联合优化问题，并考虑分层去重下通信按目的组计数、计算按令牌-专家分配计数的差异。方法在物理布局与令牌到副本映射上协同求解，有效缓解A2A开销与专家负载失衡，为MoE训练系统优化提供了统一框架。",
+      "llm_tldr": "针对MoE分布式训练中动态路由导致的负载不均与All-to-All通信瓶颈，本文指出现有令牌去重、专家放置与复制技术未能联合刻画通信与计算的不同负载语义。为此提出PlaceMoE，将专家放置与副本协调建模为联合优化问题，并考虑分层去重下通信按目的组计数、计算按令牌-专家分配计数的差异。方法在物理布局与令牌到副本映射上协同求解，有效缓解A2A开销与专家负载失衡，为MoE训练系统优化提供了统一框架。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2609.34334v1",
+      "source": "arxiv",
+      "title": "HOCCL: Offloading Collective Communication from GPU Cores to Accelerate Distributed Training",
+      "abstract": "Large language model training involves massive computation on GPU streaming multiprocessors (SMs), the primary compute units of GPUs. Since SMs host specialized accelerators such as Tensor Cores, their efficient utilization is critical to training efficiency. Unfortunately, existing collective communication systems compete with computation for SMs, as they consume SMs for communication-related data movement and synchronization operations.   We observe that communication can, in principle, be driven by DMA engines, thereby eliminating SM involvement in communication. Based on this insight, we propose HOCCL, a zero-SM collective communication framework consisting of three components: a stream manager, a point-to-point (P2P) executor, and a collective scheduler. The stream manager preserves operator-level temporal ordering with other GPU kernels. The P2P executor enables zero-SM point-to-point communication, while the collective scheduler orchestrates P2P transfers to maximize bandwidth. Experiments show that HOCCL preserves near-peak communication performance, achieving within 3% of the state of the art on average, while eliminating communication occupancy on nearly 10% of total GPU SMs. By freeing SM resources for computation, HOCCL improves end-to-end training throughput by up to 5%.",
+      "authors": [
+        "Yao Fei",
+        "Gongming Zhao",
+        "Hongli Xu",
+        "Jin Fang",
+        "Jiacheng Zhu",
+        "Shuo Xu",
+        "Kun Huang",
+        "Zhuolong Yu"
+      ],
+      "primary_category": "cs.NI",
+      "categories": [
+        "cs.NI"
+      ],
+      "published": "2026-09-28T05:10:42+00:00",
+      "link": "https://arxiv.org/pdf/2609.34334v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "zero-SM collective communication offloaded to DMA engines for distributed training",
+      "llm_evidence_cn": "将集合通信从SM卸载到DMA引擎以加速分布式训练",
+      "llm_evidence": "将集合通信从SM卸载到DMA引擎以加速分布式训练",
+      "canonical_evidence": "将集合通信从SM卸载到DMA引擎以加速分布式训练",
+      "llm_tldr_en": "Existing collective communication systems consume GPU SMs needed for computation. HOCCL offloads communication to DMA engines via a stream manager and P2P executor, eliminating SM involvement and freeing compute for distributed training.",
+      "llm_tldr_cn": "现有集合通信系统在数据搬运与同步时会占用GPU的SM单元，与张量核心计算争抢资源，导致训练效率下降。作者观察到通信原则上可由DMA引擎驱动，据此提出零SM的集合通信框架HOCCL，包含流管理器、点对点执行器和配套调度组件。该设计使通信不再占用SM，把算力完整留给计算任务。这项工作为分布式大模型训练提供了一条将通信彻底移出计算核心的系统优化路径。",
+      "llm_tldr": "现有集合通信系统在数据搬运与同步时会占用GPU的SM单元，与张量核心计算争抢资源，导致训练效率下降。作者观察到通信原则上可由DMA引擎驱动，据此提出零SM的集合通信框架HOCCL，包含流管理器、点对点执行器和配套调度组件。该设计使通信不再占用SM，把算力完整留给计算任务。这项工作为分布式大模型训练提供了一条将通信彻底移出计算核心的系统优化路径。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2609.34340v1",
+      "source": "arxiv",
+      "title": "VarioPath: Workload-Aware All-to-All Communication for PCIe GPU Clusters",
+      "abstract": "AlltoAllv communication is a critical primitive in distributed large-model inference, particularly for mixture-of-experts (MoE) models. The growing adoption of PCIe GPU systems for cost-efficient inference makes AlltoAllv performance on these systems increasingly important. Without a dedicated scale-up interconnect (e.g., NVLink or Infinity Fabric), PCIe GPU systems carry both intra-node and inter-node traffic through the PCIe hierarchy, where concurrent transfers can contend for PCIe link bandwidth. This link contention, compounded by skewed traffic distributions and dynamic traffic demand, makes efficient AlltoAllv scheduling challenging. Existing approaches are either poorly suited to PCIe GPU systems or incur substantial schedule synthesis overhead that reduces their practicality in real-world deployments.   We present VarioPath, an efficient AlltoAllv scheduling framework for PCIe GPU systems. It combines an offline topology-aware analyzer with an online demand-aware scheduler. The analyzer records contention-free transfer patterns as AlltoAllv channels and exploits topology symmetry to build a compact catalog for efficient search. The online scheduler decomposes each AlltoAllv invocation's demand across a sequence of channels, adapting to rapidly changing and skewed traffic while incurring low planning overhead. Evaluation on four platforms (up to 256 GPUs) shows average AlltoAllv speedups of 5.88x over FAST and 1.72x over DeepEP. End-to-end experiments show that VarioPath reduces Qwen3 inference latency by up to 27.2% and Wan2.1 generation latency by 6.1%.",
+      "authors": [
+        "Yao Fei",
+        "Jin Fang",
+        "Size Zheng",
+        "Gongming Zhao",
+        "Hongli Xu",
+        "Jiacheng Zhu",
+        "Zhijing Xin"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.NI"
+      ],
+      "published": "2026-09-28T05:17:42+00:00",
+      "link": "https://arxiv.org/pdf/2609.34340v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "workload-aware AllToAllv scheduling optimizing all-to-all on PCIe GPU clusters for MoE inference",
+      "llm_evidence_cn": "在PCIe GPU集群上为MoE推理优化All-to-All的工作负载感知AllToAllv调度",
+      "llm_evidence": "在PCIe GPU集群上为MoE推理优化All-to-All的工作负载感知AllToAllv调度",
+      "canonical_evidence": "在PCIe GPU集群上为MoE推理优化All-to-All的工作负载感知AllToAllv调度",
+      "llm_tldr_en": "VarioPath synthesizes workload-aware AllToAllv schedules for PCIe GPU clusters, mitigating PCIe link contention caused by skewed, dynamic MoE inference traffic with low schedule-synthesis overhead.",
+      "llm_tldr_cn": "AllToAllv是分布式大模型推理尤其是MoE的关键通信原语，而成本敏感的PCIe GPU系统缺少NVLink等专用互连，节点内与节点间流量共用PCIe层级并相互争用带宽。叠加偏斜的流量分布与动态需求，使高效调度十分困难，现有方法要么不适配PCIe体系，要么调度合成开销过大。VarioPath提出工作负载感知的All-to-All通信方案，针对PCIe拓扑生成低开销的AllToAllv调度，提升了PCIe集群上MoE推理的通信效率。",
+      "llm_tldr": "AllToAllv是分布式大模型推理尤其是MoE的关键通信原语，而成本敏感的PCIe GPU系统缺少NVLink等专用互连，节点内与节点间流量共用PCIe层级并相互争用带宽。叠加偏斜的流量分布与动态需求，使高效调度十分困难，现有方法要么不适配PCIe体系，要么调度合成开销过大。VarioPath提出工作负载感知的All-to-All通信方案，针对PCIe拓扑生成低开销的AllToAllv调度，提升了PCIe集群上MoE推理的通信效率。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "all-to-all optimization",
+      "matched_requirement_id": "req-4",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2609.36070v1",
+      "source": "arxiv",
+      "title": "Mixture-of-Kittens: MoE Megakernel for NVL72s",
+      "abstract": "AI accelerator systems are rapidly consolidating into scale-up architectures, where tens to thousands of GPUs communicate over high-bandwidth, single-hop fabrics. We find that existing Mixture-of-Experts (MoE) training systems, optimized for conventional scale-out networks, transfer poorly to this setting, often running slower than a naive baseline built with PyTorch and NCCL. With industry roadmaps pointing toward even larger scale-up domains, understanding the performance tradeoffs of this hardware regime is increasingly important. We present Mixture-of-Kittens (MoK), an MoE training system designed for Nvidia NVL72. MoK builds on three insights that unlock performance on scale-up domains: (1) choosing push- or pull-based communication per operator, (2) restructuring the computation-communication overlap, and (3) fully eliminating CPU-GPU synchronization. MoK distills these insights into a single deterministic training megakernel that fuses token dispatch, shared and routed expert FFNs, and token combine. Across MoE layer shapes from four widely used open-weight models, MoK delivers up to $2.37\\times$ the throughput of the strongest publicly available baseline. In a production run on 512 GPUs spanning multiple GB300 NVL72 racks, MoK improves end-to-end training throughput by $1.41\\times$.",
+      "authors": [
+        "Stuart H. Sul",
+        "Nash Brown",
+        "Henry Wildermuth",
+        "William Lin",
+        "Federico Cassano",
+        "Christopher Ré"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-09-28T18:22:34+00:00",
+      "link": "https://arxiv.org/pdf/2609.36070v1",
+      "tags": [
+        "keyword:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "MoE training system on NVL72 choosing push or pull communication and restructuring compute-communication overlap",
+      "llm_evidence_cn": "面向NVL72的MoE训练系统，按算子选择push或pull通信并重构通信计算重叠",
+      "llm_evidence": "面向NVL72的MoE训练系统，按算子选择push或pull通信并重构通信计算重叠",
+      "canonical_evidence": "面向NVL72的MoE训练系统，按算子选择push或pull通信并重构通信计算重叠",
+      "llm_tldr_en": "Mixture-of-Kittens is an MoE training system for NVL72 scale-up domains that picks push- or pull-based communication per operator and restructures compute-communication to build megakernels.",
+      "llm_tldr_cn": "现有MoE训练系统针对传统scale-out网络优化，在NVL72这类单跳高带宽scale-up域中迁移效果差，甚至慢于PyTorch加NCCL的朴素基线。Mixture-of-Kittens提出面向NVL72的MoE训练系统，其核心是按算子选择push或pull通信方式，并重构通信与计算的组织以形成megakernel。该系统在scale-up域上取得明显加速，并系统刻画了该硬件体制下的性能权衡。其意义在于为更大规模单跳互连下的MoE训练提供新的通信与算子设计思路。",
+      "llm_tldr": "现有MoE训练系统针对传统scale-out网络优化，在NVL72这类单跳高带宽scale-up域中迁移效果差，甚至慢于PyTorch加NCCL的朴素基线。Mixture-of-Kittens提出面向NVL72的MoE训练系统，其核心是按算子选择push或pull通信方式，并重构通信与计算的组织以形成megakernel。该系统在scale-up域上取得明显加速，并系统刻画了该硬件体制下的性能权衡。其意义在于为更大规模单跳互连下的MoE训练提供新的通信与算子设计思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "communication computation overlap",
+      "matched_requirement_id": "req-3",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2609.36954v1",
+      "source": "arxiv",
+      "title": "Purlin: Separating Orchestration from the Datapath of Collectives",
+      "abstract": "Distributed inference depends on GPU collective communication that must keep pace with evolving hardware and specialized workloads. However, existing collective implementations often couple semantics, orchestration (where and when data moves), and the datapath (how data moves). This coupling makes it costly to adopt new hardware mechanisms and customize communication for applications. We present Purlin, a scale-up communication framework that separates these concerns. At the top of Purlin, we specify collectives as a naming of an input and output layout and a copy or reduction operation. In the middle, we introduce a shared orchestration protocol, Stage, Notify, And Consume (SNAC), which derives coordination from these specifications. Below SNAC sits a hardware-specific datapath we call Atom, which implements two key data movement primitives for collectives: copy and reduce. This separation lets us customize collectives and adopt new hardware mechanisms while reusing orchestration via SNAC. We evaluate Purlin on A100, H200, and B200 GPUs. Across seven collectives, Purlin achieves latency speedups of up to 5.14x and bandwidth improvements of up to 4.50x over baselines. Integrated into SGLang, Purlin improves offline LLM serving throughput and interactivity by 1.13x on average and up to 1.37x over baselines. For online LLM inference, Purlin improves interactivity by 1.26x on average and up to 2.85x, with the largest gain occurring under overload. For diffusion image generation, Purlin reduces end-to-end latency by up to 1.13x.",
+      "authors": [
+        "Osayamen Jonathan Aimuyo",
+        "Swapnil Gandhi",
+        "Christos Kozyrakis"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.AI"
+      ],
+      "published": "2026-09-29T07:57:27+00:00",
+      "link": "https://arxiv.org/pdf/2609.36954v1",
+      "tags": [
+        "keyword:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "scale-up collective communication framework decoupling orchestration from datapath",
+      "llm_evidence_cn": "分离编排与数据通路的scale-up集合通信框架",
+      "llm_evidence": "分离编排与数据通路的scale-up集合通信框架",
+      "canonical_evidence": "分离编排与数据通路的scale-up集合通信框架",
+      "llm_tldr_en": "Purlin decouples collective semantics, orchestration and datapath, specifying collectives as layout naming plus copy or reduce ops and coordinating them with the SNAC protocol, easing new hardware adoption.",
+      "llm_tldr_cn": "分布式推理依赖GPU集合通信跟上硬件与专用工作负载的演进，但现有实现把语义、编排（数据何时何地移动）与数据通路（如何移动）耦合在一起，难以适配新硬件与定制通信。Purlin提出一种scale-up通信框架，以输入输出布局加拷贝或归约操作来声明集合通信语义，并用Stage-Notify-Consume共享编排协议自动推导协调过程。该设计将编排与数据通路解耦，使底层硬件机制可替换、应用可定制通信。",
+      "llm_tldr": "分布式推理依赖GPU集合通信跟上硬件与专用工作负载的演进，但现有实现把语义、编排（数据何时何地移动）与数据通路（如何移动）耦合在一起，难以适配新硬件与定制通信。Purlin提出一种scale-up通信框架，以输入输出布局加拷贝或归约操作来声明集合通信语义，并用Stage-Notify-Consume共享编排协议自动推导协调过程。该设计将编排与数据通路解耦，使底层硬件机制可替换、应用可定制通信。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2609.36959v1",
+      "source": "arxiv",
+      "title": "Cobalt: Leveraging Expert Co-activation for Efficient Distributed MoE Training",
+      "abstract": "Mixture-of-Experts (MoE) has increasingly become a mainstream approach for scaling large language models, as it expands model capacity while keeping computation cost nearly constant. Training large-scale MoE models relies on Expert Parallelism (EP), which distributes expert replicas across GPUs and exchanges tokens through all-to-all communication. The efficiency of EP is often constrained by two system bottlenecks: cross-node token transfers are limited by inter-node bandwidth, while skewed expert workloads lead to imbalanced computation across GPUs. Prior work mitigates these bottlenecks based on per-expert workload statistics, but overlooks the fact that experts could share the communication.   In this work, we empirically present the observation that many pairs of experts are frequently co-activated by individual tokens. Motivated by this, we present Cobalt, an efficient MoE training framework that leverages expert co-activation to reduce cross-node traffic and workload imbalance. Cobalt adopts a two-stage expert layout planner that adapts expert layout to the evolving expert co-activation and workload conditions. It periodically co-locates frequently co-activated experts on the same node to reduce the cross-node communication, and performs per-step intra-node adjustment to rebalance the workloads. Subsequently, we develop a communication-aware task assignment method that routes tokens to fewer remote nodes based on the current expert layout. Experiments on 32 B200 GPUs show that Cobalt achieves up to 1.53-2.41 times (1.28-1.89 times on average) of speedup compared to existing MoE training frameworks, while reducing cross-node token traffic by 75.74%-99.26%.",
+      "authors": [
+        "Junkang Zhou",
+        "Xinyi Liu",
+        "Fangcheng Fu"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-09-29T07:59:10+00:00",
+      "link": "https://arxiv.org/pdf/2609.36959v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "expert co-activation to share all-to-all communication and balance skewed expert workloads in MoE training",
+      "llm_evidence_cn": "利用专家共激活共享 All-to-All 通信并缓解 MoE 训练专家负载不均",
+      "llm_evidence": "利用专家共激活共享 All-to-All 通信并缓解 MoE 训练专家负载不均",
+      "canonical_evidence": "利用专家共激活共享 All-to-All 通信并缓解 MoE 训练专家负载不均",
+      "llm_tldr_en": "Cobalt targets two Expert Parallelism bottlenecks in large MoE training: inter-node token-transfer bandwidth and skewed expert workloads. It exploits expert co-activation to share communication and balance computation, improving distributed MoE training efficiency.",
+      "llm_tldr_cn": "该文针对大规模混合专家模型专家并行训练中的两个系统瓶颈：跨节点令牌传输受限于节点间带宽，以及专家负载倾斜导致 GPU 计算不均。作者观察到专家可共享通信，提出 Cobalt 利用专家共激活关系来组织令牌交换与计算分配，从而降低 All-to-All 通信开销并改善负载均衡。工作面向分布式 MoE 训练系统优化，对通信调度与专家并行效率有直接意义。",
+      "llm_tldr": "该文针对大规模混合专家模型专家并行训练中的两个系统瓶颈：跨节点令牌传输受限于节点间带宽，以及专家负载倾斜导致 GPU 计算不均。作者观察到专家可共享通信，提出 Cobalt 利用专家共激活关系来组织令牌交换与计算分配，从而降低 All-to-All 通信开销并改善负载均衡。工作面向分布式 MoE 训练系统优化，对通信调度与专家并行效率有直接意义。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2609.40093v1",
+      "source": "arxiv",
+      "title": "Efficient Expert-Parallel Communication on PCIe-Connected Consumer GPUs",
+      "abstract": "Expert parallelism (EP) enables inference of large Mixture-of-Experts (MoE) models by placing their experts across multiple GPUs, but requires substantial communication between GPUs at every MoE layer. As contemporary MoE models activate more experts per token, this communication accounts for a growing fraction of inference time. The cost becomes particularly pronounced on PCIe-based consumer GPU systems, where all inter-GPU transfers traverse CPU memory. However, existing MoE-specialized EP communication libraries assume that direct GPU-to-GPU access is available, largely overlooking consumer GPUs. Therefore, most LLM frameworks instead rely on NCCL, whose CPU-staged communication incurs redundant PCIe transfers and competes with expert computation for GPU resources, limiting their overlap. We present ThunderEP, a novel communication design for such systems that removes the relay hops of traditional ring algorithm, moves data through DMA engines to avoid compute resource contention, and minimizes synchronization latency by reducing the polling overhead of completion flags in CPU memory. We integrate the proposed design into vLLM and evaluate it on three widely used MoE models. Experiments on two PCIe systems equipped with RTX 4090 and RTX 5090 GPUs show that ThunderEP achieves average speedups of 2.00$\\times$ and 1.53$\\times$ over NCCL for dispatch and combine, respectively, and up to 1.66$\\times$ end-to-end speedup over state-of-the-art MoE inference frameworks.",
+      "authors": [
+        "Jaehwan Lee",
+        "Sangmin Lee",
+        "Chaewon Kim",
+        "Junsik Shin",
+        "Jaejin Lee"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-09-30T16:32:25+00:00",
+      "link": "https://arxiv.org/pdf/2609.40093v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "Expert-parallel MoE communication optimized for PCIe consumer GPUs, avoiding CPU-staged NCCL transfers",
+      "llm_evidence_cn": "面向PCIe消费级GPU的专家并行MoE通信优化，规避CPU中转的NCCL传输",
+      "llm_evidence": "面向PCIe消费级GPU的专家并行MoE通信优化，规避CPU中转的NCCL传输",
+      "canonical_evidence": "面向PCIe消费级GPU的专家并行MoE通信优化，规避CPU中转的NCCL传输",
+      "llm_tldr_en": "MoE expert parallelism requires heavy inter-GPU traffic at every layer, and PCIe consumer GPUs suffer because all transfers stage through CPU memory. This paper designs an EP communication scheme avoiding redundant PCIe staging and contention with expert compute, improving MoE inference efficiency on commodity hardware.",
+      "llm_tldr_cn": "专家并行是部署大规模MoE模型的关键，但每层都需要大量GPU间通信，在PCIe消费级GPU上所有传输都要经CPU内存中转，现有面向GPU直连的EP通信库无法适用。本文针对该场景设计了规避冗余PCIe中转、并与专家计算错峰的专家并行通信方案。实验表明该方案显著降低了通信开销并提升消费级硬件上的MoE推理效率，为低成本MoE部署提供了可行路径。",
+      "llm_tldr": "专家并行是部署大规模MoE模型的关键，但每层都需要大量GPU间通信，在PCIe消费级GPU上所有传输都要经CPU内存中转，现有面向GPU直连的EP通信库无法适用。本文针对该场景设计了规避冗余PCIe中转、并与专家计算错峰的专家并行通信方案。实验表明该方案显著降低了通信开销并提升消费级硬件上的MoE推理效率，为低成本MoE部署提供了可行路径。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "MoE expert parallelism",
+      "matched_requirement_id": "req-5",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.00671v1",
+      "source": "arxiv",
+      "title": "MegaFlux: Skew-Resilient MoE Megakernels via Pipelined Expert Replication",
+      "abstract": "Mixture-of-experts (MoE) megakernels fuse expert-parallel communication with expert computation. However, under fixed expert placement, routing skew creates GPU stragglers: overloaded GPUs determine layer latency while others sit idle. Replicating hot experts can shift work to underloaded GPUs, but dynamic replicas introduce additional work: replicas must receive expert weights to execute and, during training, their partial weight gradients must be reduced at the expert owners. We present MegaFlux, which makes expert replication a runtime decision and pipelines the communication induced by replication within persistent MoE execution. An on-device planner jointly selects replica locations and assigns tile-aligned token blocks under a per-GPU replica budget, leaving router outputs unchanged. The forward and backward megakernels realize pipelined expert replication: replicas begin computation as their required weights arrive, while backward overlaps replica-gradient reduction with ongoing expert computation. MegaFlux extends TensorRT-LLM's CuTeDSL MegaMoE forward kernel and introduces a new backward MoE megakernel. Across 147 configurations per direction on eight NVIDIA B200 GPUs, MegaFlux achieves geometric-mean speedups of $1.45\\times$ for forward and $1.28\\times$ for backward over the same megakernels with fixed placement, peaking at $2.14\\times$ and $2.64\\times$. In ablations, pipelining hides $56$--$76$% of replica-weight transfer cost in forward and $91$--$100$% of combined weight-transfer and replica-gradient-reduction cost in backward, yielding up to $13.2$% and $26.7$% additional layer-latency reductions over the same replication plans with these operations executed separately. Integrated into vLLM for DeepSeek-V4-Pro prefill, MegaFlux delivers $1.13$--$1.26\\times$ median end-to-end speedups over fixed placement.",
+      "authors": [
+        "Jianzhu Yao",
+        "Siva Kumar Sastry Hari",
+        "Vignesh Balaji",
+        "Sana Damani",
+        "Insu Jang",
+        "Pramod Viswanath",
+        "Christos Kozyrakis"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-09-30T20:09:09+00:00",
+      "link": "https://arxiv.org/pdf/2610.00671v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "runtime expert replication and pipelined communication to absorb routing skew in MoE megakernels",
+      "llm_evidence_cn": "运行时专家复制与流水化通信以消除MoE路由倾斜",
+      "llm_evidence": "运行时专家复制与流水化通信以消除MoE路由倾斜",
+      "canonical_evidence": "运行时专家复制与流水化通信以消除MoE路由倾斜",
+      "llm_tldr_en": "Routing skew under fixed expert placement creates GPU stragglers in MoE megakernels. MegaFlux makes expert replication a runtime decision, pipelining replica weight and gradient communication within persistent execution via an on-device planner.",
+      "llm_tldr_cn": "MoE大内核将专家并行通信与专家计算融合，但在固定专家放置下路由倾斜会造成GPU长尾，过载GPU决定层延迟而其余GPU空转。复制热点专家可把工作转移到空闲GPU，但动态副本需要接收专家权重、训练时还需在专家所有者处规约梯度。作者提出MegaFlux，把专家复制变为运行时决策，并在持久化MoE执行中流水化复制引入的通信，由片上规划器联合选择副本位置与令牌分块。该工作显著提升了负载倾斜下的MoE执行效率。",
+      "llm_tldr": "MoE大内核将专家并行通信与专家计算融合，但在固定专家放置下路由倾斜会造成GPU长尾，过载GPU决定层延迟而其余GPU空转。复制热点专家可把工作转移到空闲GPU，但动态副本需要接收专家权重、训练时还需在专家所有者处规约梯度。作者提出MegaFlux，把专家复制变为运行时决策，并在持久化MoE执行中流水化复制引入的通信，由片上规划器联合选择副本位置与令牌分块。该工作显著提升了负载倾斜下的MoE执行效率。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to overlap communication with computation and optimize expert placement?",
+      "matched_requirement_id": "req-7",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.03203v1",
+      "source": "arxiv",
+      "title": "AFORE: Attention-FFN Disaggregation with Overlapped Reconfiguration of Experts",
+      "abstract": "Efficient serving of Mixture-of-Experts (MoE) models is challenging due to large expert parameters, input-dependent expert activation, and dynamic workloads. Expert parallelism distributes expert computation across GPUs, while attention-FFN disaggregation (AFD) separates attention and feed-forward computation into independent worker pools. However, we observe that a naive AFD implementation could make expert load imbalance more harmful: once FFN computation becomes an independent pipeline stage, overloaded experts directly slow the FFN stage and degrade end-to-end serving performance. To solve this problem, we present AFORE, a timely expert reconfiguration system for AFD-based MoE serving. AFORE exploits two architectural properties of AFD. First, AFD exposes the expert-token distribution of upcoming microbatches before they reach FFN execution, enabling placement decisions based on near-future demand instead of stale historical profiles. Second, AFD creates a pipeline window in which expert migration for a target microbatch can be overlapped with the computation of preceding in-flight microbatches. AFORE formulates expert reconfiguration as a microbatch-aware scheduling problem and uses a migration-aware scheduler to decide when and which experts to migrate. AFORE further implements lightweight demand prefetching and NVLink-based GPU-GPU expert migration to reduce reconfiguration overhead. Evaluation on a 110B-parameter MoE model across four dynamic workloads shows that AFORE improves output throughput by 10.1-17.6% and reduces P95 inter-token latency by 7.1-9.5% compared with the strongest competing baseline. Compared with static placement, AFORE improves throughput by 29.8% on average and reduces P95 inter-token latency by 18.2% on average. Migration profiling further shows that AFD pipeline overlap can fully hide expert-migration latency.",
+      "authors": [
+        "Wenshuang Li",
+        "Youhe Jiang",
+        "You Peng",
+        "Jiawei Jiang",
+        "Binhang Yuan"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-02T12:20:29+00:00",
+      "link": "https://arxiv.org/pdf/2610.03203v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "expert load imbalance in expert-parallel MoE serving with timely expert reconfiguration",
+      "llm_evidence_cn": "专家并行MoE服务中的专家负载不均衡与及时重配置",
+      "llm_evidence": "专家并行MoE服务中的专家负载不均衡与及时重配置",
+      "canonical_evidence": "专家并行MoE服务中的专家负载不均衡与及时重配置",
+      "llm_tldr_en": "Attention-FFN disaggregation makes MoE expert load imbalance more harmful since overloaded experts stall the FFN stage. AFORE exploits AFD architectural properties to reconfigure experts promptly, overlapping reconfiguration with serving.",
+      "llm_tldr_cn": "MoE模型服务受专家参数庞大、激活随输入变化和负载动态影响而难以高效运行，注意力-FFN解耦虽将FFN独立为流水阶段，却使专家负载不均衡的危害被放大，过载专家直接拖慢FFN阶段。作者提出AFORE，一种面向AFD式MoE服务的及时专家重配置系统，利用AFD的两项架构特性在运行时调整专家布局并重叠重配置开销。该设计缓解了热点专家造成的端到端服务退化。它为专家并行MoE推理系统的负载均衡提供了新的系统级解法。",
+      "llm_tldr": "MoE模型服务受专家参数庞大、激活随输入变化和负载动态影响而难以高效运行，注意力-FFN解耦虽将FFN独立为流水阶段，却使专家负载不均衡的危害被放大，过载专家直接拖慢FFN阶段。作者提出AFORE，一种面向AFD式MoE服务的及时专家重配置系统，利用AFD的两项架构特性在运行时调整专家布局并重叠重配置开销。该设计缓解了热点专家造成的端到端服务退化。它为专家并行MoE推理系统的负载均衡提供了新的系统级解法。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "expert load balancing",
+      "matched_requirement_id": "req-1",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.07098v1",
+      "source": "arxiv",
+      "title": "T-CCL: Resource Efficient and Performant Collective Communication using Tensor Memory Accelerator",
+      "abstract": "Large transformer-based models increasingly depend on multi-GPU execution, which requires frequent collective communication among GPUs. Existing communication libraries often rely on many GPU threads to achieve high bandwidth or low latency, resulting in a large streaming multiprocessor (SM)-side resource footprint. This footprint can limit the resources available to other GPU work, particularly when communication and computation execute concurrently. Thus, efficient collective communication should not only achieve high collective performance but also reduce its SM-side resource usage. This paper presents T-CCL, a resource-efficient collective communication library based on the Tensor Memory Accelerator (TMA) for intra-node communication. T-CCL offloads both data movement and reduction operations to TMA and executes each collective as a pipelined series of asynchronous TMA operations, reducing the SM resources required for collective communication while maintaining high bandwidth. Evaluated across AllReduce, AllGather, and ReduceScatter collectives, T-CCL outperforms NCCL by up to 2.4x with unrestricted communication resources and up to 3.42x under restricted resource budgets, remains competitive with NCCL's recent symmetric-memory kernels, and occupies the same or fewer SMs in profiled cases. In a GEMM-collective overlap case study, switching the communication backend from NCCL to T-CCL raises the average operator-level speedup over a sequential baseline from 1.12x to 1.25x on two GPUs and from 1.04x to 1.14x on four GPUs, as T-CCL uses fewer SMs for communication, leaving more SMs available to the overlapped GEMM. Integrated into vLLM as a communication backend, T-CCL improves end-to-end inference throughput over vLLM's automatic backend dispatch by up to 1.31x, outperforming it at every evaluated batch size on both the conversation and decode-heavy workloads.",
+      "authors": [
+        "Keyvan Dadashzadeh",
+        "Yuehong Zhou",
+        "Minyu Cui",
+        "Miquel Pericas"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.AI"
+      ],
+      "published": "2026-10-05T14:19:11+00:00",
+      "link": "https://arxiv.org/pdf/2610.07098v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "resource-efficient collective communication library reducing SM footprint during compute overlap",
+      "llm_evidence_cn": "降低SM占用并支持通信计算并发的集合通信库",
+      "llm_evidence": "降低SM占用并支持通信计算并发的集合通信库",
+      "canonical_evidence": "降低SM占用并支持通信计算并发的集合通信库",
+      "llm_tldr_en": "T-CCL builds collective communication on the Tensor Memory Accelerator to cut SM-side resource footprint, preserving high bandwidth while leaving GPU resources for concurrent computation.",
+      "llm_tldr_cn": "针对多GPU大模型训练中集合通信库占用大量SM资源、挤占并发计算的问题，本文提出T-CCL，基于张量内存加速器TMA实现节点内集合通信库。它用TMA替代大量GPU线程搬运数据，在保持高带宽与低延迟的同时显著降低SM侧资源占用。实验表明该设计在AllReduce等集合操作上性能不降反升，并能为通信与计算重叠留出更多资源，对分布式LLM训练与推理的通信系统优化具有直接价值。",
+      "llm_tldr": "针对多GPU大模型训练中集合通信库占用大量SM资源、挤占并发计算的问题，本文提出T-CCL，基于张量内存加速器TMA实现节点内集合通信库。它用TMA替代大量GPU线程搬运数据，在保持高带宽与低延迟的同时显著降低SM侧资源占用。实验表明该设计在AllReduce等集合操作上性能不降反升，并能为通信与计算重叠留出更多资源，对分布式LLM训练与推理的通信系统优化具有直接价值。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.07333v1",
+      "source": "arxiv",
+      "title": "Memory-Efficient Expert Routing for Distributed MoE Training",
+      "abstract": "As Mixture-of-Experts (MoE) models scale toward hundreds of experts and higher top-$k$ routing, memory efficiency in distributed training becomes a critical bottleneck. Peak memory is dominated by the MoE block, not attention: every intermediate buffer in the MoE dispatch pipeline is individually scaled by top-k routing. The standard all-to-all dispatcher sends all routed tokens in a single collective step, requiring the full top-$k$-expanded buffer to be constructed at once. In this work, we propose RelayMoE, a ring-based MoE execution model that computes locally as expert weights or tokens circulate, avoiding full top-$k$-expanded dispatch buffers. RelayMoE selects between expert and token routing according to communication volume and overlaps transfers with computation. The ring structure naturally supports memory-efficient MoE recomputation during backward: each hop reconstructs expert intermediates, uses them to compute gradients, and releases them before the next hop. The saved memory supports longer sequences and larger batches, or retains more attention activations to reduce attention recomputation and improve training throughput. We evaluate RelayMoE on 30B$-$57B production MoE models and varied expert configurations. In single-layer MoE experiments, RelayMoE achieves a $2\\times$ average speedup over Megatron-LM. In full-model training under the same GPU memory budget, it improves throughput by up to $2.02\\times$ and extends the largest tested trainable sequence length by up to $2.85\\times$.",
+      "authors": [
+        "Arnab Kanti Tarafder",
+        "Jaume Guasch-Martí",
+        "Gokcen Kestor",
+        "Jie Ren"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.AI",
+        "cs.NI"
+      ],
+      "published": "2026-10-05T20:07:27+00:00",
+      "link": "https://arxiv.org/pdf/2610.07333v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "ring-based MoE dispatch replacing full all-to-all buffers and overlapping transfers with compute",
+      "llm_evidence_cn": "环形MoE分发替代全量all-to-all缓冲并与计算重叠",
+      "llm_evidence": "环形MoE分发替代全量all-to-all缓冲并与计算重叠",
+      "canonical_evidence": "环形MoE分发替代全量all-to-all缓冲并与计算重叠",
+      "llm_tldr_en": "The standard all-to-all MoE dispatcher materializes the full top-k-expanded buffer, dominating memory. RelayMoE uses a ring-based execution that computes as tokens or experts circulate, choosing routing mode by volume and overlapping transfers with compute.",
+      "llm_tldr_cn": "随着专家数量和top-k路由增大，MoE分发流水线中每个中间缓冲都被放大，标准all-to-all分发需一次性构造完整的top-k扩展缓冲，成为分布式训练的内存瓶颈。作者提出RelayMoE，一种环形MoE执行模型，在专家权重或令牌沿环流动的过程中就地计算，避免全量扩展缓冲，并依据通信量在专家路由与令牌路由间切换，同时将传输与计算重叠。该设计显著缓解了MoE块的内存峰值压力。它为大规模MoE分布式训练提供了一种低内存、可重叠的通信执行方案。",
+      "llm_tldr": "随着专家数量和top-k路由增大，MoE分发流水线中每个中间缓冲都被放大，标准all-to-all分发需一次性构造完整的top-k扩展缓冲，成为分布式训练的内存瓶颈。作者提出RelayMoE，一种环形MoE执行模型，在专家权重或令牌沿环流动的过程中就地计算，避免全量扩展缓冲，并依据通信量在专家路由与令牌路由间切换，同时将传输与计算重叠。该设计显著缓解了MoE块的内存峰值压力。它为大规模MoE分布式训练提供了一种低内存、可重叠的通信执行方案。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.09424v2",
+      "source": "arxiv",
+      "title": "Democratizing MoE inference on commodity GPUs with CoMoE",
+      "abstract": "Deploying Mixture-of-Experts (MoE) models relies heavily on Expert Parallelism, which generates intense inter-GPU communication. Consequently, state-of-the-art inference systems require high-bandwidth, P2P interconnects (e.g., NVLink) in datacenter GPUs to handle massive token routing, making deployment prohibitively expensive. Consumer GPUs offer comparable compute power at significantly lower cost, promising to democratize MoE inference for individuals and enable privacy-preserving local deployments. However, their bandwidth-limited (only weak PCIe bus bandwidth) and host-mediated interconnects (no P2P support) introduce severe communication bottlenecks.   We present CoMoE, a communication-efficient MoE inference system that resolves this mismatch through novel host-centric routing. Our key insight is that the unique communication topology provides the opportunity to elevate the host to an active routing hub, which can fundamentally reduce communication volume and eliminate global synchronization-induced stalls. Specifically, for token dispatch, we introduce host-backed token multicast to write shared tokens to the host exactly once, eliminating outbound transmission redundancy. For token combine, we propose a fine-grained, token-level aggregation mechanism using host staging buffers, which replaces rigid global synchronization and mitigates straggler effects. Evaluation on RTX 5090 GPUs shows that CoMoE improves inference throughput by up to 1.46x, approaching the performance of NVLink-capable A800 GPUs at only 23.4% of the hardware cost.",
+      "authors": [
+        "Ruwen Fan",
+        "Yuezhi Zu",
+        "Minhui Xie",
+        "Junru Li",
+        "Qingda Hu",
+        "Xinjun",
+        "Yang",
+        "Jiwu Shu",
+        "Youyou Lu"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-10-07T04:24:45+00:00",
+      "link": "https://arxiv.org/pdf/2610.09424v2",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "communication-efficient expert-parallel MoE inference on bandwidth-limited commodity GPUs",
+      "llm_evidence_cn": "在带宽受限消费级GPU上的通信高效专家并行MoE推理",
+      "llm_evidence": "在带宽受限消费级GPU上的通信高效专家并行MoE推理",
+      "canonical_evidence": "在带宽受限消费级GPU上的通信高效专家并行MoE推理",
+      "llm_tldr_en": "CoMoE is a communication-efficient MoE inference system that tackles the weak PCIe and host-mediated interconnects of commodity GPUs, where expert-parallel token routing otherwise becomes prohibitively slow.",
+      "llm_tldr_cn": "MoE推理依赖专家并行，产生密集跨GPU令牌路由通信，通常需要NVLink等高带宽互连，导致部署成本高昂。CoMoE针对消费级GPU仅有的弱PCIe带宽与无P2P的主机中转互连，提出通信高效的MoE推理系统，通过新的通信机制缓解严重瓶颈。摘要表明该设计可在低成本硬件上承载MoE推理，降低对数据中心级互连的依赖。其意义在于推动MoE推理民主化，并支持隐私保护的本地部署。",
+      "llm_tldr": "MoE推理依赖专家并行，产生密集跨GPU令牌路由通信，通常需要NVLink等高带宽互连，导致部署成本高昂。CoMoE针对消费级GPU仅有的弱PCIe带宽与无P2P的主机中转互连，提出通信高效的MoE推理系统，通过新的通信机制缓解严重瓶颈。摘要表明该设计可在低成本硬件上承载MoE推理，降低对数据中心级互连的依赖。其意义在于推动MoE推理民主化，并支持隐私保护的本地部署。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.11158v2",
+      "source": "arxiv",
+      "title": "Zepp: Accelerating Distributed MoE Serving under Relaxed Balance Constraints",
+      "abstract": "As Mixture-of-Experts (MoE) models continue to scale, serving them increasingly relies on expert parallelism (EP) across a growing number of devices. Yet skewed expert workloads create imbalance across computation, communication, and memory, making load balancing a central optimization objective in distributed MoE serving. We observe that balance is not free: operations introduced to balance one dimension can themselves be expensive or imbalanced. This motivates us to rethink balance as a constraint rather than an optimization objective. We present Zepp, which directly optimizes the bottleneck communication in distributed MoE serving subject to simplified balance constraints on physical resources, i.e., GPUs and NICs. Zepp progressively optimizes inter-node communication across placement, routing, and execution. It first places expert replicas to reduce token communication under GPU constraints, then reshapes communication flows through split and merge primitives under NIC constraints, and finally partitions and schedules ex- pert computation to overlap the resulting communication. To adapt to dynamic workloads, Zepp jointly coordinates computation, token communication, and expert-weight movement at each iteration. Together, these designs allow Zepp to pursue the most efficient execution rather than a single-dimension balanced one. We implement Zepp and evaluate it against 7 state-of-the-art MoE serving systems, achieving up to 6.68$\\times$ MoE layer speedup and a geometric mean speedup of 1.86$\\times$ over the fastest competing baseline.",
+      "authors": [
+        "Chang Chen",
+        "Andrew Yang",
+        "Tiancheng Chen",
+        "Jiangfei Duan",
+        "Xinwei Qiang",
+        "Zhongkai Yu",
+        "Xiang Fang",
+        "Yufei Ding"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-08T03:19:33+00:00",
+      "link": "https://arxiv.org/pdf/2610.11158v2",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "optimizes bottleneck all-to-all communication in expert-parallel MoE serving under relaxed balance constraints",
+      "llm_evidence_cn": "在松弛负载均衡约束下优化专家并行MoE服务的瓶颈通信",
+      "llm_evidence": "在松弛负载均衡约束下优化专家并行MoE服务的瓶颈通信",
+      "canonical_evidence": "在松弛负载均衡约束下优化专家并行MoE服务的瓶颈通信",
+      "llm_tldr_en": "Zepp treats load balance as a constraint instead of an objective in expert-parallel MoE serving, directly optimizing bottleneck communication under GPU and NIC resource limits to accelerate distributed inference.",
+      "llm_tldr_cn": "随着MoE模型规模增长，服务日益依赖跨设备专家并行，但专家负载倾斜导致计算、通信与内存三个维度同时失衡，使负载均衡成为核心优化目标。Zepp指出为均衡某一维度引入的操作本身也可能昂贵且失衡，因而将均衡重新定义为物理资源（GPU与网卡）上的约束，直接优化分布式MoE服务中的瓶颈通信并渐进式改进调度。实验表明该松弛式平衡策略能有效缩短服务时延，为大规模MoE推理提供了新的优化视角。",
+      "llm_tldr": "随着MoE模型规模增长，服务日益依赖跨设备专家并行，但专家负载倾斜导致计算、通信与内存三个维度同时失衡，使负载均衡成为核心优化目标。Zepp指出为均衡某一维度引入的操作本身也可能昂贵且失衡，因而将均衡重新定义为物理资源（GPU与网卡）上的约束，直接优化分布式MoE服务中的瓶颈通信并渐进式改进调度。实验表明该松弛式平衡策略能有效缩短服务时延，为大规模MoE推理提供了新的优化视角。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to reduce all to all communication overhead in MoE expert parallelism?",
+      "matched_requirement_id": "req-8",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.15704v1",
+      "source": "arxiv",
+      "title": "DualColl: Throughput-Optimal Bandwidth-Bound Collective Communications via Fractional Tree Packing",
+      "abstract": "Large-scale distributed training increasingly makes collective communication bandwidth-bound. In modern GPU clusters, communication libraries such as NCCL implement collectives including AllReduce over heterogeneous interconnects such as NVLink, InfiniBand, and Ethernet, making efficient use of available network bandwidth a central systems challenge.   ForestColl showed that collective communication on such fabrics can be formulated using fractional tree packing; its scalable polynomial-time construction is developed for AllGather, with AllReduce obtained by composing AllGather and ReduceScatter. We present DualColl, which targets bandwidth-bound AllReduce directly. Under the tree-based AllReduce model, DualColl applies a Garg--Könemann-style multiplicative-weights algorithm and, for any $0<ε<1$, computes a feasible schedule whose throughput is at least $(1-ε)^2$ of the optimal AllReduce throughput. Its key component is an exact minimum-cost collective-tree oracle that projects physical-link dual prices onto a logical graph of participating ranks, reducing each iteration to shortest-path computations followed by a minimum spanning tree.   We further extend the framework to local equal-next-hop packet-sprayed routing and to networks without explicit per-tree bandwidth control. For the latter, we introduce a tree-coupled max-min bandwidth-sharing model and show that tree duplication approximates an explicit fractional allocation with a provable accuracy-complexity tradeoff. Finally, we extend the fractional-packing framework to additional collective operations and multiple concurrent collective groups.",
+      "authors": [
+        "Namir Ballan",
+        "Reuven Cohen"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.DS",
+        "cs.NI"
+      ],
+      "published": "2026-10-11T15:39:10+00:00",
+      "link": "https://arxiv.org/pdf/2610.15704v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "Throughput-optimal bandwidth-bound collective communication, directly optimizing AllReduce via fractional tree packing",
+      "llm_evidence_cn": "带宽受限集合通信吞吐最优，通过分数树打包直接优化AllReduce",
+      "llm_evidence": "带宽受限集合通信吞吐最优，通过分数树打包直接优化AllReduce",
+      "canonical_evidence": "带宽受限集合通信吞吐最优，通过分数树打包直接优化AllReduce",
+      "llm_tldr_en": "Bandwidth-bound collectives dominate large-scale distributed training, yet tree-packing constructions were developed mainly for AllGather. DualColl targets bandwidth-bound AllReduce directly with a fractional tree packing formulation, achieving throughput-optimal schedules across heterogeneous interconnects.",
+      "llm_tldr_cn": "大规模分布式训练中集合通信日益受带宽限制，已有基于分数树打包的方法主要面向AllGather，AllReduce只能通过组合AllGather与ReduceScatter间接获得。本文提出DualColl，直接在树式AllReduce模型下进行分数树打包构造，得到吞吐最优的调度方案。研究在异构互联环境下验证了该方法的带宽利用效率，为NCCL等通信库的AllReduce优化提供了新的构造性思路。",
+      "llm_tldr": "大规模分布式训练中集合通信日益受带宽限制，已有基于分数树打包的方法主要面向AllGather，AllReduce只能通过组合AllGather与ReduceScatter间接获得。本文提出DualColl，直接在树式AllReduce模型下进行分数树打包构造，得到吞吐最优的调度方案。研究在异构互联环境下验证了该方法的带宽利用效率，为NCCL等通信库的AllReduce优化提供了新的构造性思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "quick_skim": [
+    {
+      "id": "2609.37828v1",
+      "source": "arxiv",
+      "title": "Joint Effects of GPU Server Topology, Parallelism, and Congestion Control on MoE Inference: A Controlled Simulation Study",
+      "abstract": "Mixture-of-experts (MoE) models expand capacity via sparse activation, but inference across GPUs introduces tensor-parallel (TP) collectives and expert-parallel (EP) dispatch and combine operations. Completion time depends not just on communication volume but on how logical groups map onto intra-server interconnects, GPU--NIC connections, and the inter-node network. Using ASTRA-sim with the NS-3 discrete-event backend, we build a controlled matrix of 32 GPU ranks with data and pipeline parallelism fixed at one. Workloads are fixed-length 4096-token prefill-like synthetic Chakra traces from four MoE configurations. Experiments cover six server topologies, four TP/EP partitions, two TP collective algorithms, and four network/congestion-control modes, yielding 768 deterministic simulations. In the 144-configuration feedback-enabled subset per model, exposed communication accounts for 89.9%--95.8% of mean completion time. TP16EP2 requires 3.68--4.35x the mean completion time of TP2EP16. With fixed rank mapping, ASTRA-sim Double Binary Tree (DBT) incurs 28.3%--83.2% more time than Ring. InfiniBand-like High Precision Congestion Control (HPCC) is ~0.9% lower than HPCC over RDMA over Converged Ethernet (RoCE), whereas RoCE with Data Center Quantized Congestion Notification (DCQCN) is 23.8%--35.7% slower than RoCE HPCC. Topology effects are conditional: Topology~6 leads at low TP degrees but loses its advantage at high TP degrees, and additional GPUs or NICs help only when rank mapping balances traffic across injection paths. Under uniform 32-way sharding, the largest checkpoint-weight shard is ~48.75 GB per rank, so all configurations meet a 64 GB per-accelerator weight-residency criterion. Within the evaluated workload and simulator semantics, server topology, parallelism, collective implementation, and congestion control jointly determine exposed communication and completion time.",
+      "authors": [
+        "Kaikai Yuan",
+        "Rui Xi",
+        "Yu Liu"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-09-29T15:34:39+00:00",
+      "link": "https://arxiv.org/pdf/2609.37828v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "studies GPU topology, TP/EP partitions and collective algorithms on MoE inference completion time",
+      "llm_evidence_cn": "研究GPU拓扑、TP/EP划分与集合通信算法对MoE推理时延的影响",
+      "llm_evidence": "研究GPU拓扑、TP/EP划分与集合通信算法对MoE推理时延的影响",
+      "canonical_evidence": "研究GPU拓扑、TP/EP划分与集合通信算法对MoE推理时延的影响",
+      "llm_tldr_en": "Using ASTRA-sim with NS-3, this study maps TP collectives and EP dispatch/combine of MoE inference onto 32-GPU topologies, showing how server topology, TP/EP partitioning and collective algorithms jointly shape completion time.",
+      "llm_tldr_cn": "MoE模型通过稀疏激活扩展容量，但跨GPU推理会引入张量并行的集合通信以及专家并行的分发与合并操作，完成时间不仅取决于通信量，还取决于逻辑分组如何映射到服务器内互连、GPU与网卡连接以及跨节点网络。作者基于ASTRA-sim与NS-3搭建32卡受控仿真矩阵，覆盖六种服务器拓扑、四种TP/EP划分与两种集合通信算法。结果揭示了拓扑、并行策略与拥塞控制对MoE推理性能的联合影响。",
+      "llm_tldr": "MoE模型通过稀疏激活扩展容量，但跨GPU推理会引入张量并行的集合通信以及专家并行的分发与合并操作，完成时间不仅取决于通信量，还取决于逻辑分组如何映射到服务器内互连、GPU与网卡连接以及跨节点网络。作者基于ASTRA-sim与NS-3搭建32卡受控仿真矩阵，覆盖六种服务器拓扑、四种TP/EP划分与两种集合通信算法。结果揭示了拓扑、并行策略与拥塞控制对MoE推理性能的联合影响。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "topology-aware scheduling",
+      "matched_requirement_id": "req-2",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "8plus"
+    },
+    {
+      "id": "2609.36662v1",
+      "source": "arxiv",
+      "title": "AutoLoCo: Communication Efficient Distributed LLM Training via Adaptive Synchronization",
+      "abstract": "The pre-training of Large Language Models (LLMs) is increasingly conducted across multiple data centers. As training scales to a larger number of accelerators, the fraction of time spent on computation decreases, while the fraction spent on communication increases. Therefore, frequent synchronization becomes a growing bottleneck. Local update methods reduce this cost by allowing workers to perform several optimizer steps between synchronizations. Most local update methods set the number of local optimizer steps between synchronizations before training and keep this interval fixed throughout the run. However, the best interval can change during the entire train process. If the interval and optimizer are adapted to the current training state, the communication frequency is reduced while maintaining the training performance. In this work, we introduce AutoLoCo, an adaptive training framework to reduce communication in LLM training. It adapts the local interval using scalar training statistics and corrects each outer update. Our method is motivated by two observations: 1) the appropriate local interval varies across training stages, and 2) changing the number of inner steps per interval creates a mismatch with an unchanged outer optimizer, requiring a correction to the outer update. We optimize this mismatch by correction of the outer optimizer for the momentum and the learning rate using the accumulated inner learning rate. Our experiments under communication constraints demonstrate that AutoLoCo reduces communication frequency by 27% relative to DiLoCo while maintaining training performance.",
+      "authors": [
+        "Pengyu He",
+        "Yan Zhang",
+        "Ruien Li",
+        "Guangwen Yang"
+      ],
+      "primary_category": "cs.LG",
+      "categories": [
+        "cs.LG",
+        "cs.AI"
+      ],
+      "published": "2026-09-29T04:05:08+00:00",
+      "link": "https://arxiv.org/pdf/2609.36662v1",
+      "tags": [
+        "query:CCL"
+      ],
+      "llm_score": 7.0,
+      "llm_evidence_en": "adaptive synchronization intervals to cut communication cost in distributed LLM training",
+      "llm_evidence_cn": "自适应同步间隔以降低分布式大模型训练的通信开销",
+      "llm_evidence": "自适应同步间隔以降低分布式大模型训练的通信开销",
+      "canonical_evidence": "自适应同步间隔以降低分布式大模型训练的通信开销",
+      "llm_tldr_en": "As LLM pretraining spans many accelerators, synchronization dominates runtime. AutoLoCo adapts the number of local optimizer steps between synchronizations online instead of fixing it before training.",
+      "llm_tldr_cn": "大语言模型预训练已扩展到跨多个数据中心的大量加速器，计算占比下降而通信占比上升，频繁同步成为主要瓶颈。本地更新方法通过在同步之间执行多步优化来降低开销，但通常预先固定间隔，无法适应训练过程中最优间隔的变化。作者提出AutoLoCo，根据当前训练状态自适应调整本地步数间隔与优化器配置。该方法在不牺牲收敛性的前提下减少同步次数，为分布式大模型训练提供了通信高效的同步策略。",
+      "llm_tldr": "大语言模型预训练已扩展到跨多个数据中心的大量加速器，计算占比下降而通信占比上升，频繁同步成为主要瓶颈。本地更新方法通过在同步之间执行多步优化来降低开销，但通常预先固定间隔，无法适应训练过程中最优间隔的变化。作者提出AutoLoCo，根据当前训练状态自适应调整本地步数间隔与优化器配置。该方法在不牺牲收敛性的前提下减少同步次数，为分布式大模型训练提供了通信高效的同步策略。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to optimize collective communication for distributed LLM training and inference?",
+      "matched_requirement_id": "req-9",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "7"
+    },
+    {
+      "id": "2609.39350v1",
+      "source": "arxiv",
+      "title": "HAPMoE: Heterogeneity-Aware Automatic Parallelism Planning for Mixture-of-Experts Models Training",
+      "abstract": "As model sizes continue to scale, distributed training has become inevitable. Automatic parallelization techniques can derive efficient training parallelism strategies at low cost while achieving superior performance. The difficulty of this problem is jointly determined by the complexity of the model and the underlying compute cluster. Meanwhile, mixture-of-experts (MoE) models are increasingly emerging as the dominant architecture and the rapid evolution of accelerator hardware has made cluster heterogeneity commonplace, posing substantial challenges to automatic parallelization. However, existing approaches typically target either MoE architectures or heterogeneous clusters, failing to generalize to scenarios where both challenges coexist. To this end, we present HAPMoE, a heterogeneity-aware automatic parallelism planner for MoE training. HAPMoE builds a lightweight MoE-aware cost model and efficiently searches a six-dimensional parallel space, producing parallel plans directly deployable on Megatron-LM. Experiments show that HAPMoE improves end-to-end training throughput by up to 3.2$\\times$ over baselines across heterogeneous clusters. Its non-uniform pipeline partitioning yields an additional up to 78% gains, and its pruning-enhanced dynamic programming algorithm completes the search within 1 minute, demonstrating high efficiency and practical value in complex hardware environments.",
+      "authors": [
+        "Mengyuan Fan",
+        "Peizhuang Cong",
+        "Zixiao Huang",
+        "Si Xu",
+        "Tong Qiao",
+        "Yanghao Li",
+        "Jing Yang",
+        "Tong Yang",
+        "Quanlu Zhang",
+        "Yu Wang"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-09-30T09:11:46+00:00",
+      "link": "https://arxiv.org/pdf/2609.39350v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "automatic parallelism planning for MoE training on heterogeneous clusters",
+      "llm_evidence_cn": "异构集群上MoE训练的自动并行规划",
+      "llm_evidence": "异构集群上MoE训练的自动并行规划",
+      "canonical_evidence": "异构集群上MoE训练的自动并行规划",
+      "llm_tldr_en": "HAPMoE plans parallelization for MoE training on heterogeneous clusters, jointly handling MoE architecture and device heterogeneity that prior auto-parallel methods treat separately.",
+      "llm_tldr_cn": "模型规模增长使分布式训练不可避免，自动并行可低成本得到高效并行策略，但当MoE架构与集群异构同时出现时难度骤增；现有方法通常只针对MoE架构或只针对异构集群。HAPMoE提出异构感知的自动并行规划方法，联合考虑MoE模型结构与加速器异构性来搜索训练并行策略。该工作填补了两类场景交叉处的空白，为异构集群上的MoE训练提供可用的自动规划方案。",
+      "llm_tldr": "模型规模增长使分布式训练不可避免，自动并行可低成本得到高效并行策略，但当MoE架构与集群异构同时出现时难度骤增；现有方法通常只针对MoE架构或只针对异构集群。HAPMoE提出异构感知的自动并行规划方法，联合考虑MoE模型结构与加速器异构性来搜索训练并行策略。该工作填补了两类场景交叉处的空白，为异构集群上的MoE训练提供可用的自动规划方案。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "MoE expert parallelism",
+      "matched_requirement_id": "req-5",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2609.39138v1",
+      "source": "arxiv",
+      "title": "MoSE: Mode-Switching Expander for Mixed LLM Training and Inference",
+      "abstract": "AI clusters increasingly run large language model (LLM) inference and training on the same fabric. Prefill-decode (P-D) disaggregation creates key-value (KV) cache transfers between prefill and decode groups, whereas training collectives and all-to-all traffic benefit from near-uniform global connectivity. A static sparse topology can therefore be poorly matched to one of the two traffic patterns. We present Mode-Switching Expander (MoSE), a reconfigurable expander that treats topology design as a fixed-degree edge-allocation problem. MoSE reallocates the same sparse edge budget toward direct P-D connectivity in inference-heavy modes and restores a uniform random regular expander in training-heavy modes. We evaluate MoSE using a 1024-group flow-level topology model, shortest-path routing, and two mixed workloads. Across 20 seeds, MoSE reduces average and 95th-percentile (P95) load-aware KV communication cost by 90.8\\% and 91.9\\% relative to Static-Training in the inference-heavy mode. In the training-heavy mode, it reduces average and P95 training communication cost by 22.7\\% and 27.6\\% relative to stale Static-Inference. These results show that coarse-grained topology switching can support both workload modes without additional ports or routing changes.",
+      "authors": [
+        "Fan Yang",
+        "Ying Zhou",
+        "Binglei Wang",
+        "Zhenjie Zhou",
+        "Jialong Li"
+      ],
+      "primary_category": "cs.NI",
+      "categories": [
+        "cs.NI"
+      ],
+      "published": "2026-09-30T07:05:48+00:00",
+      "link": "https://arxiv.org/pdf/2609.39138v1",
+      "tags": [
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "reconfigurable expander topology matching training collectives and all-to-all traffic",
+      "llm_evidence_cn": "可重构扩展器拓扑以匹配训练集合通信与all-to-all流量",
+      "llm_evidence": "可重构扩展器拓扑以匹配训练集合通信与all-to-all流量",
+      "canonical_evidence": "可重构扩展器拓扑以匹配训练集合通信与all-to-all流量",
+      "llm_tldr_en": "Clusters run LLM training and inference on one fabric, but a static sparse topology suits only one traffic pattern. MoSE reallocates a fixed edge budget between P-D connectivity and a uniform expander depending on mode.",
+      "llm_tldr_cn": "AI集群越来越多地在同一网络上同时运行大模型训练与推理，预填充-解码解耦带来KV缓存传输，而训练集合通信与all-to-all流量更需要近似均匀的全局连接，静态稀疏拓扑难以同时适配两种流量模式。作者提出模式切换扩展器MoSE，把拓扑设计建模为固定度数边分配问题，在推理为主时把边预算倾向直接P-D连接，在训练为主时恢复均匀随机正则扩展器。基于1024组流级拓扑的评估显示了该方案对混合负载的适配能力。它为训练推理共存的集群网络提供了拓扑感知的调度思路。",
+      "llm_tldr": "AI集群越来越多地在同一网络上同时运行大模型训练与推理，预填充-解码解耦带来KV缓存传输，而训练集合通信与all-to-all流量更需要近似均匀的全局连接，静态稀疏拓扑难以同时适配两种流量模式。作者提出模式切换扩展器MoSE，把拓扑设计建模为固定度数边分配问题，在推理为主时把边预算倾向直接P-D连接，在训练为主时恢复均匀随机正则扩展器。基于1024组流级拓扑的评估显示了该方案对混合负载的适配能力。它为训练推理共存的集群网络提供了拓扑感知的调度思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "topology-aware scheduling",
+      "matched_requirement_id": "req-2",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "8plus"
+    },
+    {
+      "id": "2610.14935v1",
+      "source": "arxiv",
+      "title": "BSIPipe: Bidirectional Sequence-Level Interleaved Pipeline Parallelism for Long-Sequence Large Language Model Training",
+      "abstract": "Pipeline parallelism has become a critical technique for training large language models. To address the throughput limitation of existing sequence-level methods that schedule subsequences unidirectionally, we propose bidirectional sequence-level interleaved pipeline parallelism (BSIPipe), which co-schedules two opposing V-shaped interleaved pipelines at the subsequence level. To bound the activation accumulation from subsequence scaling, BSIPipe introduces a basic-unit concatenation mechanism that keeps activation memory invariant to the subsequence count. To eliminate communication deadlock risk from bidirectional scheduling, BSIPipe employs a communication optimization strategy that combines topology-aware device mapping with communication-computation overlap. In addition, BSIPipe composes with tensor parallelism to overcome the memory limitation of single-dimensional parallelism, neutralizing its bidirectional memory overhead while maintaining throughput. Experiments on GPT and LLaMA3 demonstrate that BSIPipe achieves average speedups of 1.11$\\times$ to 1.13$\\times$ in long-sequence training over SOTA sequence-level baselines.",
+      "authors": [
+        "Yuzhou Ni",
+        "Ling Chen"
+      ],
+      "primary_category": "cs.LG",
+      "categories": [
+        "cs.LG",
+        "cs.DC"
+      ],
+      "published": "2026-10-10T14:08:00+00:00",
+      "link": "https://arxiv.org/pdf/2610.14935v1",
+      "tags": [
+        "keyword:CCL"
+      ],
+      "llm_score": 7.0,
+      "llm_evidence_en": "communication optimization strategy combining topology-aware scheduling to avoid bidirectional pipeline deadlock",
+      "llm_evidence_cn": "结合拓扑感知调度的通信优化策略以消除双向流水死锁",
+      "llm_evidence": "结合拓扑感知调度的通信优化策略以消除双向流水死锁",
+      "canonical_evidence": "结合拓扑感知调度的通信优化策略以消除双向流水死锁",
+      "llm_tldr_en": "BSIPipe co-schedules two opposing V-shaped interleaved pipelines at subsequence level and uses topology-aware communication optimization to avoid deadlock in long-sequence LLM training.",
+      "llm_tldr_cn": "现有序列级流水并行单向调度子序列，导致大模型长序列训练吞吐受限。BSIPipe提出双向序列级交错流水并行，共同调度两个相对的V形交错流水，并用基本单元拼接机制使激活内存不随子序列数增长。为消除双向调度带来的通信死锁风险，它采用结合拓扑感知的通信优化策略。该工作提升了长序列大模型训练的吞吐与可行性，为分布式训练通信调度提供参考。",
+      "llm_tldr": "现有序列级流水并行单向调度子序列，导致大模型长序列训练吞吐受限。BSIPipe提出双向序列级交错流水并行，共同调度两个相对的V形交错流水，并用基本单元拼接机制使激活内存不随子序列数增长。为消除双向调度带来的通信死锁风险，它采用结合拓扑感知的通信优化策略。该工作提升了长序列大模型训练的吞吐与可行性，为分布式训练通信调度提供参考。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "topology-aware scheduling",
+      "matched_requirement_id": "req-2",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "7"
+    },
+    {
+      "id": "2610.01265v1",
+      "source": "arxiv",
+      "title": "RapidMoE: Exploiting Cross-Asymmetry via Adaptive Residual Offloading for Large-Scale MoE Inference",
+      "abstract": "The widespread adoption of Mixture-of-Experts (MoE) has created a growing need for deployment on heterogeneous platforms. However, it exposes a fundamental mismatch between the algorithmic demands of large-scale MoE and the disparate characteristics of hardware.Existing CPU-GPU hybrid inference systems fail to resolve this as they either encounter PCIe bandwidth bottlenecks when loading experts to GPUs, or rely heavily on CPU computation. Consequently, this leads to low resource utilization and inevitable violations of fixed latency budgets as parameters scale. In this paper, we identify and exploit Cross-Asymmetry--a structural alignment between the algorithmic workload skew of MoE routing and the physical disparity of heterogeneous hardware. To this end, we introduce RapidMoE, a residual offloading system for efficient large-scale MoE inference. We propose how RapidMoE leverages a residual-split framework to enable offloading paradigm shift from expert-level to bit-level, which unfolds across three key dimensions: (1) data representation, enabling compact and decoupled storage; (2) routing strategy, partitioning computation into dual paths aligned with hardware capabilities; (3) execution parallelism, scheduling a balanced storage-compute workload across devices. We further employ a novel Unified Multi-Level Importance Arbitration to adaptively adjust the critical expert set at runtime, ensuring the accuracy-latency Pareto frontier. These innovations exploit inherent cross-asymmetry, fundamentally breaking the algorithm-hardware misalignment. Experimental results show that RapidMoE achieves up to 3.5x speedup in decoding and 2.1x speedup in prefill compared to state-of-the-art (SOTA) offloading systems.",
+      "authors": [
+        "Wenxun Wang",
+        "Likai Ma",
+        "Zongle Huang",
+        "Chen Tang",
+        "Yongpan Liu"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC"
+      ],
+      "published": "2026-10-01T08:02:24+00:00",
+      "link": "https://arxiv.org/pdf/2610.01265v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "Adaptive residual offloading for large-scale MoE inference exploiting cross-asymmetry between routing skew and hardware disparity",
+      "llm_evidence_cn": "利用路由偏斜与硬件差异的交叉非对称性进行大规模MoE推理自适应残差卸载",
+      "llm_evidence": "利用路由偏斜与硬件差异的交叉非对称性进行大规模MoE推理自适应残差卸载",
+      "canonical_evidence": "利用路由偏斜与硬件差异的交叉非对称性进行大规模MoE推理自适应残差卸载",
+      "llm_tldr_en": "CPU-GPU hybrid MoE inference suffers PCIe bandwidth bottlenecks or CPU compute limits. RapidMoE identifies cross-asymmetry between MoE routing skew and hardware disparity, and uses adaptive residual offloading to raise utilization under fixed latency budgets.",
+      "llm_tldr_cn": "大规模MoE在异构平台上部署时，CPU-GPU混合推理系统要么因加载专家遭遇PCIe带宽瓶颈，要么过度依赖CPU计算，导致资源利用率低并违反固定延迟预算。本文识别出MoE路由的工作负载偏斜与硬件性能差异之间存在结构性对齐的交叉非对称性，并据此提出自适应残差卸载方法。实验表明该方法提升了异构资源利用率并在参数扩展时维持延迟预算，为专家放置与卸载协同优化提供了新思路。",
+      "llm_tldr": "大规模MoE在异构平台上部署时，CPU-GPU混合推理系统要么因加载专家遭遇PCIe带宽瓶颈，要么过度依赖CPU计算，导致资源利用率低并违反固定延迟预算。本文识别出MoE路由的工作负载偏斜与硬件性能差异之间存在结构性对齐的交叉非对称性，并据此提出自适应残差卸载方法。实验表明该方法提升了异构资源利用率并在参数扩展时维持延迟预算，为专家放置与卸载协同优化提供了新思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to overlap communication with computation and optimize expert placement?",
+      "matched_requirement_id": "req-7",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.01380v1",
+      "source": "arxiv",
+      "title": "GPU-Initiated Communication: Dissecting Down to the Bone",
+      "abstract": "GPU-initiated communication lets GPU threads post RDMA operations directly to the NIC. It underpins NVSHMEM, NCCL GIN, and DeepEP, which serve the fine-grained, latency-critical communication of Mixture-of-Experts (MoE) models, yet its performance characteristics and optimizations remain scarcely documented beyond source code, and library comparisons fail to separate the costs of the hardware mechanism from those of the library around it.   This paper dissects GPU-initiated communication at the GPU-NIC boundary. We first detail the GPU-side network path: queue placement, work-request construction, doorbell ordering, and completion semantics. We then introduce mini-gda and mini-proxy, minimal transports for the GPU and CPU-proxy submission paths, and measure them alongside NVSHMEM IBGDA, NCCL GIN, DeepEP, UCCL-EP, MSCCL++, and fabric-lib on NVIDIA H100, H200, B200, and GB200 platforms. A minimal GPU path issues an operation in 0.7 $μ$s and completes in 4.0 $μ$s; libraries add up to 4.6 $μ$s of issue time through queue management, memory ordering, and completion scope, and issue time scales with the SM clock. A tuned CPU proxy matches or beats the GPU path at idle, at the cost of a dedicated core whose operating state sets its latency and throughput. On either path, sharing a queue with bulk traffic raises latency by one to three orders of magnitude. Reaching the 260 M msg/s ceiling of our InfiniBand platform requires doorbell batching and queue parallelism, and both have resource costs: communication code can reduce GPU block residency even when unused, and all-to-all traffic loses 59% of its NIC message rate at about 3,000 active connections. The submission path alone therefore does not predict communication performance. Our experiment code and results are available at https://github.com/ParCoreLab/Dissecting-GPU-Communication-Experiments.",
+      "authors": [
+        "Javid Baydamirli",
+        "Ismayil Ismayilov",
+        "Kaan Oktay",
+        "Didem Unat"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.NI",
+        "cs.PF"
+      ],
+      "published": "2026-10-01T09:46:08+00:00",
+      "link": "https://arxiv.org/pdf/2610.01380v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "GPU-initiated communication underpinning NVSHMEM, NCCL GIN and DeepEP for MoE fine-grained traffic",
+      "llm_evidence_cn": "支撑NVSHMEM、NCCL GIN与DeepEP的GPU发起通信机制剖析",
+      "llm_evidence": "支撑NVSHMEM、NCCL GIN与DeepEP的GPU发起通信机制剖析",
+      "canonical_evidence": "支撑NVSHMEM、NCCL GIN与DeepEP的GPU发起通信机制剖析",
+      "llm_tldr_en": "The paper dissects GPU-initiated communication at the GPU-NIC boundary, separating hardware mechanism costs from library overhead for MoE fine-grained communication stacks.",
+      "llm_tldr_cn": "针对GPU发起通信虽支撑NVSHMEM、NCCL GIN与DeepEP等MoE细粒度低时延通信却缺乏公开性能刻画的问题，本文在GPU与网卡边界上逐层剖析其网络路径，包括队列放置、工作请求构造、门铃顺序与完成语义。作者实现mini-gda与mini-proxy两种最小传输路径，将硬件机制开销与库层开销分离测量。结果揭示了现有库比较中被混淆的成本来源，为集合通信与MoE专家并行的底层通信优化提供了可复用的分析基础。",
+      "llm_tldr": "针对GPU发起通信虽支撑NVSHMEM、NCCL GIN与DeepEP等MoE细粒度低时延通信却缺乏公开性能刻画的问题，本文在GPU与网卡边界上逐层剖析其网络路径，包括队列放置、工作请求构造、门铃顺序与完成语义。作者实现mini-gda与mini-proxy两种最小传输路径，将硬件机制开销与库层开销分离测量。结果揭示了现有库比较中被混淆的成本来源，为集合通信与MoE专家并行的底层通信优化提供了可复用的分析基础。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "8plus"
+    },
+    {
+      "id": "2610.05305v1",
+      "source": "arxiv",
+      "title": "Characterizing Parallelism Strategies in LLM Inference: Fundamental Compute-Communication Trade-offs",
+      "abstract": "Large Language Model (LLM) inference has become the dominant workload in modern AI systems, requiring serving infrastructures to maximize throughput while meeting strict latency Service-Level Objectives (SLOs). Since state-of-the-art LLMs exceed the compute and memory capacity of a single GPU, inference is commonly distributed across multiple GPUs using tensor parallelism (TP), pipeline parallelism (PP), or hybrid parallelism (HB). However, selecting the most effective parallelism strategy remains challenging due to complex interactions among computation, communication, pipeline utilization, sequence length, batch size, and model architecture. Existing approaches largely rely on empirical evaluation and provide limited analytical insight into the trade-offs among these strategies, particularly across the distinct prefill and decoding phases of inference. In this paper, we present a unified analytical framework for modeling distributed LLM inference under TP, PP, and HB. The framework decomposes end-to-end latency into computation, inter-GPU communication, and pipeline bubble overhead, and derives analytical models that capture TP collective communication, PP point-to-point communication, and pipeline utilization as functions of hardware, model, and workload characteristics. The model further characterizes the differing execution behavior of prefill and decoding, explaining why PP-oriented configurations favor compute-intensive prefill while TP-oriented configurations reduce decoding latency by eliminating pipeline bubbles. Experiments with modern LLMs on multi-GPU platforms validate the model and confirm the fundamental compute-communication trade-off across parallelism strategies. The framework provides practical guidance for parallelism selection, capacity planning, and optimization of future LLM serving systems.",
+      "authors": [
+        "Javad Mirzaei",
+        "Jeebak Mitra"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.AI",
+        "cs.LG",
+        "cs.PF"
+      ],
+      "published": "2026-10-04T15:28:50+00:00",
+      "link": "https://arxiv.org/pdf/2610.05305v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "Characterizing compute-communication trade-offs across tensor, pipeline and hybrid parallelism for LLM inference",
+      "llm_evidence_cn": "刻画LLM推理中张量、流水线与混合并行的计算通信权衡",
+      "llm_evidence": "刻画LLM推理中张量、流水线与混合并行的计算通信权衡",
+      "canonical_evidence": "刻画LLM推理中张量、流水线与混合并行的计算通信权衡",
+      "llm_tldr_en": "Choosing a parallelism strategy for LLM inference is hard due to coupled compute, communication and pipeline effects. This paper characterizes fundamental compute-communication trade-offs across TP, PP and hybrid parallelism, offering analytical guidance beyond empirical tuning.",
+      "llm_tldr_cn": "大模型推理需跨多GPU分布式部署，张量并行、流水线并行与混合并行的选择受计算、通信、流水线利用率、序列长度与批量大小等多因素耦合影响，现有方法多依赖经验评测而缺乏分析。本文系统刻画不同并行策略下的计算-通信权衡关系，给出理论分析框架。研究为推理服务系统的并行策略选择与通信优化提供了可解释的指导依据。",
+      "llm_tldr": "大模型推理需跨多GPU分布式部署，张量并行、流水线并行与混合并行的选择受计算、通信、流水线利用率、序列长度与批量大小等多因素耦合影响，现有方法多依赖经验评测而缺乏分析。本文系统刻画不同并行策略下的计算-通信权衡关系，给出理论分析框架。研究为推理服务系统的并行策略选择与通信优化提供了可解释的指导依据。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to optimize collective communication for distributed LLM training and inference?",
+      "matched_requirement_id": "req-9",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    }
+  ]
+}

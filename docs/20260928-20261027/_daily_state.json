@@ -1,0 +1,409 @@
+{
+  "date": "20260928-20261027",
+  "date_label": "2026-09-28 ~ 2026-10-27",
+  "generated_at": "2026-10-27 08:16:39 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2609.35481v1",
+      "route": "20260928-20261027/2609.35481v1-topoep-topology-aware-load-balancing-for-expert-parallel-moe-training",
+      "title": "TopoEP: Topology-Aware Load Balancing for Expert-Parallel MoE Training",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 10.0,
+      "evidence": "面向专家并行MoE训练的GPU原生拓扑感知负载均衡",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.03415v1",
+      "route": "20260928-20261027/2610.03415v1-railwave-adaptive-spatial-and-temporal-scheduling-for-expert-parallel-communication",
+      "title": "RailWave: Adaptive Spatial and Temporal Scheduling for Expert-Parallel Communication",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 10.0,
+      "evidence": "面向专家并行All-to-All通信的阶段自适应时空流量整形",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.09372v1",
+      "route": "20260928-20261027/2610.09372v1-expert-coupling-in-moe-pretraining-reducing-all-to-all-overhead-with-correlated-placement-and-token-shuffling",
+      "title": "Expert Coupling in MoE Pretraining: Reducing All-to-All Overhead with Correlated Placement and Token Shuffling",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 10.0,
+      "evidence": "通过相关专家放置与token重排降低MoE专家并行中的All-to-All开销",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.14798v1",
+      "route": "20260928-20261027/2610.14798v1-accelerating-moe-training-through-expert-placement-and-replica-coordination",
+      "title": "Accelerating MoE Training through Expert Placement and Replica Coordination",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 10.0,
+      "evidence": "联合专家放置与副本协调以降低MoE训练中的All-to-All通信与负载不均",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.34334v1",
+      "route": "20260928-20261027/2609.34334v1-hoccl-offloading-collective-communication-from-gpu-cores-to-accelerate-distributed-training",
+      "title": "HOCCL: Offloading Collective Communication from GPU Cores to Accelerate Distributed Training",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "将集合通信从SM卸载到DMA引擎以加速分布式训练",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.34340v1",
+      "route": "20260928-20261027/2609.34340v1-variopath-workload-aware-all-to-all-communication-for-pcie-gpu-clusters",
+      "title": "VarioPath: Workload-Aware All-to-All Communication for PCIe GPU Clusters",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "在PCIe GPU集群上为MoE推理优化All-to-All的工作负载感知AllToAllv调度",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.36070v1",
+      "route": "20260928-20261027/2609.36070v1-mixture-of-kittens-moe-megakernel-for-nvl72s",
+      "title": "Mixture-of-Kittens: MoE Megakernel for NVL72s",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "面向NVL72的MoE训练系统，按算子选择push或pull通信并重构通信计算重叠",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.36954v1",
+      "route": "20260928-20261027/2609.36954v1-purlin-separating-orchestration-from-the-datapath-of-collectives",
+      "title": "Purlin: Separating Orchestration from the Datapath of Collectives",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "分离编排与数据通路的scale-up集合通信框架",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.36959v1",
+      "route": "20260928-20261027/2609.36959v1-cobalt-leveraging-expert-co-activation-for-efficient-distributed-moe-training",
+      "title": "Cobalt: Leveraging Expert Co-activation for Efficient Distributed MoE Training",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "利用专家共激活共享 All-to-All 通信并缓解 MoE 训练专家负载不均",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.40093v1",
+      "route": "20260928-20261027/2609.40093v1-efficient-expert-parallel-communication-on-pcie-connected-consumer-gpus",
+      "title": "Efficient Expert-Parallel Communication on PCIe-Connected Consumer GPUs",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "面向PCIe消费级GPU的专家并行MoE通信优化，规避CPU中转的NCCL传输",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.00671v1",
+      "route": "20260928-20261027/2610.00671v1-megaflux-skew-resilient-moe-megakernels-via-pipelined-expert-replication",
+      "title": "MegaFlux: Skew-Resilient MoE Megakernels via Pipelined Expert Replication",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "运行时专家复制与流水化通信以消除MoE路由倾斜",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.03203v1",
+      "route": "20260928-20261027/2610.03203v1-afore-attention-ffn-disaggregation-with-overlapped-reconfiguration-of-experts",
+      "title": "AFORE: Attention-FFN Disaggregation with Overlapped Reconfiguration of Experts",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "专家并行MoE服务中的专家负载不均衡与及时重配置",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.07098v1",
+      "route": "20260928-20261027/2610.07098v1-t-ccl-resource-efficient-and-performant-collective-communication-using-tensor-memory-accelerator",
+      "title": "T-CCL: Resource Efficient and Performant Collective Communication using Tensor Memory Accelerator",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "降低SM占用并支持通信计算并发的集合通信库",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.07333v1",
+      "route": "20260928-20261027/2610.07333v1-memory-efficient-expert-routing-for-distributed-moe-training",
+      "title": "Memory-Efficient Expert Routing for Distributed MoE Training",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "环形MoE分发替代全量all-to-all缓冲并与计算重叠",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.09424v2",
+      "route": "20260928-20261027/2610.09424v2-democratizing-moe-inference-on-commodity-gpus-with-comoe",
+      "title": "Democratizing MoE inference on commodity GPUs with CoMoE",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "在带宽受限消费级GPU上的通信高效专家并行MoE推理",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.11158v2",
+      "route": "20260928-20261027/2610.11158v2-zepp-accelerating-distributed-moe-serving-under-relaxed-balance-constraints",
+      "title": "Zepp: Accelerating Distributed MoE Serving under Relaxed Balance Constraints",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "在松弛负载均衡约束下优化专家并行MoE服务的瓶颈通信",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.15704v1",
+      "route": "20260928-20261027/2610.15704v1-dualcoll-throughput-optimal-bandwidth-bound-collective-communications-via-fractional-tree-packing",
+      "title": "DualColl: Throughput-Optimal Bandwidth-Bound Collective Communications via Fractional Tree Packing",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "带宽受限集合通信吞吐最优，通过分数树打包直接优化AllReduce",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.37828v1",
+      "route": "20260928-20261027/2609.37828v1-joint-effects-of-gpu-server-topology-parallelism-and-congestion-control-on-moe-inference-a-controlled-simulation-study",
+      "title": "Joint Effects of GPU Server Topology, Parallelism, and Congestion Control on MoE Inference: A Controlled Simulation Study",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "研究GPU拓扑、TP/EP划分与集合通信算法对MoE推理时延的影响",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.39138v1",
+      "route": "20260928-20261027/2609.39138v1-mose-mode-switching-expander-for-mixed-llm-training-and-inference",
+      "title": "MoSE: Mode-Switching Expander for Mixed LLM Training and Inference",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "可重构扩展器拓扑以匹配训练集合通信与all-to-all流量",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.01380v1",
+      "route": "20260928-20261027/2610.01380v1-gpu-initiated-communication-dissecting-down-to-the-bone",
+      "title": "GPU-Initiated Communication: Dissecting Down to the Bone",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "支撑NVSHMEM、NCCL GIN与DeepEP的GPU发起通信机制剖析",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.36662v1",
+      "route": "20260928-20261027/2609.36662v1-autoloco-communication-efficient-distributed-llm-training-via-adaptive-synchronization",
+      "title": "AutoLoCo: Communication Efficient Distributed LLM Training via Adaptive Synchronization",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 7.0,
+      "evidence": "自适应同步间隔以降低分布式大模型训练的通信开销",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.14935v1",
+      "route": "20260928-20261027/2610.14935v1-bsipipe-bidirectional-sequence-level-interleaved-pipeline-parallelism-for-long-sequence-large-language-model-training",
+      "title": "BSIPipe: Bidirectional Sequence-Level Interleaved Pipeline Parallelism for Long-Sequence Large Language Model Training",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 7.0,
+      "evidence": "结合拓扑感知调度的通信优化策略以消除双向流水死锁",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2609.39350v1",
+      "route": "20260928-20261027/2609.39350v1-hapmoe-heterogeneity-aware-automatic-parallelism-planning-for-mixture-of-experts-models-training",
+      "title": "HAPMoE: Heterogeneity-Aware Automatic Parallelism Planning for Mixture-of-Experts Models Training",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "异构集群上MoE训练的自动并行规划",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.01265v1",
+      "route": "20260928-20261027/2610.01265v1-rapidmoe-exploiting-cross-asymmetry-via-adaptive-residual-offloading-for-large-scale-moe-inference",
+      "title": "RapidMoE: Exploiting Cross-Asymmetry via Adaptive Residual Offloading for Large-Scale MoE Inference",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "利用路由偏斜与硬件差异的交叉非对称性进行大规模MoE推理自适应残差卸载",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    },
+    {
+      "paper_id": "2610.05305v1",
+      "route": "20260928-20261027/2610.05305v1-characterizing-parallelism-strategies-in-llm-inference-fundamental-compute-communication-trade-offs",
+      "title": "Characterizing Parallelism Strategies in LLM Inference: Fundamental Compute-Communication Trade-offs",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "刻画LLM推理中张量、流水线与混合并行的计算通信权衡",
+      "first_seen_at": "2026-10-27 08:16:39 UTC",
+      "updated_at": "2026-10-27 08:16:39 UTC"
+    }
+  ]
+}
