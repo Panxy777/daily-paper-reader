@@ -1,0 +1,539 @@
+Title: INC-MoE: Overlapping In-Network Collectives and Expert Computation for Expert-Parallel Mixture-of-Experts Inference
+
+URL Source: https://arxiv.org/pdf/2610.36339v1
+
+Published Time: Wed, 28 Oct 2026 00:25:20 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# INC-MoE: Overlapping In-Network Collectives and Expert Computation for Expert-Parallel Mixture-of-Experts Inference 
+
+John Stephan 1∗ 
+
+, Razvan Puscasu 1, Xu Yong 2, Ding Jiutao 1, Guan Zixuan 21Huawei, Switzerland 
+
+> 2
+
+Huawei, Beijing, China 
+
+Abstract 
+
+In expert-parallel mixture-of-experts (MoE) serving, expert computation in each MoE layer is preceded by dispatch and followed by combine, both of which lie on the critical path: tokens must be dispatched to the accelerators that host their selected experts, and the expert outputs must be combined back at the token’s owner. The cost of these collectives can dominate layer latency, particularly in multi-node deployments, where inter-node bandwidth is far below intra-node bandwidth. We present INC-MoE, an expert-parallel MoE layer for the scale-out setting that offloads both communication phases to the network switch and overlaps them with each other and with expert computation inside a single persistent kernel. INC-MoE expresses dispatch as an in-network AllGather, realized by switch-side multicast, and combine as an in-network ReduceScatter, realized by switch-side reduction. We implement both collectives with message semantics, as message exchanges between the end hosts and the switch, and show that because the in-network AllGather and ReduceScatter load opposite directions of each link, running them concurrently reduces the bandwidth-bound communication time by N −22( N −1) relative to concurrent ring-based collectives, i.e., by 33% for four ranks and 43% for eight. On each end host, a single kernel partitions the tokens of a layer into bands and processes them through a three-stage AllGather–feed-forward network (FFN)–ReduceScatter pipeline. At steady state, role-specialized thread blocks gather the next band, execute expert computation on the current band, and reduce the previous band concurrently, thereby overlapping both collectives with each other and with computation, using entirely device-side synchronization. INC-MoE is a drop-in replacement for the MoE layer of vLLM. We evaluate it on a testbed that emulates a four-node scale-out deployment, in which a dedicated accelerator emulates an in-network computing (INC) switch. On prefill of OLMoE with four-way expert parallelism, INC-MoE reduces time to first token (TTFT) by up to 33% and increases throughput by up to 50% relative to vLLM’s default collective path, while matching its outputs. 
+
+# 1 Introduction 
+
+Mixture-of-Experts (MoE) architectures [10, 20, 28] decouple a model’s parameter count from its per-token compute by routing each token to a small subset of k expert feed-forward networks (FFNs) out of E. This sparsity has made MoE widely adopted in large language models [9, 24]. For large MoE models and throughput-oriented deployments, experts are often partitioned across multiple accelerators, potentially spanning multiple nodes, using expert parallelism (EP). Every MoE layer must then first deliver each token to the accelerators that host its selected experts ( dispatch ) and afterwards bring the weighted expert outputs back to the accelerator that owns the token ( combine ). 
+
+> ∗
+
+Correspondence to: john.stephan@huawei.com 
+
+1arXiv:2610.36339v1 [cs.DC] 26 Oct 2026 Both steps sit on the critical path of every layer, and the share of time they consume grows with the degree of EP [5, 31]. In the data-parallel attention plus expert-parallel FFN configuration used by serving engines such as vLLM [18], dispatch and combine are commonly expressed as two collectives: an AllGather 
+
+(AG ) that makes every rank’s tokens visible to every other rank, and a ReduceScatter (RS ) that sums the partial expert outputs computed on each rank and returns to every rank the rows of its own tokens [4]. In the default implementation, the MoE layer executes in three sequential stages: an AG issued through the platform’s collective library [1, 2], a sequence of MoE compute kernels (e.g., alignment/permutation, two grouped GEMMs with an activation in between), and an RS .In the inter-node regime, where inter-node bandwidth is much lower than intra-node bandwidth, communication can account for a substantial fraction of MoE layer latency, making the layer communication-bound. This paper starts from two observations. First, the AG and RS formulation of dispatch and combine maps naturally to operations supported by a switch capable of in-network computing (INC): AllGather can be implemented through multicast, and ReduceScatter through reduction. INC for collectives has a long history in HPC [8, 12] and distributed training [19, 27], where it has been applied mostly to all-reduce invoked as a standalone collective (Section 2.3). Recent work has also explored in-switch support for MoE communication [30]. Second, offloading the collectives alone is not enough. In the bandwidth-bound regime, an in-network AG or RS taken in isolation completes in the same time as its ring counterpart, which is already bandwidth-optimal [6]: it still saturates one direction of each end host’s link (Section 3.2). The two in-network collectives, however, saturate opposite directions, so running them concurrently uses both directions of every link at once. By contrast, overlapping ring AG and RS does not reduce their combined bandwidth-bound communication time, since each collective already saturates both directions. Realizing this gain requires restructuring the MoE layer so that the AG and the RS are in flight at the same time, and so that expert computation proceeds while both are running. We present INC-MoE, an EP MoE layer for the scale-out setting built on these observations. INC-MoE offloads dispatch and combine to in-network AG and RS , and fuses the two collectives with expert computation into one persistent kernel that pipelines all three phases at sub-layer granularity. The tokens of the layer are split into bands ; while the expert FFN runs on one band, the switch is gathering the next band and reducing the previous one. Making this overlap effective raises three challenges that shape our design: 1. Fine-grained in-network collectives. The AG and RS must be issued and completed directly from device code at band granularity, with consistent message layouts and band boundaries across ranks despite unequal per-rank token counts. 2. Device-side synchronization. Gather, compute, and reduce thread blocks must coordinate data dependencies while progressing independently, and reductions must remain synchronized across ranks without introducing unnecessary serialization. 3. Pipeline balance and tail overhead. The relative costs of gathering, computing, and reducing vary with the workload, requiring an appropriate choice of band size and thread-block allocation. Moreover, the loss of overlap during pipeline fill and drain must be mitigated to minimize exposed communication latency. We prototype the switch on a dedicated accelerator that emulates an INC-capable switch. The end-host kernel depends on the switch only through the message interface of Section 3.1, so it is unchanged by this choice. 224K 32K 48K 52K 64K 98K 126K    
+
+> Tokens / accelerator
+> 0123456
+> TTFT (s)
+> 1.091 1.449 2.159 2.339 2.854 4.222 5.623 0.871 1.106 1.572 1.693 2.027 3.079 3.761
+> 20.16% 23.67% 27.19% 27.62% 28.98% 27.07% 33.11%
+> AG+RS (baseline) Ours
+
+Figure 1: Time to first token (TTFT) of OLMoE-1B-7B prefill in vLLM with four-way data-parallel attention and four-way expert parallelism in an emulated four-node deployment, as a function of the number of prompt tokens per accelerator. The baseline is vLLM’s default expert-parallel path, in which a ring AllGather and ReduceScatter are issued through the default collective library and surround the MoE compute kernels. INC-MoE executes both collectives in the network and overlaps them with each other and with expert computation in a single band-pipelined kernel. Percentages give the TTFT reduction, ( tbase − tours )/t base , which ranges from 20.2% at 24K tokens to 33.1% at 126K tokens. 
+
+Contributions. This paper makes the following contributions: • In-network AG and RS with message semantics. We design and implement in-network AllGather and ReduceScatter as message exchanges between end hosts and the switch. The AG 
+
+is built from rooted multicasts, and the RS from rooted in-network reductions followed by a local final reduction at the root. Both sides are implemented: a client library through which accelerators issue and complete the collectives from device code, and a switch-side service that replicates and reduces message payloads. We show that overlapping the two in-network collectives reduces the bandwidth-bound communication time from 2( N −1)  
+
+> N
+
+· SBW for ring collectives to SBW ,an improvement of N −22( N −1) , which is 33.3% for N =4 and 42.9% for N =8 (Sections 3.1 and 3.2). • A fused kernel that makes the two collectives overlap. The bound above is attained only when an AG and an RS are in flight at the same time, but within an MoE layer they are strictly dependent: the RS needs the FFN output, which in turn needs the AG . We break this dependency chain by splitting the layer’s tokens into bands and fusing AG , expert FFN, and RS 
+
+into one persistent kernel whose thread blocks are specialized into gather, compute, and reduce roles. At steady state, the AG of one band, the FFN of a second, and the RS of a third can run concurrently, so the two collectives overlap with each other and with expert computation. The FFN writes its router-weighted output directly into the RS send buffer, and the reduced output is handed to the serving engine in place, so no copy separates computation from communication. Because the overlap vanishes once the last AG completes, gather blocks then join the reduction of the final bands ( tail assistance ), shortening the part of the layer where the RS runs alone. • Integration and evaluation. INC-MoE is a drop-in replacement for vLLM’s MoE layer, requiring no changes to model definitions (Section 4). On OLMoE prefill with four-way EP, in a testbed that emulates four nodes and the INC switch (Section 5.1), it reduces TTFT by up to 33.1% and increases prefill throughput by up to 49.5% relative to vLLM’s default path (Figures 1 3and 7), with per-token cosine similarity of 1 .0 to the baseline across all layers and ranks. In a standalone benchmark with concurrent AllGather and ReduceScatter, the in-network collectives achieve 25.6–31.8% higher equivalent bandwidth than concurrently executed ring collectives (Section 5.2). 
+
+# 2 Background 
+
+2.1 MoE Layers and Expert Parallelism 
+
+An MoE layer replaces the dense FFN of a transformer block with E expert FFNs and a router. For a token with hidden state xt ∈ RH , the router selects a set K(t) of k experts with weights gt,e ,and the layer computes 
+
+yt = ∑
+
+> e∈K (t)
+
+gt,e FFN e(xt), FFN e(x) = W down 
+
+> e
+> (
+
+SiLU( W gate  
+
+> e
+
+x) ⊙ W up  
+
+> e
+
+x), (1) with W gate  
+
+> e
+
+, W up  
+
+> e
+
+∈ RI×H and W down  
+
+> e
+
+∈ RH×I . Under EP of degree N , rank r hosts a subset Er of 
+
+E/N experts. With data-parallel attention, rank r also owns a batch of Tr tokens, and different ranks may own different numbers of tokens. 
+
+2.2 Dispatch and Combine as AllGather and ReduceScatter 
+
+Dispatch and combine are commonly implemented with all-to-all exchanges [20, 32]. An alternative, used by vLLM’s default EP path and described in [4], expresses them with two regular collectives. The AG gives every rank the hidden states of all ∑ 
+
+> r
+
+Tr tokens. Each rank r then computes, for every token, the partial output 
+
+z(r) 
+
+> t
+
+= ∑
+
+> e∈K (t)∩E r
+
+gt,e FFN e(xt), (2) which is zero if none of the token’s experts is local. The RS sums z(r) 
+
+> t
+
+over r, which yields yt by Equation (1), and delivers to each rank the rows of the tokens it owns. 
+
+Payload efficiency. The AG sends each token to every other rank regardless of routing, whereas an ideal all-to-all that deduplicates per destination sends it only to ranks that host at least one of its experts. For top-k routing with k large relative to N , the two approaches differ little. Under uniform routing, the probability that a given rank hosts none of a token’s k experts is (E−E/N k
+
+> )
+
+/(Ek
+
+> )
+
+.For E=64, k=8 and N =4, this probability is 8 .5%, so a token is needed by 2 .74 of the 3 remote ranks in expectation, and the AG sends only about 9% more data than a fully deduplicated all-to-all. The same argument applies to the RS . What the AG /RS formulation gives up in payload, it repays with a regular and routing-independent communication pattern, which is what makes it amenable to switch offload. 
+
+2.3 In-network Collectives 
+
+In-network computing (INC) executes collective operations in the switches of the fabric rather than on the end hosts [12, 19, 27]. A switch that can replicate an incoming message to several output ports implements a multicast, and a switch that can combine the payloads of several incoming messages implements a reduction. Compared with collectives executed by the end hosts, in-network 4collectives reduce the number of times data crosses the end-host links, replace the dependent steps of ring and tree algorithms with a single pass through the switch, and move the reduction arithmetic off the end hosts. Prior work has applied INC mainly to all-reduce, both in HPC [8, 12] and in distributed training [11, 19, 21, 22, 27]. Only recently has INC been considered for the dispatch and combine of expert parallelism [30, 33], and, to our knowledge, it has not yet been applied to expert-parallel prefill across nodes within a serving engine, the setting INC-MoE targets. Section 3.1 describes how INC-MoE builds AG and RS from multicast and reduction, and Section 3.2 analyzes their cost for expert parallelism. 
+
+2.4 Device-initiated Communication 
+
+In the host-side APIs of conventional collective libraries [1–3, 23], collectives are launched from the host as separate operations, which forces the host to sequence communication and computation. Overlap is then limited to the granularity at which the host can split the work into separate launches, and every additional split adds launch overhead and cross-stream synchronization. Fine-grained pipelining therefore pays a growing fixed cost per stage: a host-driven version of the band pipeline in Section 3.3 would require, for each MoE layer, one AG and one RS launch per band, interleaved with the expert kernels and ordered by events. Device-initiated communication [14, 15] removes the host from this loop. A running kernel can post transfers, signal peers, and wait on completions itself, so communication starts as soon as the data it depends on has been produced, at whatever granularity the kernel chooses, and without returning control to the host [5, 32]. This makes it possible to place communication and computation in the same persistent kernel. INC-MoE relies on this capability to issue the in-network collectives of each band of tokens from the device, overlapping them with each other and with expert computation inside a single kernel launch per MoE layer. 
+
+# 3 Design of INC-MoE 
+
+Motivation. Figure 2 illustrates how an MoE layer executes under the default vLLM EP path. Two inefficiencies follow from this execution. First, the three stages are serialized: the FFN cannot start until the whole AG has completed, and the RS cannot start until the FFN has finished on every token, so the full communication time is exposed on the critical path. Second, the collectives run on the end hosts as ring algorithms, which load both directions of every link equally. Each collective therefore saturates the link on its own, and overlapping the AG with the RS does not shorten their combined time (see Section 3.2 and Section 5.2). 
+
+Figure 2: Execution of an MoE layer under the default EP path. Neither remedy suffices on its own. Offloading the collectives to the switch, by itself, leaves them serialized with each other and with the FFN. Overlapping endpoint collectives with computation, 5as in micro-batch overlap [29, 34] or fused kernels [5, 31], hides communication behind computation but does not shorten the communication itself. INC-MoE combines the two: the switch executes the collectives, which makes them overlappable with each other (Section 3.2), and the accelerator overlaps them with each other and with computation at the granularity of bands. 
+
+Overview. Figure 3 gives an overview of INC-MoE. The EP ranks reside on different nodes and communicate over the scale-out network through a switch. The layer receives the hidden states of the rank’s tokens and the router output (selected experts and weights) from the serving engine and returns the combined output for the same tokens. Internally, it launches one persistent kernel per MoE layer. The kernel’s thread blocks are divided into three roles: gather blocks issue in-network 
+
+AG s, compute blocks run the expert FFNs, and reduce blocks issue in-network RS s and complete them with a local reduction. The roles process the tokens band by band and hand data to each other through device memory. 
+
+Figure 3: Overview of INC-MoE: pipelined communication–computation overlap (AG/FFN and RS/FFN) and communication–communication overlap (AG/RS) across bands. Dedicated thread blocks are specialized for AG, FFN computation, and RS, enabling concurrent execution of communication and computation tasks. 
+
+3.1 In-Network AllGather and ReduceScatter with Message Semantics 
+
+INC-MoE implements the AG and RS with message semantics . End hosts never read or write each other’s memory. Every transfer is a message exchanged between an end host and the switch, and the switch is responsible for replicating and reducing message payloads. This contrasts with memory-semantic designs, in which each end host writes directly into the memory of its peers [5, 32]. Combining message semantics with in-network computing enables the switches to deliver one incoming message to several destinations or to combine several incoming messages into one, in the scale-out setting. Figure 4 contrasts the resulting collectives with the ring algorithms used by the default path. 6End-host interface. The end-host side of the collectives is a client library callable from device code. A thread block posts an AG or RS on a region of a registered buffer, continues with other work, and later waits on the completion of that request. Posting a request does not move data on the accelerator: the network interface reads the payload from the registered buffer, transmits it to the switch, and writes incoming payloads directly into registered memory. In our deployment, messages are carried over RoCEv2 [13, 17]. The accelerator’s thread blocks are thus only involved where data must be prepared before transmission or processed after reception. The library also provides a cross-rank barrier. Each message carries, besides its payload, information that the switch and the receiving end host need to process it (e.g., the operation, the root, the byte range of the payload within the registered buffer, the address at which the receiver must signal completion). The end-host code depends on the switch only through this interface, so the same kernel can target any switch that implements the AG and RS message semantics. 
+
+AllGather. The AG is built from rooted multicasts, one per rank. Each rank acts as the root for its own contribution: 1. The root sends its contribution to the switch as a single message. 2. The switch multicasts the message to the remaining N −1 ranks. 3. The network interface of each receiving rank writes the payload at the byte range given in the message and signals the completion address. All N ranks act as roots concurrently. A rank’s AG is complete once the contributions of the N −1remote roots have arrived. Its own contribution requires no network transfer. Each rank thus sends its contribution once, regardless of N , while a ring AG would forward the contributions of N −1ranks over N −1 sequential steps (Figure 4, top left). 
+
+ReduceScatter. The RS is built from rooted reductions, one per output shard. Each rank is the root of the shard that holds its own tokens: 1. The N −1 non-root ranks send their partial results for the root’s shard to the switch, chunk by chunk. 2. The switch reduces each chunk as soon as all N −1 non-root ranks have delivered it, reducing different chunks in parallel. 3. The switch forwards each reduced chunk to the root as soon as it is ready, so arrival, reduction, and forwarding are pipelined. 4. The root adds its own partial result to the aggregated result locally, obtaining the final shard, and signals completion. Each rank therefore participates in N rooted reductions: as a sender in the N −1 reductions rooted at the other ranks, and as the root of its own. Because the root keeps its own contribution local, a rank sends N −1 shards instead of all N , and the switch reduces N −1 contributions per shard instead of N . A rank receives a single already reduced shard, whereas a ring RS would receive and reduce N −1 partial shards on the end host, one per step (Figure 4, bottom left). 
+
+Data layout. Ranks own different numbers of tokens, but the byte ranges carried by messages must refer to the same elements on every rank. INC-MoE therefore lays out the gather and reduce buffers (on every rank) as N per-rank blocks of Tmax = max r Tr rows each, where rank r’s tokens 7occupy the first Tr rows of block r. The token counts of all ranks are known before the layer runs (vLLM tracks them for data-parallel execution), so every rank derives the same layout without exchanging metadata. 
+
+Concurrent operation. The band pipeline (Section 3.3) keeps several collectives in flight at once, for example the AG of one band and the RS of an earlier band, and issues collectives of the same kind back to back. Completion signals are cumulative and compared against monotonically increasing per-operation thresholds (epochs) rather than being reset between operations, which removes the race between a reset and a late signal from the previous operation. Ring: N −1 = 3 sequential steps INC: single step                                         
+
+> After step 1 After step 2 After step 3 R0
+> 0123
+> R1
+> 0123
+> R2
+> 0123
+> R3
+> 0123
+> R0
+> 0123
+> R1
+> 0123
+> R2
+> 0123
+> R3
+> 0123
+> R0
+> 0123
+> R1
+> 0123
+> R2
+> 0123
+> R3
+> 0123
+> INC switch: multicast R0
+> 0123
+> R1
+> 0123
+> R2
+> 0123
+> R3
+> 0123
+> AllGather
+> R0
+> 0123+
+> R1
+> 0123
+> +
+> R2
+> 0123
+> +
+> R3
+> 0123
+> +
+> R0
+> 0123
+> +
+> R1
+> 0123+
+> R2
+> 0123
+> +
+> R3
+> 0123
+> +
+> R0
+> 0123
+> +
+> R1
+> 0123
+> +
+> R2
+> 0123+
+> R3
+> 0123
+> +
+> INC switch: in-network reduction (Σ) R0
+> 0
+> +
+> 123
+> R1
+> 01
+> +
+> 23
+> R2
+> 012
+> +
+> 3
+> R3
+> 0123
+> +
+> ReduceScatter
+> Buffers show the state after each step Ri: rank i0–3: chunk index updated in this step
+> AG: not yet received held RS (contributions summed): 1234 (fully reduced)
+
+Figure 4: Ring vs. in-network (INC-MoE) AG (top) and RS (bottom) for N =4 ranks. Chunk r is rank r’s block of the gather/reduce buffer. Buffers show the state after each step. The ring needs 
+
+N −1 sequential steps, with a reduction on the receiving accelerator ( ⊕) in every RS step. INC-MoE completes each collective in a single step: the switch multicasts each root’s chunk for the AG , and for the RS it reduces the N −1 non-root contributions in the network (Σ), leaving the root a single local reduction with its own chunk. 
+
+3.2 Communication Cost 
+
+We now compare the in-network collectives with ring collectives executed by the end hosts in terms of communication cost. Let S denote the size in bytes of the full gathered buffer, so that each of the N ranks contributes S/N bytes to the AG and owns S/N bytes of the RS output. We assume full-duplex links with bandwidth BW per direction between each end host and the network, a switch that forwards and reduces at line rate, and messages large enough for the bandwidth term to dominate. Table 1 lists the bytes each rank sends and receives. 
+
+Each collective alone. A ring AG or RS sends and receives N −1 
+
+> N
+
+S bytes per rank and completes in N −1 
+
+> N
+
+· SBW . The in-network AG reduces the bytes a rank sends to SN , but every rank must still receive the N −1 
+
+> N
+
+S bytes of the other ranks. Symmetrically, the in-network RS reduces the bytes a rank receives to SN , but every rank must still send its N −1 
+
+> N
+
+S bytes of partial results. In the bandwidth-bound regime, each in-network collective taken alone therefore completes in the same time as its ring counterpart. Its benefits are the removal of the N −1 dependent ring steps and the 8Table 1: Per-rank traffic and bandwidth-bound time of AllGather and ReduceScatter for N ranks, in units of S (traffic) and S/BW (time), where S is the size of the full gathered buffer. The time of each configuration is set by the more heavily loaded link direction.                           
+
+> AllGather ReduceScatter AG + RS (overlap) Ring In-network Ring In-network Ring In-network Sent per rank N−1
+> N
+> 1
+> NN−1
+> NN−1
+> N
+> 2( N−1)
+> N1Received per rank N−1
+> NN−1
+> NN−1
+> N
+> 1
+> N
+> 2( N−1)
+> N1Time N−1
+> NN−1
+> NN−1
+> NN−1
+> N
+> 2( N−1)
+> N1
+
+reduction of the end-host arithmetic from N −1 partial shards to a single local addition at the root, which matter mainly for small messages and for the compute resources left to the FFN. 
+
+Overlapping the two collectives. The in-network AG is receive-heavy and the in-network RS 
+
+is send-heavy; this asymmetry has also been observed by [30]. When the two run concurrently, each direction of a rank’s link carries exactly 
+
+SN + N − 1
+
+N S = S (3) bytes, so the pair completes in S/BW . The ring collectives, by contrast, already load both directions equally, so overlapping a ring AG with a ring RS leaves 2( N −1)  
+
+> N
+
+S bytes in each direction and does not shorten their combined time. The communication latency of the two configurations is 
+
+tring = 2( N − 1) 
+
+N · SBW , tINC = SBW , (4) and the theoretical improvement of the overlapped in-network collectives is 1 − tINC 
+
+tring 
+
+= N − 22( N − 1) . (5) The improvement is zero for N =2, where each in-network collective already uses its link symmetrically. It reaches 33.3% for N =4 and 42.9% for N =8, and approaches 50% as N grows. Equivalently, the overlapped in-network collectives can deliver up to 2( N −1)  
+
+> N
+
+times the equivalent bandwidth of concurrent ring collectives, i.e., 1 .5× for N =4. Attaining this bound requires keeping an AG and an RS in flight simultaneously for as much of the layer as possible, which is the purpose of the kernel described next. 
+
+3.3 Overlap Kernel: Band Pipeline with Role-Specialized Thread Blocks 
+
+Bands. INC-MoE splits each rank’s tokens into nb bands of β = ⌈Tmax /n b⌉ rows. Band j consists of rows [ jβ, min(( j+1) β, T max )) of every rank’s block, so a band covers a slice of every rank’s tokens and is self-contained for all three phases. The AG of band j gathers the j-th slice of every rank, the FFN of band j computes the partial outputs (Equation (2)) of exactly those tokens, and the 
+
+RS of band j reduces them and returns to each rank its own j-th slice. All three roles and all ranks compute band boundaries with the same arithmetic. This invariant is essential for correctness: a single off-by-one difference between roles leads the reduce blocks to send rows the compute blocks have not written, or the compute blocks to read rows the gather blocks have not received. 9Role specialization. The kernel is launched with BAG + BFFN + BRS blocks, and each block determines its role from its index. Although the network interface performs the transfers, both communication roles do work on the accelerator. Gather blocks iterate over bands, copy the rank’s tokens of each band into the registered send buffer at the offsets of the padded layout (Section 3.1), post the AG of the band, and publish its completion. This work is light, so few gather blocks suffice. Compute blocks iterate over bands, wait for the corresponding AG , and run the expert FFNs of the band (Section 3.5). Reduce blocks iterate over bands, wait for the partial outputs of the band, post its RS , and, once the aggregated result arrives from the switch, perform the root’s local reduction: they add the partial sum received from the switch to the rank’s own partial results, in place in the rank’s block of the RS buffer Z, which then holds the final output. This local reduction is a memory-bound computation over the rank’s entire output, and it is the main reason the reduce role needs dedicated blocks. Each role advances independently at its own pace, as shown in Algorithm 1. 
+
+Communication–communication and communication–computation overlap. At steady state, three bands are in flight at once: the gather blocks run the AG of band j+1, the compute blocks run the FFN of band j, and the reduce blocks run the RS of band j−1. The pipeline therefore realizes two kinds of overlap. Communication–communication overlap keeps an in-network AG and an in-network RS in flight at the same time, which is precisely the schedule that Section 3.2 shows to reduce the communication time from 2( N −1)  
+
+> N
+
+· SBW to SBW : the AG keeps the receive direction of each link busy while the RS keeps the send direction busy. Communication–computation overlap hides the expert FFN behind the two collectives. Because the gather and reduce roles are assigned to separate groups of blocks that progress independently, the two collectives overlap without any coordination beyond the per-band synchronization described below. 
+
+Tail assistance. The overlap between AG and RS disappears at both ends of the layer. The AG 
+
+of the first band runs before any RS can start, and the RS s of the last bands run after the final 
+
+AG has completed. In this drain phase, the gather blocks sit idle, while the RS s of the last bands, including their local reductions, lie directly on the critical path. With tail assistance, gather blocks that have posted their last AG join the reduce blocks for the final ntail bands and take over part of their local reductions, so these bands are processed by BAG + BRS blocks instead of BRS . Tail assistance is most effective at large token counts (64K tokens per accelerator and above). Below that, its effect is small. 
+
+Synchronization within an accelerator. Roles hand data to each other through flags in device memory written with release semantics and read with acquire semantics, so that a consumer observes all data written before the flag. Rather than gating each step on a barrier across all blocks, every block that produces work maintains its own monotonically increasing progress counter, and a consumer waits only on the counters of the blocks whose output it needs. In the reduce role, this lets each reduce block advance through its share of a band at its own pace, instead of preceding every reduction chunk by a barrier across the whole grid (which makes the slowest reduce block set the pace of all of them). Because counters only increase, they never need to be reset within a launch, which avoids reset races of the kind described in Section 3.1. 
+
+Synchronization across accelerators. The RS of band j combines the partial outputs of all ranks, so reduce blocks on different ranks must not drift apart by more than one band. INC-MoE enforces this with a cross-rank barrier at band granularity, issued before each band’s RS . Only a 10 Algorithm 1 Band pipeline executed by one rank. Each role runs in its own set of thread blocks. 
+
+Gather blocks  
+
+> 1:
+
+for j = 0 , . . . , n b − 1 do  
+
+> 2:
+
+copy the rank’s tokens of band j into the registered send buffer  
+
+> 3:
+
+post in-network AG of band j into the gather buffer ˆX; wait for completion  
+
+> 4:
+
+Release (agReady [j])  
+
+> 5:
+
+if tail assistance is enabled then  
+
+> 6:
+
+join the reduce blocks for bands j ≥ nb − ntail 
+
+Compute blocks  
+
+> 7:
+
+for j = 0 , . . . , n b − 1 do  
+
+> 8:
+
+Acquire (agReady [j])  
+
+> 9:
+
+for each local expert e ∈ E r do  
+
+> 10:
+
+R ← rows of band j routed to e; if R = ∅ then continue  
+
+> 11:
+
+A ← SwiGLU ( ˆX[R] [ W gate  
+
+> e
+
+; W up  
+
+> e
+
+]⊤) ▷ activation fused in epilogue  
+
+> 12:
+
+Z[R] += gR,e ⊙ (A W down  
+
+> e
+> ⊤)
+
+▷ weighted store into the RS send buffer  
+
+> 13:
+
+advance this block’s progress counter to j + 1 ▷ release 
+
+Reduce blocks  
+
+> 14:
+
+for j = 0 , . . . , n b − 1 do  
+
+> 15:
+
+wait until all compute progress counters reach j + 1 ▷ acquire  
+
+> 16:
+
+cross-rank band barrier  
+
+> 17:
+
+post in-network RS of band j from Z; wait for the partial sum from the switch  
+
+> 18:
+
+Z[own rows of band j] += partial sum ▷ root’s local reduction, in place single block per rank participates in the cross-rank barrier and broadcasts its completion to the other blocks of the rank through a local flag. 
+
+Empty bands. When ranks own different numbers of tokens, a band can be empty on some ranks, and a band can contain no rows routed to a given local expert. Blocks skip the work in these cases, but they must still advance every counter and participate in every barrier exactly as on the non-empty path. Otherwise, the number of barrier arrivals differs across blocks or ranks and the pipeline deadlocks. 
+
+3.4 Pipeline Configuration 
+
+The throughput of the band pipeline is set by its slowest stage, and which stage is slowest depends on the number of tokens per accelerator. More bands shorten the fill and drain phases, during which 
+
+AG and RS do not overlap, but add per-band fixed costs: collective latency, synchronization, and smaller GEMMs. The number of bands nb, the allocation of blocks to roles ( BAG , B FFN , B RS ), and the use of tail assistance were determined through an exhaustive empirical study, which swept these parameters across a range of per-accelerator token counts. The study showed that the optimal configuration shifts with the number of tokens per accelerator, as the balance between communication and compute changes. INC-MoE therefore applies the best-performing configuration for each token-count regime at runtime. The number of compute blocks is a compile-time parameter of the kernel, so each regime uses a kernel variant specialized for its compute allocation. 11 3.5 Fused Expert Computation 
+
+For each band and each local expert, the compute blocks select the rows of the band routed to the expert and run two GEMMs: the gate/up projection with SwiGLU, and the down projection with router weighting. Experts are processed one after another within a band, and the compute blocks cooperate on the tiles of each GEMM. 
+
+GEMM. Each (band, expert) pair is processed with two GEMMs implemented as device functions inside the persistent kernel, and local experts are processed one after another within a band rather than with a grouped GEMM. Each compute block is split into one producer group, which issues asynchronous bulk copies of operand tiles into a three-stage ring of shared-memory buffers, and two consumer groups, which issue asynchronous matrix-multiply instructions on filled stages and release them to the producer. Because the GEMM uses only block-local synchronization, it can be invoked by a subset of the kernel’s blocks while the remaining blocks run communication. Our implementation prioritizes communication efficiency over individually optimized GEMM throughput, reflecting the communication-dominated regime targeted by this work. Grouped GEMMs over the local experts of a band are a natural extension and would increase the margin by which communication dominates. 
+
+Epilogue fusion. The gate and up projections are computed by one GEMM over the concatenated weight matrix, and SwiGLU is applied to the accumulators in registers in the epilogue, so that only the activated intermediate is written to device memory. The epilogue of the down projection multiplies each row by its router weight gt,e and accumulates the result directly into the token’s row of the RS send buffer Z. No separate weighting, scatter or staging step is needed between the FFN and the RS . Note that the RS buffer is zeroed at the start of each MoE layer, so that the contributions of a rank’s local experts accumulate correctly. 
+
+Zero-copy output. The root’s local reduction leaves the final output for the rank’s tokens in place, in the rank’s own block of the RS buffer Z. Instead of copying these rows into a separately allocated output tensor, INC-MoE exposes that block to the serving engine as a tensor view, so the output of the MoE layer is consumed in place. The buffer is not reused until the engine has consumed the output. 
+
+# 4 Implementation and Integration with the Serving Engine 
+
+End host. The end-host side of INC-MoE consists of the fused kernel, the INC client library, and a launcher exposed to Python. Device-initiated communication is built on MSCCL++ [15]. 
+
+Switch. The switch-side service implements the message semantics of Section 3.1. In our prototype, it runs on a dedicated accelerator attached to the scale-out network, which emulates an INC-capable switch. 
+
+Serving-engine integration. INC-MoE replaces the MoE layer of vLLM at the boundary between the router and the expert computation. Routing (expert selection and weights) is delegated to the engine’s own routing function, so routing semantics, including normalization of the top-k weights, are unchanged. The per-rank token counts needed for the padded layout are taken from the engine’s data-parallel metadata. Model dimensions, the number of experts, k, the data type, and the EP 12 degree are runtime parameters. As a result, any MoE model whose experts are SwiGLU FFNs in fp16 or bf16 can use the layer without changes to the kernel or the model definition. 
+
+# 5 Evaluation 
+
+5.1 Setup 
+
+Testbed. We emulate a four-node scale-out deployment, shown in Figure 5. The testbed uses five high-performance accelerators: four serving as expert-parallel ranks, each emulating a separate node, and a fifth emulating the INC switch. Each accelerator supports high-throughput matrix operations and high-bandwidth device memory. Neither system uses intra-server interconnects: all traffic of INC-MoE and of the baseline crosses the accelerators’ NICs and an Ethernet switch over RoCE. The emulator is attached to the Ethernet switch through a 400 Gbps link shared by the four EP ranks, so each rank communicates with the INC switch at an effective 100 Gbps. INC switch (emulated)         
+
+> dedicated accelerator
+> Ethernet switch
+> RoCE 400 Gbps shared by 4 ranks
+> Rank 0
+> accelerator (simulated node)
+> Rank 1
+> accelerator (simulated node)
+> Rank 2
+> accelerator (simulated node)
+> Rank 3
+> accelerator (simulated node) 100 Gbps per rank (effective)
+> 00112233001122330011223300112233
+> RS AG
+> ↑sent to the INC switch ↓received from the INC switch chunk c= rank c’s block bold = rank’s own block
+
+Figure 5: Testbed. Four accelerators act as EP ranks, each emulating a node, and communicate over a RoCE network through an Ethernet switch. A fifth accelerator emulates the INC switch and is attached through a 400 Gbps link shared by the four ranks, giving each rank an effective 100 Gbps. 
+
+Model and workload. We serve OLMoE-1B-7B [24], which has 16 MoE layers with E=64 experts, top-k=8 routing, hidden size H=2048, and expert intermediate size I=1024, in fp16. We run vLLM with data-parallel attention (DP = 4), EP = 4, and no tensor parallelism. We evaluate prefill and vary the aggregate number of tokens across prompts per accelerator from 24K to 126K. Each configuration is run 10 times as warm-up, followed by 30 measured repetitions, and we report the mean. We compare the output of every MoE layer of INC-MoE against the baseline on identical inputs. We report a per-token cosine similarity of 1 .0 for all 16 MoE layers on all four ranks. 
+
+Baseline. The baseline is vLLM’s AllGather/ReduceScatter expert-parallel path: a ring AllGather and a ring ReduceScatter, issued through the platform’s default collective communication library, 13 with vLLM’s MoE compute kernels in between. Both systems run the same model weights, routing function, prompts, and DP = 4/EP = 4 configuration, and differ only in the MoE layer. The library’s intra-server transports are disabled, so its collectives use its RDMA transport over the same RoCE network as INC-MoE. They do not traverse the emulator’s shared link. To compare both systems at the same per-rank bandwidth, we limit each baseline rank to 100 Gbps per direction via NIC rate limiting, matching the effective bandwidth available to each rank in INC-MoE. 
+
+Metrics. We report time to first token (TTFT), prefill throughput per accelerator (prompt tokens divided by TTFT), and the equivalent bandwidth of the AG and RS collectives. 
+
+5.2 In-Network Collective Bandwidth 
+
+We first evaluate the collectives in isolation. For each message size, we launch an AG and an 
+
+RS concurrently, both for the ring baseline and for the in-network collectives of INC-MoE, and measure the time until both complete. The equivalent bandwidth is thus the combined size of the AG and RS buffers divided by this time. In the bandwidth-bound regime it is independent of the message size and, by Equation (4), bounded by NN −1 BW for the ring collectives, which gain nothing from running concurrently, and by 2 BW for the overlapped in-network collectives. With N =4 and 
+
+BW =100 Gbps per rank, these bounds are 133 and 200 Gbps. 96 MiB 128 MiB 192 MiB 208 MiB 512 MiB              
+
+> AG/RS buffer size per collective
+> 050 100 150 200
+> AG/RS equivalent bandwidth (Gbps)
+> 129.8 129.7 129.9 130.0 130.1 163.2 162.9 166.0 168.7 171.5
+> 25.73% 25.63% 27.87% 29.84% 31.80%
+> Ring (baseline) INC (overlap)
+
+Figure 6: Equivalent bandwidth of concurrently launched AG and RS for increasing buffer size 
+
+S per collective, across N =4 ranks at 100 Gbps per rank: ring collectives executed by the end hosts (baseline) and the in-network collectives of INC-MoE (overlap). Equivalent bandwidth is the combined size of the two buffers, 2 S, divided by the time until both collectives complete. Percentages give the bandwidth increase over the baseline, which ranges from 25.6% to 31.8%. Figure 6 shows the results. The ring baseline is consistently flat at about 130 Gbps for all message sizes, i.e., at 97.5% of its bound. The overlapped in-network collectives reach 163–172 Gbps, 25.6–31.8% more than the ring, and 82–86% of their bound. Unlike the ring, their equivalent bandwidth increases with the message size. This is an artifact of the prototype. Because the switch is emulated by an accelerator, every message incurs fixed costs that a hardware switch does not have. For the RS , the emulator serves the N rooted reductions of a message one after another, and each incurs a grid-wide synchronization between the emulator’s threads and the fill and drain of its chunk pipeline. Small messages amortize these costs over fewer chunks, which lowers the emulator’s 14 efficiency. A hardware INC switch processes packets at line rate and can serve all roots concurrently, so we expect this dependence on message size, and most of the gap to the bound, to be largely reduced on switch hardware, as they are specific to the emulator rather than to the design. 
+
+5.3 End-to-End Performance 
+
+Figures 1 and 7 show the TTFT and prefill throughput of INC-MoE and the baseline as a function of the number of prompt tokens per accelerator. Both figures derive from the same runs, as throughput is the number of prompt tokens divided by TTFT. INC-MoE reduces TTFT by 20.2–33.1%, which corresponds to a 25.3–49.5% increase in throughput. 24K 32K 48K 52K 64K 98K 126K              
+
+> Tokens / accelerator
+> 05,000 10,000 15,000 20,000 25,000 30,000 35,000 40,000
+> Throughput (tokens/s)
+> 22,526 22,614 22,766 22,765 22,963 23,769 22,946 28,216 29,627 31,267 31,452 32,332 32,592 34,306
+> 25.3% 31.0% 37.3% 38.2% 40.8% 37.1% 49.5%
+> AG+RS (baseline) Ours
+
+Figure 7: Prefill throughput per accelerator for the same runs as Figure 1. The baseline’s through-put stays roughly constant, at about 22.5K–23.8K tokens/s across all prompt sizes, so its cost scales linearly with the number of tokens. INC-MoE sustains 28.2K–34.3K tokens/s, and its throughput increases with prompt size. Percentages give the throughput increase over the baseline, 
+
+tps ours /tps base − 1, which ranges from 25.3% to 49.5%. 
+
+Scaling with prompt size. The baseline’s throughput is nearly constant, at 22.5K–23.8K tokens/s, so its prefill time grows linearly with the number of tokens. The throughput of INC-MoE instead rises from 28.2K to 34.3K tokens/s, so its advantage generally grows with the prompt size. Two effects contribute. First, the full gathered-buffer size per band of the in-network collectives grows with the number of tokens, from 128 MiB per band at 24K tokens (3 bands) to about 202 MiB at 126K (10 bands), and the emulated switch processes larger messages slightly more efficiently (Section 5.2). Second, as the number of bands grows with prompt size (e.g., from 3 to 10 bands as the number of prompt tokens grows from 24K to 126K), the fill and drain phases, in which the AG and RS do not overlap, take a smaller share of each layer. 
+
+# 6 Related Work 
+
+MoE systems and EP communication. GShard [20], Switch Transformers [10], DeepSpeed-MoE [26] and Tutel [16] established the systems foundations of expert parallelism. For inference, DeepEP [32] and pplx-kernels [25] provide high-throughput and low-latency all-to-all dispatch and combine kernels, and MegaScale-Infer [38] disaggregates attention and expert computation across 15 devices. These systems optimize communication executed by the end hosts. INC-MoE instead offloads it to the switch and uses the AG /RS formulation of dispatch and combine [4]. 
+
+Overlapping communication and computation. Flux [7] fuses communication into GEMM tiles for tensor-parallel layers. Comet [31] overlaps MoE dispatch and combine with expert GEMMs at fine granularity through dependency analysis and adaptive workload assignment. TileLink [35] and Triton-distributed [36] provide tile-level primitives and compiler support for writing overlapped kernels. FlashMoE [5] fuses the entire distributed MoE layer into a single persistent kernel with device-initiated one-sided transfers. At the system level, vLLM’s dual batch overlap [29] and SGLang’s two-batch overlap [34] split a batch into micro-batches so that one micro-batch’s communication hides behind the other’s computation. Like these works, INC-MoE splits tokens into slices that are processed in a pipeline. The split is confined to the MoE layer and runs inside a single kernel with role-specialized blocks. The communication it overlaps is executed by the switch, and it overlaps the two collectives with each other as well as with computation. Micro-batch overlap is orthogonal to INC-MoE and could be applied on top of it. 
+
+In-network computing. SHArP [12] offloads reductions into switch hardware for HPC collectives, and SwitchML [27] and ATP [19] perform gradient aggregation on programmable switches for distributed training. The DeepSeek-V3 hardware study [33] argues for network hardware with native support for MoE communication patterns. Closest to our work, DySHARP [30] observes that existing in-switch collectives target static, regular patterns and proposes switch extensions for dynamic multicast and reduction, together with kernel fusion of the dispatch–compute–combine pipeline. MoE-Hub [37] places lightweight hardware in the GPU hub, the switch between a GPU’s on-chip crossbar and its scale-up links, to manage address allocation and data flow, so that producers can send data as soon as routing completes. Both propose new hardware for the scale-up fabric. INC-MoE takes a complementary position. It operates in the scale-out network with static AG 
+
+and RS collectives, whose redundancy is small for top-k routing with large k relative to the EP degree (Section 2.2), and it focuses on the message-semantic collectives, their concurrent use, and the end-host pipeline needed to turn switch offload into end-to-end gains. 
+
+# 7 Conclusion 
+
+We presented INC-MoE, an expert-parallel MoE layer for the scale-out setting that executes dispatch and combine as in-network AllGather and ReduceScatter and overlaps them with each other and with expert computation in a single band-pipelined kernel. We implemented both collectives with message semantics using a device-side communication library and an accelerator-based emulator of an INC-capable network switch. We also showed that, because they load opposite directions of each link, overlapping both collectives reduces the bandwidth-bound communication time by N −22( N −1) 
+
+relative to ring collectives. We integrated the layer into vLLM as a drop-in replacement. On OLMoE prefill with four-way EP in an emulated four-node scale-out configuration, INC-MoE reduces TTFT by up to 33% and increases throughput by up to 50% relative to vLLM’s default collective path. Our results show that switch offload and kernel-level overlap are complementary, and that combined they turn the communication bottleneck of expert parallelism into an opportunity for the network. 16 References 
+
+[1] HCCL: Huawei collective communication library. Huawei CANN documentation, https: //www.hiascend.com .[2] NCCL: Optimized primitives for collective multi-GPU communication. https://github.com/ NVIDIA/nccl .[3] RCCL: ROCm communication collectives library. https://github.com/ROCm/rccl .[4] Speeding up expert parallelism by replacing all-to-all by all-gather and reduce-scatter collectives. Technical Disclosure Commons, https://www.tdcommons.org/dpubs_series/9706 , 2026. [5] Osayamen Jonathan Aimuyo, Byungsoo Oh, and Rachee Singh. FlashMoE: Fast distributed MoE in a single kernel. In Advances in Neural Information Processing Systems (NeurIPS) ,2025. arXiv:2506.04667. [6] Ernie Chan, Marcel Heimlich, Avi Purkayastha, and Robert van de Geijn. Collective com-munication: Theory, practice, and experience. Concurrency and Computation: Practice and Experience , 19(13):1749–1783, 2007. [7] Li-Wen Chang et al. FLUX: Fast software-based communication overlap on GPUs through kernel fusion. arXiv preprint arXiv:2406.06858 , 2024. [8] Daniele De Sensi, Salvatore Di Girolamo, Saleh Ashkboos, Shigang Li, and Torsten Hoefler. Flare: Flexible in-network allreduce. In International Conference for High Performance Computing, Networking, Storage and Analysis (SC) , 2021. [9] DeepSeek-AI. DeepSeek-V3 technical report. arXiv preprint arXiv:2412.19437 , 2024. [10] William Fedus, Barret Zoph, and Noam Shazeer. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learning Research , 23 (120):1–39, 2022. [11] Nadeen Gebara, Manya Ghobadi, and Paolo Costa. In-network aggregation for shared machine learning clusters. In Proceedings of Machine Learning and Systems (MLSys) , 2021. [12] Richard L. Graham et al. Scalable hierarchical aggregation protocol (SHArP): A hardware architecture for efficient data reduction. In Workshop on Optimization of Communication in HPC (COMHPC) , 2016. [13] Chuanxiong Guo, Haitao Wu, Zhong Deng, Gaurav Soni, Jianxi Ye, Jitu Padhye, and Marina Lipshteyn. RDMA over commodity Ethernet at scale. In Proceedings of the ACM SIGCOMM Conference , pages 202–215, 2016. doi: 10.1145/2934872.2934908. [14] Khaled Hamidouche, John Bachan, Pak Markthub, Peter-Jan Gootzen, Elena Agostini, Sylvain Jeaugey, Aamir Shafi, Georgios Theodorakis, and Manjunath Gorentla Venkata. GPU-initiated networking for NCCL, 2025. URL https://arxiv.org/abs/2511.15076 .[15] Changho Hwang, Peng Cheng, Roshan Dathathri, Abhinav Jangda, Saeed Maleki, Madan Musuvathi, Olli Saarikivi, Aashaka Shah, Ziyue Yang, Binyang Li, Caio Rocha, Qinghua Zhou, Mahdieh Ghazimirsaeed, Sreevatsa Anantharamu, and Jithin Jose. MSCCL++: Rethinking GPU communication abstractions for AI inference. In Proceedings of the 31st ACM International 
+
+17 Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 , ASPLOS ’26, page 1201–1215, New York, NY, USA, 2026. Association for Computing Machinery. ISBN 9798400723599. doi: 10.1145/3779212.3790188. URL https://doi.org/10. 1145/3779212.3790188 .[16] Changho Hwang et al. Tutel: Adaptive mixture-of-experts at scale. In Proceedings of Machine Learning and Systems (MLSys) , 2023. [17] InfiniBand Trade Association. Supplement to InfiniBand architecture specification volume 1 release 1.2.1, annex A17: RoCEv2. https://www.infinibandta.org , September 2014. [18] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model serving with PagedAttention. In ACM Symposium on Operating Systems Principles (SOSP) , 2023. [19] ChonLam Lao et al. ATP: In-network aggregation for multi-tenant learning. In USENIX Symposium on Networked Systems Design and Implementation (NSDI) , 2021. [20] Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. GShard: Scaling giant models with conditional computation and automatic sharding. In International Conference on Learning Representations (ICLR) , 2021. [21] Youjie Li, Iou-Jen Liu, Yifan Yuan, Deming Chen, Alexander Schwing, and Jian Huang. Accelerating distributed reinforcement learning with in-switch computing. In International Symposium on Computer Architecture (ISCA) , 2019. [22] Shuo Liu, Qiaoling Wang, Junyi Zhang, et al. In-network aggregation with transport trans-parency for distributed training. In ACM International Conference on Architectural Support for Programming Languages and Operating Systems (ASPLOS) , 2023. [23] Message Passing Interface Forum. MPI: A Message-Passing Interface Standard, Version 4.0 ,2021. [24] Niklas Muennighoff et al. OLMoE: Open mixture-of-experts language models. In International Conference on Learning Representations (ICLR) , 2025. arXiv:2409.02060. [25] Perplexity AI. pplx-kernels: Expert-parallel all-to-all kernels. https://github.com/ppl-ai/ pplx-kernels , 2025. [26] Samyam Rajbhandari, Conglong Li, Zhewei Yao, Minjia Zhang, Reza Yazdani Aminabadi, Ammar Ahmad Awan, Jeff Rasley, and Yuxiong He. DeepSpeed-MoE: Advancing mixture-of-experts inference and training to power next-generation AI scale. In International Conference on Machine Learning (ICML) , 2022. [27] Amedeo Sapio, Marco Canini, Chen-Yu Ho, Jacob Nelson, Panos Kalnis, Changhoon Kim, Arvind Krishnamurthy, Masoud Moshref, Dan R. K. Ports, and Peter Richtárik. Scaling distributed machine learning with in-network aggregation. In USENIX Symposium on Networked Systems Design and Implementation (NSDI) , 2021. 18 [28] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. In International Conference on Learning Representations (ICLR) , 2017. [29] vLLM Project. Dual batch overlap in vLLM. https://docs.vllm.ai/en/stable/design/ dbo/ , 2025. [30] Qijun Zhang, Chen Zhang, Zhuoshan Zhou, Haibo Wang, Zhe Zhou, Zhipeng Tu, Guangyu Sun, Zhiyao Xie, Yijia Diao, Zhigang Ji, Jingwen Leng, Guanghui He, and Minyi Guo. Accelerating MoE with dynamic in-switch computing on multi-GPUs. In Proceedings of the 53rd ACM/IEEE International Symposium on Computer Architecture (ISCA) , pages 921–935, 2026. doi: 10. 1109/ISCA66397.2026.00074. [31] Shulai Zhang et al. Comet: Fine-grained computation-communication overlapping for mixture-of-experts. In Proceedings of Machine Learning and Systems (MLSys) , 2025. arXiv:2502.19811. [32] Chenggang Zhao et al. DeepEP: An efficient expert-parallel communication library. https: //github.com/deepseek-ai/DeepEP , 2025. [33] Chenggang Zhao et al. Insights into DeepSeek-V3: Scaling challenges and reflections on hardware for AI architectures. In International Symposium on Computer Architecture (ISCA) ,2025. arXiv:2505.09343. [34] Lianmin Zheng et al. SGLang: Efficient execution of structured language model programs. In 
+
+Advances in Neural Information Processing Systems (NeurIPS) , 2024. [35] Size Zheng et al. TileLink: Generating efficient compute-communication overlapping kernels using tile-centric primitives. In Proceedings of Machine Learning and Systems (MLSys) , 2025. [36] Size Zheng et al. Triton-distributed: Programming overlapping kernels on distributed AI systems with the Triton compiler. arXiv preprint arXiv:2504.19442 , 2025. [37] Zhuoshan Zhou, Chen Zhang, Shuyi Zhang, Qijun Zhang, Haibo Wang, Zhe Zhou, Zhipeng Tu, Guangyu Sun, Yijia Diao, Zhigang Ji, Jingwen Leng, Guanghui He, and Minyi Guo. MoE-Hub: Taming software complexity for seamless MoE overlap with hardware-accelerated communication on multi-GPU systems, 2026. URL https://arxiv.org/abs/2605.05888 .[38] Ruidong Zhu et al. MegaScale-Infer: Serving mixture-of-experts at scale with disaggregated expert parallelism. arXiv preprint arXiv:2504.02263 , 2025. 19

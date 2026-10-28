@@ -1,0 +1,24 @@
+{
+  "label": "2026-10-28",
+  "date": "2026-10-28",
+  "generated_at": "2026-10-28T23:09:10",
+  "count": 1,
+  "papers": [
+    {
+      "paper_id": "202610/28/2610.36339v1-inc-moe-overlapping-in-network-collectives-and-expert-computation-for-expert-parallel-mixture-of-experts-inference",
+      "section": "deep",
+      "title_en": "INC-MoE: Overlapping In-Network Collectives and Expert Computation for Expert-Parallel Mixture-of-Experts Inference",
+      "authors": "John Stephan, Razvan Puscasu, Xu Yong, Ding Jiutao, Guan Zixuan",
+      "date": "2026-10-26",
+      "pdf": "https://arxiv.org/pdf/2610.36339v1",
+      "score": "10.0",
+      "evidence": "将分发与合并卸载到交换机并与专家计算重叠",
+      "tldr": "专家并行MoE推理中，dispatch与combine位于关键路径，多节点下易主导层延迟。INC-MoE将二者卸载到交换机，用网内AllGather与ReduceScatter并让通信与专家计算重叠；同时把token分带，在单持久内核中构建三阶段流水线。四节点四路专家并行OLMoE预填充下，首token时间最多降33%，吞吐最多升50%，且输出与vLLM一致。",
+      "tags": "query:ccl",
+      "abstract_en": "In expert-parallel mixture-of-experts (MoE) serving, dispatch moves tokens to the accelerators hosting their selected experts, and combine returns expert outputs to each token's owner. Both operations lie on the critical path and can dominate MoE layer latency in multi-node deployments. We present INC-MoE, an expert-parallel MoE layer that offloads dispatch and combine to the network switch and overlaps both collectives with each other and with expert computation. Dispatch uses in-network AllGather through switch-side multicast, while combine uses in-network ReduceScatter through switch-side reduction. Both collectives use message semantics between the end hosts and the switch. Because the in-network collectives load opposite directions of each link, executing them concurrently reduces bandwidth-bound communication time by $(N-2)/(2(N-1))$ relative to concurrent ring-based collectives: 33% for four ranks and 43% for eight.   INC-MoE partitions tokens into bands and processes them through a three-stage AllGather-feed-forward network (FFN)-ReduceScatter pipeline inside a single persistent kernel. At steady state, role-specialized thread blocks gather the next band, compute the current band, and reduce the previous band concurrently, overlapping both collectives with each other and with computation using device-side synchronization. INC-MoE integrates as a drop-in replacement for the MoE layer of vLLM. We evaluate it in an emulated four-node scale-out deployment with a dedicated accelerator emulating an in-network computing (INC) switch. On OLMoE prefill with four-way expert parallelism, INC-MoE reduces time to first token (TTFT) by up to 33% and increases throughput by up to 50% relative to vLLM's default collective path, while matching its outputs.",
+      "source": "arxiv",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "errors": []
+}

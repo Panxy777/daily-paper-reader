@@ -1,0 +1,25 @@
+{
+  "date": "20261028",
+  "date_label": "",
+  "generated_at": "2026-10-28 23:09:09 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.36339v1",
+      "route": "202610/28/2610.36339v1-inc-moe-overlapping-in-network-collectives-and-expert-computation-for-expert-parallel-mixture-of-experts-inference",
+      "title": "INC-MoE: Overlapping In-Network Collectives and Expert Computation for Expert-Parallel Mixture-of-Experts Inference",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 10.0,
+      "evidence": "将分发与合并卸载到交换机并与专家计算重叠",
+      "first_seen_at": "2026-10-28 23:09:09 UTC",
+      "updated_at": "2026-10-28 23:09:09 UTC"
+    }
+  ]
+}
