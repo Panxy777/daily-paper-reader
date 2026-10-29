@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-28T23:07:02.136393+00:00",
-  "updated_date": "20261028",
+  "generated_at": "2026-10-29T23:14:05.257991+00:00",
+  "updated_date": "20261029",
   "carryover_days": 9,
   "tag_states": {
     "lcc": {
@@ -9,7 +9,7 @@
       "items": []
     },
     "CCL": {
-      "updated_date": "20261028",
+      "updated_date": "20261029",
       "carryover_days": 9,
       "items": []
     }
