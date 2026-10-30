@@ -1,0 +1,1108 @@
+Title: Dobb: Shard-Local Preconditioning in Block-Diagonal Eigenbases
+
+URL Source: https://arxiv.org/pdf/2610.39412v1
+
+Published Time: Fri, 30 Oct 2026 02:53:21 GMT
+
+Number of Pages: 33
+
+Markdown Content:
+# Dobb: Shard-Local Preconditioning in Block-Diagonal Eigenbases 
+
+# Shi-Yuk Fong 1 Shuhua Yu 2* Jiawei Zhang 1* 
+
+> 1
+
+Department of Computer Sciences, University of Wisconsin–Madison, Madison, WI, USA 
+
+> 2
+
+Meta FAIR, Menlo Park, CA, USA 
+
+> 1
+
+{syfong, jiaweizhang}@cs.wisc.edu , 2yu.shuhuaxh@gmail.com 
+
+Abstract 
+
+Training language models whose parameters and optimizer state exceed a single node’s memory requires sharding these tensors across devices. Under tensor parallelism (TP) or fully sharded data parallelism (FSDP), matrix-aware optimizers such as Muon intro-duce communication to perform global matrix operations across shards. We propose Dobb (Distributed Optimizer with Block-diagonal Eigen bases), a matrix-aware optimizer de-signed to compute updates locally within parameter shards. Dobb approximates the input-activation second moment with diagonal blocks and tracks a complete basis within each block. It projects momentum into these bases, applies sign normalization to the coeffi-cients, and reconstructs the update. When each block lies within one shard under TP or FSDP, Dobb applies its matrix update locally, requiring no communication beyond data-parallel synchronization of the activation second moments. We benchmark Dobb against Dion, a distributed matrix-aware optimizer designed to retain the benefits of orthonormal-ized updates while reducing communication. On GPT-2 XL (1.56B parameters), Dobb with 16 blocks reaches a validation loss of 2.476, compared with 2.511 for Dion at rank fraction 1/16. Under FSDP on 32 H100 GPUs, Dobb reduces the amortized optimizer-call time from 124.1 ms for Dion to 9.2 ms. 02.46 2.50 2.54 2.58     
+
+> Final validation loss
+> Zero cross-shard payload
+> B= 4
+> B= 16
+> B= 64 AdamW
+> 0.1 11/4 1/16 1/64 Muon
+> Dobb Dion Muon AdamW
+> Cross-shard payload / Muon (derived, FS = 4)
+
+GPT-2 XL: quality versus cross-shard payload 
+
+Figure 1: GPT-2 XL (1.56B parameters) validation loss and optimizer-specific cross-shard payload. Losses are measured under the shared update-scale protocol (Table 4). Labels give block count B or rank fraction 
+
+ρ. For a weight matrix of size m × n, optimizer-specific cross-shard payload is the logical number of scalar entries exchanged between devices holding different shards of that matrix during one optimizer step; collective factors and bytes per entry are omitted. We express this derived count relative to Muon’s dense count mn . At Dion rank r, the per-matrix ratio is r(m + n)/(mn ); the aggregate ratio for the plotted GPT-2 XL matrices is 
+
+1.5ρ. Payloads are derived for FSDP with FS = 4 , where each Dobb block lies within one shard; Dobb and AdamW then have zero payload under this definition. The count excludes forward-backward communication and Dobb’s separately counted data-parallel synchronization of activation second moments (Section 5). 
+
+> *
+
+Co-last and corresponding authors. 
+
+1arXiv:2610.39412v1 [cs.LG] 29 Oct 2026 1 Introduction 
+
+Language-model scaling increases the memory requirements for parameters, gradients, and opti-mizer state (Kaplan et al., 2020; Rajbhandari et al., 2020). When these quantities exceed a single GPU’s capacity, training distributes them across devices through tensor parallelism (TP) or fully sharded data parallelism (FSDP) (Shoeybi et al., 2019; Zhao et al., 2023). Under either layout, each device holds one part of every sharded weight matrix, and we call this part a shard; data-parallel replicas hold copies of the same shards. Cross-shard communication is communication among the devices that hold different shards of one matrix. These layouts make matrix-aware optimization a distributed problem: an update defined on a complete weight matrix may require information held by several devices. Muon orthogonalizes momentum (Jordan et al., 2024), which introduces dense optimizer-specific communication in conventional sharded implementations (Ahn et al., 2025; Khaled et al., 2026). MuonBP reduces communication by performing local Newton–Schulz orthogonalization between periodic global steps, but those global steps still require full cross-shard communication (Khaled et al., 2026). The frequency of global orthogonalization controls the tradeoff between communica-tion cost and optimization quality. Another approach, Dion, reduces the size of each exchange by approximating momentum with low-rank factors and retaining the residual through error feedback (Ahn et al., 2025). Its optimizer step communicates these factors across shards, so communication scales with the update rank. In this work, we introduce Dobb ( Distributed Optimizer with Block-diagonal Eigen bases) to reduce optimizer communication. We approximate the activation second moment by a block-diagonal ma-trix and retain a complete eigenbasis within every block. This construction discards cross-block correlations without imposing a reduced-rank constraint on the update. When these blocks align with shard boundaries, the optimizer step requires no cross-shard communication beyond the data-parallel synchronization of the activation second moments. Dion derives its low-rank factors from momentum; we instead project momentum onto an input-side basis from an exponentially averaged activation second moment, normalize the coefficients, and reconstruct the update. For a mini-batch gradient, projection into its own activation eigenbasis separates input spectral scales from the output-gradient structure, leaving the latter in the coefficients (Section 3). In our GPT-2 Small experiments, activation second moments exhibit greater spectral concentration than output-gradient second moments in most matched matrices (Figure 2). This motivates using the activation eigenbasis to expose the more concentrated factor’s directional scaling for normalization (Appendix F.2). Both sign and column normalization remove positive input spectral scales from a mini-batch gradi-ent expressed in its own activation eigenbasis. We choose the element-wise sign, which addition-ally removes magnitude differences within each coefficient column. In our synthetic comparison, this choice produces more orthogonal updates than column normalization except when the output-gradient spectrum is nearly flat (Table 1). Sign normalization also avoids the norm reduction re-quired by column normalization when the output axis is sharded, because it acts on each coefficient independently. We make four contributions: • We introduce Dobb, which normalizes momentum coefficients in block-diagonal activation second-moment eigenbases while retaining every direction within each block. • Dobb requires only that each block lie within one shard. Under this condition, the op-timizer step introduces zero optimizer-specific cross-shard bytes beyond the data-parallel synchronization of the activation second moments. • We compare Dobb with Muon and Dion on GPT-2-style models up to 1.56B parameters under a shared update-scale protocol. Across these scales, Dobb exhibits less validation-loss degradation under block partitioning than Dion under corresponding rank reductions. • We benchmark Dobb against Muon and Dion under FSDP and tensor parallelism on GPT-2-style models up to 8.1B parameters and on Qwen3 models up to 32B. In every measured configuration, Dobb’s optimizer call is shorter than those of Muon and Dion (Section 6.2). 22 Related work 
+
+Matrix-aware optimization. Matrix-aware optimizers use the intrinsic two-dimensional struc-ture of weight matrices to construct parameter updates rather than treating each entry independently. Muon orthogonalizes momentum using Newton–Schulz iterations, while RMNP uses row normal-ization (Jordan et al., 2024; Deng et al., 2026). K-FAC builds a Kronecker-factored approximation to layerwise curvature (Martens and Grosse, 2015). Shampoo accumulates gradient-derived matrix second moments, and SOAP applies Adam in their eigenbases (Gupta et al., 2018; Vyas et al., 2025). 
+
+Sharding and tensor parallelism. ZeRO reduces memory redundancy across data-parallel work-ers by progressively sharding optimizer state, gradients, and parameters across its three stages (Ra-jbhandari et al., 2020). FSDP shards all three and gathers parameters as needed for forward and backward computation (Zhao et al., 2023). FSDP2 uses per-parameter sharding, which facilitates composition with tensor parallelism (Liang et al., 2025). Tensor parallelism, as used in Megatron-LM, partitions weight matrices and their matrix multiplications across devices (Shoeybi et al., 2019). The resulting parameter layout determines which operands are local and which require communica-tion during the optimizer step. 
+
+Distributed matrix updates. While element-wise optimizer updates parallelize naturally, matrix-aware updates introduce dependencies among optimizer state, matrix computations, and the under-lying parameter layout. Dion retains a full-size momentum buffer distributed across shards and reduces communication through low-rank factor operations and error feedback, with communica-tion scaling with the update rank (Ahn et al., 2025). Distributed Shampoo takes a different approach. It distributes preconditioner state and computation by parameter block within data-parallel process groups, then all-gathers the computed search directions within each group at every optimizer step (Shi et al., 2023). MatrixFSDP takes a systems approach under FSDP: it places each whole ma-trix on one owner rank, so Muon runs unchanged without optimizer-step collectives, and it leaves matrices sharded by tensor parallelism outside its scope (Gao et al., 2026). 
+
+# 3 Gradient structure and motivation 
+
+We seek a basis for normalizing momentum coefficients while keeping the optimizer step local to parameter shards. We motivate the basis source, normalization, and block partition through gradient structure, spectral comparisons, and the distributed parameter layout. 
+
+A mini-batch gradient has two sources of structure. Consider a layer y = W x with W ∈
+
+Rm×n. For the mini-batch Bt at optimizer step t, containing N contributing examples or token positions, let fBt denote its mean loss and let gi ∈ Rm denote the output gradient associated with its ith contribution before the 1/N averaging. With inputs xi ∈ Rn, the layer’s stochastic gradient is 
+
+∇W fBt (Wt) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+gix⊤ 
+
+> i
+
+= 1
+
+N DtX⊤ 
+
+> t
+
+, (1) where Xt = [ x1, . . . , xN ] ∈ Rn×N and Dt = [ g1, . . . , gN ] ∈ Rm×N . Equation 1 shows that every row of the mini-batch gradient is a combination of the inputs xi, while every column is a combi-nation of the output gradients gi. K-FAC approximates a layerwise Fisher block by a Kronecker product of the second moments of these two sources (Martens and Grosse, 2015). For the current mini-batch, the corresponding uncentered moments are 
+
+At = 1
+
+N XtX⊤ 
+
+> t
+
+∈ Rn×n, Gt = 1
+
+N DtD⊤ 
+
+> t
+
+∈ Rm×m. (2) The nonzero eigenspaces of At and Gt span the observed input and output-gradient directions, respectively, providing candidate bases for the two axes of a matrix update. Neither factor requires materializing per-example weight gradients. 
+
+A common template: project, normalize, reconstruct. Several matrix-aware updates project the momentum M ∈ Rm×n onto an orthonormal basis U , normalize the coefficients with a function 3N , and reconstruct: 
+
+O = N (M U ) U ⊤, (3) or apply the same form to M ⊤. Muon approximates the polar factor of the momentum with five Newton–Schulz iterations (Jordan et al., 2024). With the compact singular value decomposition 
+
+M = V ΣU ⊤, the coefficients are M U = V Σ, and normalizing each coefficient column to unit 
+
+ℓ2 norm gives V . The polar factor V U ⊤ is therefore Equation 3 with the right singular vectors of 
+
+M as the basis and column normalization as N . Dion applies Equation 3 to M ⊤ using a rank-
+
+r orthonormal basis Vr ∈ Rm×r , with N being column normalization as well. Vr is obtained by one warm-started power-iteration step on M , approximating its leading left singular subspace. Dion retains the rank-r approximation residual in its momentum through error feedback (Ahn et al., 2025). For weight gradients Ht = ∇W fBt (W ), Shampoo adds HtH⊤ 
+
+> t
+
+and H⊤ 
+
+> t
+
+Ht to its left and right Gram matrices L and R, respectively, and uses inverse powers of the accumulated matrices to precondition the update (Gupta et al., 2018). Let QL and QR contain the eigenvectors of the accu-mulated L and R, so that Q⊤ 
+
+> L
+
+HtQR expresses the gradient in their two-sided coordinates. SOAP applies Adam to gradients in these coordinates, while SPlus applies the element-wise sign to mo-mentum in these coordinates (Vyas et al., 2025; Frans et al., 2025). These weight-gradient Gram matrices differ from the activation and output-gradient second moments At and Gt defined above. Gong et al. (2026) analyze a general form of Equation 3 as rotated steepest descent, Jψ(J⊤M )
+
+with a rotation J and a base function ψ. Their base functions include the sign and row normaliza-tion (the counterpart of column normalization for a basis applied on the left), and their unified view lists one-sided simplifications of SOAP and SPlus. Dobb takes its basis from the eigenvectors of the activation second moment and, instead of column normalization, applies the element-wise sign, 
+
+N (Z) = sign( Z)/√m. We first compare the two basis sources, then assess sign against column normalization in the selected basis. 
+
+Spectral concentration motivates the input-side basis. In transformer training, weight gradients (Shen et al., 2026) and updates from SGD with momentum and Adam (Jordan et al., 2024) typically have low-rank structure. Muon approximately orthogonalizes its updates, making their singular values nearly equal, and achieves model quality comparable to AdamW with less compute (Jordan et al., 2024; Liu et al., 2025). We compare activation and output-gradient second moments using entropy-based effective rank, normalized by the factor dimension, across layer types and training checkpoints (Figure 2). A lower effective rank indicates that the spectrum is concentrated in fewer eigendirections. Figure 2 shows that activation factors exhibit greater spectral concentration than the corresponding output-gradient factors. At 50% of training, over the 72 weight matrices of GPT-2 Small with the query, key, and value projections counted separately, the median effective rank is 13% for the activation second moment and 55% for the output-gradient second moment, and the output-gradient factor has the higher effective rank in 65 of the 72 pairs. Shen et al. (2026) report highly concentrated singular values in the input feature matrices of MNIST and CIFAR-10 and in RoBERTa text embeddings. An eigenbasis exposes spectral concentration as unequal scales along its coordinate directions. This motivates using the activation eigenbasis to remove the more concentrated factor’s directional scaling through sign normalization. To see how the activation eigenbasis interacts with sign normalization, we express the mini-batch gradient in this basis. Write the compact singular value decomposition as X⊤ 
+
+> t
+
+= VX ΣX U ⊤, where the columns of U are the eigenvectors of At with positive eigenvalues. The gradient coefficients in this basis are 
+
+∇W fBt (Wt) U = 1
+
+N DtVX ΣX .
+
+Each diagonal entry of ΣX positively scales one column of these coefficients. Since positive scaling does not change an entry’s sign, 
+
+sign( ∇W fBt (Wt) U ) = sign( DtVX ).
+
+Thus, sign normalization removes the activation singular-value scaling from the gradient coeffi-cients. The cancellation of activation singular-value scaling is exact for a mini-batch gradient ex-pressed in the eigenbasis of that mini-batch’s activation second moment. For momentum expressed in a reused eigenbasis of an averaged activation second moment, this cancellation serves as moti-vation rather than an exact identity. In Table 1(a), the sign of a synthetic matrix with higher ef-fective rank is more orthogonal. The basis ablation provides empirical support for this choice: the 4020 40 60 80            
+
+> Step 0 (Initialization) Step 1% 0246810 020 40 60 80
+> Step 10% 0246810
+> Step 50% Layer Depth Effective Rank (%)
+> attn.c_attn attn.c_proj mlp.c_fc mlp.c_proj
+
+(a) Input-activation second moment At020 40 60 80             
+
+> Step 0 (Initialization) Step 1% 0246810 020 40 60 80
+> Step 10% 0246810
+> Step 50% Layer Depth Effective Rank (%)
+> attn.c_attn_q attn.c_attn_k attn.c_attn_v attn.c_proj mlp.c_fc mlp.c_proj
+
+(b) Output-gradient second moment Gt
+
+Figure 2: Effective rank of the second moments from GPT-2 Small runs on OpenWebText. Within each plot, four panels show transformer layer depth at the indicated fraction of training completed; curves distinguish weight-matrix types. From 50% to 100% of training, the effective-rank distribu-tion remains stable. Effective rank is exp( − P 
+
+> i
+
+pi log pi) as a percentage of the factor dimension, 
+
+n for At and m for Gt, where pi is the ith normalized eigenvalue. The second-moment matrices are averaged over accumulated mini-batches. The output-gradient plot separates the query, key, and value blocks of the fused attention projection. activation-side basis gives the lower final validation loss (Appendix F.2). We therefore use the eigen-vectors of the activation second moment as coordinates for normalizing momentum coefficients. 
+
+Sign or column normalization. A column-normalized variant keeps Dobb’s basis and applies Muon’s column normalization to the same coefficients, so comparing it with Dobb isolates the nor-malization. Column normalization also ignores positive column scaling and therefore acts on DtVX .In the synthetic gradients of Table 1(b), the columns of DtVX have nearly equal norms, so column normalization changes the coefficients little and keeps the concentration of the output-gradient fac-tor. In these gradients, the sign gives the more orthogonal update unless the output-gradient second moment is nearly flat, with effective rank above about 75% of its dimension. In the GPT-2 Small runs of Figure 2, 52 of the 72 output-gradient second moments have effective rank below 75% at 50% of training. In training, sign normalization gives the lower final loss in all sixteen matched comparisons from GPT-2 Small to XL, by 0.008 to 0.026 (Appendix F.1). The sign also acts on each coefficient independently, whereas column normalization requires a reduction when the output axis is sharded. 
+
+Temporal stability motivates basis reuse. K-FAC exploits slowly changing second-moment fac-tors and relatively stable curvature to amortize inverse computations across optimizer steps (Martens and Grosse, 2015, Appendix G). Following this rationale, we reuse the activation-side basis between periodic refreshes, reducing the amortized cost of basis computation. Appendix F.4 evaluates the re-sulting tradeoff between iteration time and optimization quality. 
+
+Sharding motivates a block-diagonal basis. Under TP and FSDP alike, each rank holds one shard of a weight matrix and the matching shards of its gradient and optimizer state, so a matrix-aware update of the complete matrix needs operands from other shards. We therefore seek a basis that each rank can construct and apply from its own operands: a block-diagonal basis whose blocks align with shard boundaries. We write TP for the tensor-parallel degree, FS for the FSDP shard degree, and B for the number of second-moment blocks. In the Megatron-LM layout, a column-parallel layer shards the output axis m and receives a replicated input, whereas a row-parallel layer shards the input axis n and reduces partial outputs (Shoeybi et al., 2019). For row-parallel layers, we 5Table 1: Orthogonality of updates on synthetic 768 × 768 gradients. (a) A matrix Y with pre-scribed effective rank and its sign. (b) Sign normalization (Dobb) and column normalization in the same eigenbasis of the full activation second moment (a single block), on gradients DX ⊤ whose output-gradient second moment G has the stated effective rank, with the effective rank of the ac-tivation second moment fixed at 15%. Effective rank is the entropy-based measure of Figure 2 as a percentage of the dimension, computed from the singular values of Y in (a). Orthogonality is 
+
+∥O∥∗/(pmin( m, n ) ∥O∥F ) for a nonzero m × n matrix O, where ∥ · ∥ ∗ and ∥ · ∥ F denote the nuclear and Frobenius norms; it equals 1 exactly when all singular values are equal. Appendix D describes the construction.                             
+
+> (a) Sign of a matrix Orthogonality Effective rank of YYsign( Y)
+> 80% 0.736 0.775 50% 0.412 0.643 20% 0.205 0.543 5% 0.109 0.457 (b) Normalization in the activation eigenbasis Orthogonality Effective rank of GSign (Dobb) Column ℓ2
+> 88% 0.854 0.864 80% 0.846 0.849 72% 0.839 0.834 55% 0.820 0.796 38% 0.796 0.748 22% 0.762 0.680
+
+partition the activation second moment into diagonal blocks within the input shards, so each block basis acts on local momentum columns. For column-parallel layers, the replicated input allows each rank to construct the same block bases and apply them to its local momentum rows. Under FSDP, our implementation shards each matrix that Dobb updates along its input axis, so each rank holds whole blocks and their momentum columns, as in a row-parallel layer. This construction accommodates both sharding axes under TP and the input-axis sharding under FSDP without requiring cross-shard communication during the optimizer step beyond the data-parallel synchronization of the activation second moments. This synchronization spans FSDP ranks and data-parallel replicas, which process different data, but not the ranks of a TP group, which share their data (Section 5). 
+
+Block partitioning retains a complete basis. The activation spectrum motivates the choice of basis, while sharding under TP and FSDP constrains how we construct and apply it. Dion reduces communication through low-rank updates, restricting each update to a lower-dimensional subspace while retaining the approximation residual through error feedback (Ahn et al., 2025). A rank-r up-date has at least min( m, n ) − r zero singular values, which limits its orthogonality over the full matrix space even when its factors have orthonormal columns. We instead partition the activation second moment into B blocks and retain all eigenvectors within each block. This construction discards cross-block correlations without imposing a reduced-rank constraint on the update and al-lows basis operations to remain local when blocks align with shard boundaries. At B = n, each block holds one input coordinate, each block basis is ±1, and the update reduces to sign( M )/√m,sign descent with momentum (Bernstein et al., 2018). As B increases from 1 to n, Dobb’s update therefore moves from normalization in a single activation eigenbasis toward sign descent with mo-mentum, whereas reducing Dion’s rank increases the number of zero singular values in its update. 
+
+# 4 Distributed Optimizer with Block-diagonal Eigenbases 
+
+Dobb normalizes momentum in a second-moment eigenbasis whose blocks can be assigned to in-dividual shards. All eigenvectors within each block are retained; B controls the block partition. Algorithm 1 states Dobb for one weight matrix. 
+
+An exponentially averaged block-diagonal second moment. Partition the input coordinates into 
+
+B equal-sized contiguous sets S1, . . . , SB . For simplicity, we consider only block counts B that divide n, so every block has width n/B ; we leave partitions with unequal block widths, needed when B does not divide n, to future work. On each capture window, let Xcap  
+
+> t
+
+∈ Rn×Nc stack the 6Algorithm 1 Dobb for one weight matrix of a single layer. Appendix B gives the capture policy and the synchronization of statistics, and Algorithm 3 gives the complete algorithm. 
+
+Require: W ∈ Rm×n; blocks {S b}Bb=1 ; period T ; decays βC , μ ; learning rate γt; weight decay λ;scale constant τ 
+
+> 1:
+
+Initialize M = 0  
+
+> 2:
+
+for each optimizer step t = 0 , 1, . . . do  
+
+> 3:
+
+if t mod T = 0 then  
+
+> 4:
+
+Capture input activations Xcap  
+
+> t
+
+and update each Ct,b by Equation 4  
+
+> 5:
+
+Refresh each block basis Ub from Ct,b ▷ Algorithm 2  
+
+> 6:
+
+end if  
+
+> 7:
+
+M ← μM + ∇W fBt (W ) 
+
+> 8:
+
+for b = 1 , . . . , B do  
+
+> 9:
+
+O:, Sb ←   sign( M:, Sb Ub)/√mU ⊤ 
+
+> b
+> 10:
+
+end for  
+
+> 11:
+
+W ← (1 − γtλ)W − γtτ pmax( m, n ) O 
+
+> 12:
+
+end for 
+
+inputs at the Nc captured token positions and form 
+
+St,b = 1
+
+Nc
+
+Xcap 
+
+> t, Sb,:
+
+(Xcap 
+
+> t, Sb,:
+
+)⊤, Ct,b = βC Cprev ,b + St,b . (4) The subscript Sb, : selects the rows indexed by Sb, and :, Sb selects the columns. The accumulator 
+
+Cprev ,b is the value from the previous capture, and βC is its decay. The first capture initializes 
+
+Ct,b = St,b . This is an exponentially weighted second moment; multiplying the entire accumulator by a positive scalar leaves its eigenvectors unchanged. We refresh the orthonormal basis Ut,b every 
+
+T optimizer steps and reuse it between refreshes. Although each block basis spans the full block space, its orientation changes the coefficients to which the element-wise sign is applied and thus the reconstructed update. Each refresh applies one step of orthogonal iteration, initialized from the previous basis, to approximate the evolving eigenbasis. Appendix B states the refresh with Householder QR and with Cholesky QR, and Appendix F.6 compares the two routines in GPT-2 training. The capture schedule and basis refresh are coupled, with T = 9 as the principal setting. 
+
+Projection, normalization, and reconstruction. Each block projects its columns of the momen-tum Mt of Algorithm 1 onto its basis, normalizes the coefficients, and reconstructs the correspond-ing columns of the update Ot:
+
+Zt,b = Mt, :, Sb Ut,b , Ot, :, Sb = N (Zt,b )U ⊤
+
+> t,b
+
+. (5) With the element-wise sign normalization N of Section 3, Equation 5 is Equation 3 with the block-diagonal basis whose diagonal blocks are Ut, 1, . . . , Ut,B .
+
+Update orthogonality under block partitioning. We compare how block partitioning and rank truncation change the singular-value spread of updates formed from the same momentum and second-moment state. Table 2 reports these updates at one GPT-2 Small checkpoint. For the or-thogonality metric defined in Table 1, a rank-r update is bounded above by pr/ min( m, n ). At this checkpoint, increasing B from 1 to 16 reduces Dobb’s mean orthogonality from 0.849 to 0.815, whereas reducing Dion’s rank from 768 to 48 reduces its orthogonality from 0.804 to 0.208. This metric describes update geometry. Section 6.1 separately reports validation loss under block parti-tioning. 
+
+Update magnitude and weight decay. Define RMS( O) = ∥O∥F /√mn before learning-rate multiplication and weight decay. For complete orthonormal block bases and nonzero coefficient entries, Dobb’s raw update has squared Frobenius norm n, independent of B, so its RMS is 1/√m.With learning rate γt, decoupled weight decay λ, and scale constant τ = 0 .2, Dobb updates the weights by 
+
+Wt+1 = (1 − γtλ)Wt − γts Ot, s = τ pmax( m, n ). (6) The update scale s depends on the full matrix shape, not the local shard shape, and introduces no norm collective. The update sOt therefore has RMS τ when m ≥ n and τ pn/m when n > 
+
+7Table 2: Update orthogonality under block partitioning and rank truncation. Orthogonality is the metric defined in Table 1. Values average 72 weight matrices using the same momentum from a GPT-2 Small checkpoint at optimizer step 5,000 with second-moment capture at every step.               
+
+> Dobb blocks BDobb orthogonality Dion rank rDion orthogonality 10.849 768 0.804 40.834 192 0.427 16 0.815 48 0.208
+
+Table 3: Leading optimizer-specific cross-shard payload for one m × n matrix. The counts apply when either the input or output axis is sharded, under TP or FSDP. For Dobb, each block lies within one shard. Constant collective factors and element sizes are omitted. The counts exclude the data-parallel synchronization of Dobb’s block second moments, n2/B entries per matrix at each refresh.        
+
+> Method Optimizer-specific cross-shard payload Muon, dense exchange O(mn )
+> Dion, rank rO(r(m+n))
+> Dobb 0
+
+m. Appendix E.1 derives the update RMS of each optimizer and states the effects of numerical orthogonality and zero coefficients. 
+
+Locality. When each block lies within one shard, projection, element-wise sign normalization, and reconstruction use local operands. Section 5 derives the resulting cross-shard payload and accounts separately for data-parallel second-moment synchronization. 
+
+# 5 Communication and computation 
+
+We count optimizer-specific cross-shard communication separately from the synchronization of sec-ond moments across data-parallel ranks. All communication counts in this section, including Ta-ble 3, describe logical payloads. We assume the Megatron-LM layout of Section 3 under TP and, under either layout, that each block of Dobb lies within one shard. When neither axis of a matrix is sharded, as under data parallelism alone, cross-shard communication is zero for every optimizer. 
+
+Blocks within shards. For Dobb on a row-parallel layer, or under FSDP with the input-axis shard-ing of Section 3, each input block and its momentum columns reside on the same rank. On a column-parallel layer the input is replicated, so each rank can form every input-side block basis and apply it to its own momentum rows. The m in the sign divisor is known from the parameter shape. No cross-shard statistic is needed for either update. Thus, when each block lies within one shard, Dobb introduces zero optimizer-specific cross-shard bytes, including basis construction, beyond the second-moment synchronization across data-parallel ranks described below. For a square 4096 ×4096 attention projection of Qwen3-8B in fp32, one dense payload is 67.11 MB, and two factors at r = 64 contain 2.10 MB. With each block within one shard, sign normalization contributes 0 MB of cross-shard payload. 
+
+FSDP has a separate synchronization requirement. FSDP ranks process different data, so con-sistent second moments require aggregation across the data-parallel group even when each block lies within one shard. The ranks of a TP group process the same data, so this aggregation does not cross TP ranks. Dobb captures and synchronizes its block second moments only on refresh iterations, once every T optimizer steps; the other optimizer steps issue no optimizer collective. Our implementation reduce-scatters the block second moments across the FSDP ranks, followed by an all-reduce across data-parallel replicas when the FSDP group is replicated. Each rank then refreshes the bases of its own blocks, so no bases are exchanged. Each refresh synchronizes n2/B second-moment entries per matrix (Appendix C), separately from the cross-shard count above. 8Arithmetic and memory. For Dobb, projection and reconstruction cost O(mn 2/B ), while one orthogonal iteration per refresh costs O(n3/(B2T )) amortized. Capturing Nc token positions once per refresh adds O(Ncn2/(BT )) . Storing the second moment and full block basis requires 2n2/B 
+
+scalars, in addition to momentum. Small products, basis orthogonalization, and communication overlap determine the realized cost. 
+
+Comparison with a rank budget. We pair B with Dion rank fraction 1/B in the quality compar-ison. For a square n × n matrix with r = n/B , Dobb’s block basis and Dion’s persistent factor each contain n2/B entries. Including momentum and the block second moment, Dobb stores n2 +2 n2/B 
+
+scalars, while Dion stores n2 + n2/B . Appendix C gives the rectangular-matrix counts and distin-guishes persistent state from transient workspace. 
+
+# 6 Experiments 
+
+We evaluate whether block-diagonal second moments retain optimization quality as their distributed cost decreases. The principal quality comparison covers GPT-2 Small, Medium, Large, and XL (Radford et al., 2019), with 124M, 354M, 772M, and 1.56B parameters excluding position embed-dings. The quality runs use OpenWebText (Gokaslan and Cohen, 2019), sequence length 1024, a global batch of 480 sequences, and bfloat16 computation. Table 10 records the scale-specific train-ing budgets, and Table 8 records the selected learning rates. All configurations within a scale use the same token budget, data order, evaluation procedure, and learning-rate schedule. 
+
+Baselines and parameter groups. We compare Dobb at B ∈ { 1, 4, 16 , 64 } against AdamW, Muon, RMNP, and Dion at rank fractions 1, 1/4, 1/16 , 1/64 (Loshchilov and Hutter, 2019; Jor-dan et al., 2024; Deng et al., 2026; Ahn et al., 2025). A Dion rank fraction ρ specifies r =max(1 , ⌊ρ min( m, n )⌋) for each weight matrix. Matrix optimizers update the two-dimensional weights inside transformer blocks; embeddings, the language-model head, biases, and normal-ization parameters use AdamW. Fused QKV parameters are treated as three weight matrices for matrix-update normalization, with each matrix’s own m, n . The quality implementation follows the RMNP/nanoGPT training framework (Deng et al., 2026; Karpathy, 2022). 
+
+A shared update-scale protocol. Following Liu et al. (2025), Muon, Dion, RMNP, and Dobb multiply their raw updates by the update scale s = τ pmax( m, n ) of Equation 6, with τ = 0 .2,before learning-rate multiplication and weight decay. The purpose of this scale is to bring the update RMS into the range of 0.2 to 0.4 that Liu et al. (2025) observe for AdamW, so that the matrix optimizers can share AdamW’s learning rate and weight decay. For a full-rank orthogonalized m×n
+
+update, their Lemma 1 gives raw RMS 1/pmax( m, n ), so this scale gives Muon an update RMS of 0.2. For the other optimizers, the update RMS depends on the matrix shape and, for Dion, on the rank (Appendix E.1). In our GPT-2 models, the update RMS of RMNP and Dobb is 0.2 or 0.4, also within this range. Dion’s update RMS is 0.2√ρ, which falls from 0.2 at full rank to 0.025 at 
+
+ρ = 1 /64 and lies below this range at every ρ < 1; Appendix E.1 tests a rank-corrected scale that holds it at 0.2. We select AdamW’s learning rate by grid search at Small and Medium and extrapolate a power-law fit of the sweeps to Large and XL (Appendix E.2), then transfer the selected rate and schedule to all other optimizers. All optimizers use weight decay 0.1, following the pretraining setting of Liu et al. (2025). 
+
+# 6.1 Quality under block and rank compression 
+
+Table 4 reports final validation loss under the shared update-scale protocol. Varying Dobb’s block count and Dion’s rank fraction measures the quality cost of block partitioning and rank restriction, respectively. From B = 1 to B = 64 , Dobb’s validation loss rises from 3.017 to 3.037 on Small, from 2.735 to 2.742 on Medium, from 2.579 to 2.600 on Large, and from 2.461 to 2.482 on XL, increases of 0.020, 0.007, 0.021, and 0.021. Reducing Dion’s rank fraction from 1 to 1/64 raises its loss from 3.002 to 3.265, from 2.720 to 2.879, from 2.568 to 2.696, and from 2.453 to 2.558, increases of 0.263, 0.159, 0.128, and 0.105. At B = 1 , Dobb has higher loss than Muon and full-rank Dion at each scale; at 
+
+B ∈ { 4, 16 , 64 }, it has lower loss than Dion at the corresponding rank fraction 1/B .9Table 4: Final validation loss under the shared update-scale protocol, with common learning rate and weight decay within each model scale. Small, Medium, Large, and XL train for 10,000, 20,000, 30,000, and 40,000 steps. Dion ranks are fractions of each weight matrix’s full rank.                                                           
+
+> Optimizer Blocks / rank fraction Small Medium Large XL AdamW n/a 3.044 2.761 2.606 2.497 Muon full 3.004 2.725 2.574 2.460 RMNP n/a 3.083 2.778 2.618 2.499 Dion 13.002 2.720 2.568 2.453
+> 1/43.038 2.754 2.596 2.481
+> 1/16 3.108 2.802 2.636 2.511 †
+> 1/64 3.265 2.879 2.696 2.558 Dobb B= 1 3.017 2.735 2.579 2.461
+> B= 4 3.024 2.741 2.588 2.471
+> B= 16 3.026 2.746 2.595 2.476 †
+> B= 64 3.037 2.742 2.600 2.482
+> †
+> The abstract and Section 6.2 compare this GPT-2 XL pair, whose optimizer-call and pooled iteration times appear in Table 23.
+
+Table 5: Times in milliseconds, with DP data-parallel replicas and FSDP shard degree FS . GPT-2 3B, 6B, and 8B are scaled-up GPT-2-style models. Optimizer call is the mean duration of 
+
+optimizer.step() ; Dobb’s is averaged over one refresh cycle, (Refresh + 8 · Non-refresh )/9.Iteration is the pooled iteration time defined in Appendix G.1. Dion uses rank r = 400 on Large; rank fraction ρ = 1 /3 on XL (A5000), 6B, and 8B; ρ = 1 /4 on XL (H100) and 3B; and on Qwen3, a rank fraction matched to the block width 1024 /FS (Appendix G.5). For GPT-2 XL on H100, Ta-ble 23 also reports Dion at ρ = 1 /16 , the rank fraction of the loss comparison in the abstract, with an optimizer call of 124.1 ms. Dashes mark methods not run on Qwen3. Appendix G gives Dobb’s 
+
+step() times on refresh and non-refresh iterations and all other configurations.                                                                                                   
+
+> Optimizer call (ms) Iteration (ms) Model GPU DP FS TP GPUs AdamW Muon Dion Dobb AdamW Muon Dion Dobb GPT-2 Large A5000 110 220 11.3 623.0 1224.1 6.9 7764 8376 8977 7760 GPT-2 XL A5000 28232 18.7 946.5 2523.2 16.3 11,649 12,577 14,153 11,646 GPT-2 XL H100 216 132 9.3 82.7 232.7 9.2 1069 1143 1293 1069 GPT-2 3B H100 116 232 49.4 454.3 1385.6 7.6 2388 2793 3724 2346 GPT-2 6B H100 18432 13.9 2106.8 1505.7 10.9 4823 6916 6315 4820 GPT-2 8B H100 116 464 15.2 2782.1 2081.5 10.0 5337 8104 7403 5332 Qwen3-8B H100 1818––159.5 86.2 ––423 349 Qwen3-32B H100 132 264 –– 1307.7 168.0 –– 17,664 16,524
+
+# 6.2 Iteration time under FSDP and tensor parallelism 
+
+We measured iteration time on GPT-2-style models from 772M to 8.1B parameters with our FSDP and TP implementation, and on Qwen3-8B and Qwen3-32B (Yang et al., 2025) with an imple-mentation built on the open-source Dion codebase (Ahn et al., 2025). Both implementations use PyTorch FSDP2 with DTensor-based TP (Liang et al., 2025). In all timing runs, NCCL communi-cated between nodes over TCP sockets. Table 5 reports one configuration per model and GPU type; Appendix G gives the setups and the remaining configurations. Because Dobb’s forward-backward overhead lies within the run-to-run variation of forward-backward time, the table reports pooled it-eration times, which share one forward-backward estimate per configuration and add each method’s measured optimizer call (Appendix G.1). In Table 5, Dobb’s amortized optimizer call takes 6.9 to 16.3 ms on GPT-2 and 86.2 to 168.0 ms on Qwen3, against 82.7 to 2782.1 ms for Muon and 159.5 to 2523.2 ms for Dion. Muon’s pooled iteration time is 1.07 to 1.52 times that of Dobb, and Dion’s is 1.07 to 1.59 times. The quality runs and the timing runs both include GPT-2 XL with B = 16 
+
+for Dobb and Dion at the corresponding rank fraction 1/16 . In this configuration, Dobb reaches a validation loss of 2.476 against 2.511 for Dion (Table 4), and under FSDP on 32 H100 GPUs, its 10 amortized optimizer call takes 9.2 ms against 124.1 ms, with pooled iteration times of 1069.1 and 1184.0 ms (Table 23). 
+
+# 7 Conclusion 
+
+We introduce Dobb, which normalizes momentum coefficients in block-diagonal activation second-moment eigenbases. The central design choice is to discard cross-block correlations while retaining every basis direction within each block. Together with element-wise sign normalization, this con-struction introduces zero optimizer-specific cross-shard bytes when each block lies within one shard, beyond the data-parallel synchronization of the block second moments. Across GPT-2 Small, Medium, Large, and XL, Dobb exhibits less validation-loss degradation under block partitioning than Dion under corresponding rank reductions. Dobb’s optimizer call is shorter than those of Muon and Dion in every measured FSDP and TP configuration (Appendix G). These timing runs are short and report pooled iteration times. Further work could investigate how block size and basis-refresh frequency should vary across lay-ers and training stages. Because Dobb’s basis refresh reads no gradient, it could also move out of the optimizer call into idle intervals of forward-backward computation and communication (Ap-pendix G.2). Understanding how discarded cross-block correlations and coefficient normalization theoretically affect optimization could also guide block partitions that preserve useful structure while respecting shard boundaries. 11 References 
+
+Kwangjun Ahn, Byron Xu, Natalie Abreu, Ying Fan, Gagik Magakyan, Pratyusha Sharma, Zheng Zhan, and John Langford. Dion: Distributed orthonormalized updates. arXiv preprint arXiv:2504.05295 , 2025. Jeremy Bernstein, Yu-Xiang Wang, Kamyar Azizzadenesheli, and Anima Anandkumar. signSGD: Compressed optimisation for non-convex problems. In International Conference on Machine Learning , volume 80 of Proceedings of Machine Learning Research , pages 560–569, 2018. Johan Bjorck, Alon Benhaim, Vishrav Chaudhary, Furu Wei, and Xia Song. Scaling optimal LR across token horizons. In International Conference on Learning Representations , 2025. Shenyang Deng, Zhuoli Ouyang, Tianyu Pang, Zihang Liu, Ruochen Jin, Shuhua Yu, and Yaoqing Yang. RMNP: Row-momentum normalized preconditioning for scalable matrix-based optimiza-tion. In International Conference on Machine Learning , volume 306 of Proceedings of Machine Learning Research , pages 24191–24239, 2026. Kevin Frans, Sergey Levine, and Pieter Abbeel. A stable whitening optimizer for efficient neural network training. In Advances in Neural Information Processing Systems , 2025. Ming Gao, Yanwu Xu, and Hao Zhang. MatrixFSDP: Communication-free matrix optimizers under ZeRO-3 parameter sharding. arXiv preprint arXiv:2607.05895 , 2026. Aaron Gokaslan and Vanya Cohen. OpenWebText corpus. http://Skylion007.github. io/OpenWebTextCorpus , 2019. Wenbo Gong, Javier Zazo, Qijun Luo, Puqian Wang, James Hensman, and Chao Ma. ARO: A new lens on matrix optimization for large models. arXiv preprint arXiv:2602.09006 , 2026. Vineet Gupta, Tomer Koren, and Yoram Singer. Shampoo: Preconditioned stochastic tensor op-timization. In International Conference on Machine Learning , volume 80 of Proceedings of Machine Learning Research , pages 1842–1850, 2018. Keller Jordan, Yuchen Jin, Vlado Boza, Jiacheng You, Franz Cesista, Laker Newhouse, and Jeremy Bernstein. Muon: An optimizer for hidden layers in neural networks, 2024. URL https: //kellerjordan.github.io/posts/muon/ .Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 , 2020. Andrej Karpathy. nanoGPT. https://github.com/karpathy/nanoGPT , 2022. Ahmed Khaled, Kaan Ozkara, Tao Yu, Mingyi Hong, and Youngsuk Park. MuonBP: Faster Muon via block-periodic orthogonalization. In International Conference on Learning Representations ,2026. Wanchao Liang, Tianyu Liu, Less Wright, Will Constable, Andrew Gu, Chien-Chin Huang, Iris Zhang, Wei Feng, Howard Huang, Junjie Wang, Sanket Jayant Purandare, Gokul Nadathur, and Stratos Idreos. TorchTitan: One-stop PyTorch native solution for production ready LLM pretrain-ing. In International Conference on Learning Representations , 2025. Jingyuan Liu, Jianlin Su, Xingcheng Yao, Zhejun Jiang, Guokun Lai, Yulun Du, Yidao Qin, Weixin Xu, Enzhe Lu, Junjie Yan, Yanru Chen, Huabin Zheng, Yibo Liu, Shaowei Liu, Bohong Yin, Weiran He, Han Zhu, Yuzhi Wang, Jianzhou Wang, Mengnan Dong, Zheng Zhang, Yongsheng Kang, Hao Zhang, Xinran Xu, Yutao Zhang, Yuxin Wu, Xinyu Zhou, and Zhilin Yang. Muon is scalable for LLM training. arXiv preprint arXiv:2502.16982 , 2025. Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Confer-ence on Learning Representations , 2019. James Martens and Roger Grosse. Optimizing neural networks with Kronecker-factored approxi-mate curvature. In International Conference on Machine Learning , volume 37 of Proceedings of Machine Learning Research , pages 2408–2417, 2015. 12 Kazuki Osawa, Shigang Li, and Torsten Hoefler. PipeFisher: Efficient training of large language models using pipelining and Fisher information matrices. In Proceedings of Machine Learning and Systems , volume 5, pages 708–727, 2023. Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are unsupervised multitask learners. Technical report, OpenAI, 2019. Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, and Yuxiong He. ZeRO: Memory optimizations toward training trillion parameter models. In International Conference for High Performance Computing, Networking, Storage and Analysis (SC) , pages 1–16, 2020. doi: 10.1109/SC41405. 2020.00024. Wei Shen, Ruichuan Huang, Minhui Huang, Cong Shen, and Jiawei Zhang. On the conver-gence analysis of Muon. Transactions on Machine Learning Research , 2026. URL https: //openreview.net/forum?id=4nH4CulGaP .Hao-Jun Michael Shi, Tsung-Hsien Lee, Shintaro Iwasaki, Jose Gallego-Posada, Zhijing Li, Kaushik Rangadurai, Dheevatsa Mudigere, and Michael Rabbat. A distributed data-parallel Py-Torch implementation of the Distributed Shampoo optimizer for training neural networks at-scale. 
+
+arXiv preprint arXiv:2309.06497 , 2023. Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. Megatron-LM: Training multi-billion parameter language models using model par-allelism. arXiv preprint arXiv:1909.08053 , 2019. Nikhil Vyas, Depen Morwani, Rosie Zhao, Itai Shapira, David Brandfonbrener, Lucas Janson, and Sham Kakade. SOAP: Improving and stabilizing Shampoo using Adam for language modeling. In International Conference on Learning Representations , 2025. An Yang et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. Greg Yang, Edward J. Hu, Igor Babuschkin, Szymon Sidor, Xiaodong Liu, David Farhi, Nick Ry-der, Jakub Pachocki, Weizhu Chen, and Jianfeng Gao. Tensor Programs V: Tuning large neural networks via zero-shot hyperparameter transfer. In Advances in Neural Information Processing Systems , volume 34, pages 17084–17097, 2021. Yanli Zhao, Andrew Gu, Rohan Varma, Liang Luo, Chien-Chin Huang, Min Xu, Less Wright, Hamid Shojanazeri, Myle Ott, Sam Shleifer, Alban Desmaison, Can Balioglu, Pritam Damania, Bernard Nguyen, Geeta Chauhan, Yuchen Hao, Ajit Mathews, and Shen Li. PyTorch FSDP: Experiences on scaling fully sharded data parallel. Proceedings of the VLDB Endowment , 16(12): 3848–3860, 2023. doi: 10.14778/3611540.3611569. 13 Appendix contents 
+
+A Notation 15 B Complete algorithm and implementation settings 16 C Communication, arithmetic, and state accounting 17 D Construction of the synthetic matrices 18 E Training protocol and update scale 19 
+
+E.1 Update RMS of each optimizer . . . . . . . . . . . . . . . . . . . . . . . . . . . . 20 E.2 Learning-rate scaling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 
+
+F Ablations 23 
+
+F.1 Sign versus ℓ2 normalization . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 23 F.2 Input-activation versus output-gradient bases . . . . . . . . . . . . . . . . . . . . 24 F.3 Gradient-derived second moments . . . . . . . . . . . . . . . . . . . . . . . . . . 24 F.4 Basis-refresh period . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 F.5 Orthogonal iterations per refresh . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 F.6 Householder versus Cholesky QR . . . . . . . . . . . . . . . . . . . . . . . . . . 26 F.7 First-micro-batch capture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 F.8 Second-moment and basis precision . . . . . . . . . . . . . . . . . . . . . . . . . 27 F.9 Nesterov momentum . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 
+
+G Details of the distributed iteration-time experiments 28 
+
+G.1 Pooled iteration time . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 28 G.2 Work that can leave the optimizer call . . . . . . . . . . . . . . . . . . . . . . . . 29 G.3 GPT-2 on A5000 GPUs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29 G.4 GPT-2 on H100 GPUs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 G.5 Qwen3 FSDP and tensor-parallel series . . . . . . . . . . . . . . . . . . . . . . . 31 14 A Notation 
+
+Table 6 lists the symbols that recur across sections, grouped by topic, with the location of each definition. Bold capitals denote matrices, and bold lowercase letters denote vectors. Calligraphic letters denote index sets, the mini-batch, the coefficient normalization, the fitted loss, and asymptotic order O(·). For a matrix M , M:,S selects the columns indexed by S and MS,: the rows. Matrix dimensions refer to the full weight matrix after the QKV split and before sharding. Table 6: Notation. Parenthesized values are the principal settings. 
+
+Symbol Meaning Defined in 
+
+Layer and gradient statistics 
+
+m, n Output and input dimensions of a weight matrix Section 3 
+
+Wt, t Weight matrix of a layer y = W x at optimizer step t Section 3 
+
+Bt, N Mini-batch at step t, and its number of examples or token positions Section 3 
+
+fBt Mean loss on Bt Equation 1 
+
+xi, gi Input activation and output gradient of the ith contribution Equation 1 
+
+Xt, Dt Stacked activations [x1, . . . , xN ] and output gradients 
+
+[g1, . . . , gN ]; the superscript cap restricts these matrices to captured positions Equation 1 
+
+VX , ΣX Left singular vectors and diagonal singular-value matrix in the com-pact SVD X⊤ 
+
+> t
+
+= VX ΣX U ⊤
+
+Section 3 
+
+At, Gt Activation and output-gradient second moments, n × n and m × m Equation 2 
+
+Blocks and bases 
+
+B, b Number of equal-sized blocks per weight matrix, and block index Section 3 
+
+Sb Coordinates of block b on the input axis for A, output axis for G Equation 4 
+
+St,b Block second moment of one capture window Equation 4 
+
+Ct,b , βC Exponentially averaged block second moment, and its decay (0.95) Equation 4 
+
+T Capture and basis-refresh period in optimizer steps (9) Section 4 
+
+Nc Token positions captured per refresh Equation 4 
+
+ε Shift added to a block second moment: 10 −6 for the cold-start eigendecomposition and Householder QR; ω max i
+
+P 
+
+> j
+
+|Cij | for Cholesky QR Algorithm 2 
+
+ω Relative shift for Cholesky QR, ε ≥ ωλ max (10 −2) Algorithm 2 
+
+U , Ut,b Orthonormal basis in the update template, and orthonormal block basis in use at step t, approximating the eigenbasis of Ct,b 
+
+Equation 3 
+
+Update 
+
+M , Mt Momentum Equation 3 
+
+μ Momentum decay (0.95) Algorithm 1 
+
+Zt,b Coefficients of the momentum slice in the block basis Equation 5 
+
+N , bZb Coefficient normalization, and normalized coefficients bZb =
+
+N (Zb)
+
+Equation 3 
+
+ℓ∞, ℓ2 Sign normalization sign( Z)/√d, and unit-norm columns Algorithm 3 
+
+d Length of the non-basis axis: m for A, n for G Algorithm 3 
+
+O, Ot Output of the update template, and raw update assembled from the blocks, before scaling Equation 3 
+
+RMS( O) Per-element root mean square, ∥O∥F /√mn Section 4 
+
+τ , s Scale constant (0.2), and update scale s = τ pmax( m, n ) Equation 6 
+
+γt, λ Learning rate at step t, and decoupled weight decay (0.1) Equation 6 
+
+Baselines and parallelism 
+
+r Dion rank Section 3 
+
+ρ Dion rank fraction, with r = max(1 , ⌊ρ min( m, n )⌋) Section 6 
+
+TP Tensor-parallel degree Section 3 
+
+FS FSDP shard degree Section 3 
+
+DP Data-parallel replication degree: the number of model replicas, each sharded over FS · TP ranks Table 5 
+
+15 B Complete algorithm and implementation settings 
+
+Algorithm 3 specifies the four Dobb variants with the update scale of Equation 6. Algorithm 2 maintains a complete orthonormal basis within each block. The update uses only the eigenvectors of each block second moment: the sign and the column ℓ2 normalization both ignore positive scaling of coefficient columns, so an inverse-eigenvalue rescaling of the coefficients would not change the update. Each warm-started refresh orthonormalizes (C +εI)U , and we use two QR routines for this step. Householder QR uses the fixed shift ε of the cold-start eigendecomposition, and Cholesky QR sets ε = ω max i
+
+P 
+
+> j
+
+|Cij | instead. Cholesky QR replaces the sequence of Householder reflections with matrix products, a Cholesky factorization of the Gram matrix Q⊤Q, and a triangular solve. The Gram matrix has the squared condition number of Q, so its factorization can fail in fp32 when 
+
+Q is ill-conditioned. For an orthonormal U , the condition number of (C + εI)U equals that of 
+
+C + εI, which the shift ε ≥ ωλ max (C) bounds by (1 + ω)/ω , or 101 at ω = 10 −2. The shift leaves the eigenvectors unchanged but replaces each eigenvalue ratio λi/λ j by (λi + ε)/(λj + ε),which slows the convergence of orthogonal iteration. A distributed implementation may assign basis factorizations to different ranks, batch matrices with equal block shapes, and distribute refreshed bases to the ranks that consume them. Those assignments change which collectives run and when, not the update that each block receives. 
+
+Algorithm 2 Full block-basis refresh. The first call uses an exact eigendecomposition; subsequent calls apply one step of warm-started orthogonal iteration, orthonormalized by Householder QR or by Cholesky QR (Algorithm 4). Equal-sized blocks can be processed in a batch.  
+
+> 1:
+
+function EIGENVECTORS (C, U , ε, ω ) 
+
+> 2:
+
+if U is empty then  
+
+> 3:
+
+U ← eigenvectors from E IGH (C + εI) 
+
+> 4:
+
+Discard the eigenvalues and retain every column of U 
+
+> 5:
+
+else if the routine is Householder QR then  
+
+> 6:
+
+U ← orthonormal factor of H OUSEHOLDER QR  (C + εI)U  
+
+> 7:
+
+else  
+
+> 8:
+
+ε ← ω max i
+
+P 
+
+> j
+
+|Cij | ▷ upper bound on ωλ max (C) 
+
+> 9:
+
+U ← CHOLESKY QR  (C + εI)U  ▷ Algorithm 4  
+
+> 10:
+
+end if  
+
+> 11:
+
+return U 
+
+> 12:
+
+end function 
+
+Each block has width n/B on the activation side and m/B on the output side; every block count in our experiments divides the length of the partitioned axis. A local update requires only that each block lie within one shard. The block count is defined per weight matrix; a fused QKV parameter is split into its three weight matrices before the update, and each receives its own blocks. No equality of block width across differently shaped layers is assumed. The principal capture policy uses only the first micro-batch on refresh iterations. The matrix Xcap 
+
+> t
+
+contains the Nc captured input columns, and Dcap  
+
+> t
+
+∈ Rm×Nc contains the corresponding output-gradient columns for side G. With all-micro-batch capture, form a token-weighted second moment across the captured micro-batches before applying the window-level decay. This normalization makes the second moment a mean over captured tokens for either capture policy in Appendix F.7. Second-moment capture uses forward hooks for side A and backward hooks for side G. The hooks are inactive outside training mode and on non-refresh iterations, and they accumulate the block outer products in place, so captured activations or output gradients are not retained after the hook returns. Column normalization in the ℓ2 variants sums squares over a full coefficient column; when that axis is sharded, the sum requires one reduction across the shards, which Section 5 counts separately from the local update. The principal settings are βC = 0 .95 , μ = 0 .95 , T = 9 , one warm orthogonal iteration, fp32 second-moment accumulation, and bf16 basis storage. Appendix F.8 compares these two precision choices against their alternatives. Appendix F.5 compares the single orthogonal itera-tion with two and three iterations and with an exact eigendecomposition. The shift for the cold-start eigendecomposition and Householder QR is ε = 10 −6 in the stated accumulation convention. The scale constant is τ = 0 .2, and weight decay is λ = 0 .1. Table 8 lists the selected learning rates. 16 Algorithm 3 Complete update for the four Dobb variants on one matrix of a single layer with the up-date scale of Equation 6. The side and norm select the variant: (A, ℓ ∞) gives Dobb, (G, ℓ ∞) Dobb-G, (A, ℓ 2) Dobb-ℓ2, and (G, ℓ 2) Dobb-G-ℓ2. Appendices F.1 and F.2 compare the four variants. The gradient uses the full mini-batch Bt; capture may use a subset of its micro-batches. The per-matrix computation is shown; synchronization follows the actual TP/FSDP mesh. The optimizer-step in-dex t is omitted from the momentum, bases, coefficients, and update in both this algorithm and Algorithm 1. 
+
+Require: W ∈ Rm×n; side A or G (basis from At or Gt); norm ℓ∞ or ℓ2; blocks {S b}Bb=1 of the input coordinates for side A, of the output coordinates for side G
+
+Require: βC , μ, T, ε, ω, τ, λ, γ t; capture policy; QR routine 1: d ← m for side A, otherwise n
+
+2: Initialize M = 0 ; block statistics and bases are empty 3: for each optimizer step t = 0 , 1, . . . do 
+
+4: if t mod T = 0 then 
+
+5: Capture Xcap  
+
+> t
+
+for side A or Dcap  
+
+> t
+
+for side G from the micro-batches selected by the capture policy 6: St,b ← mean second moment of the captured positions for each block b, as in Equation 4 7: Synchronize St,b across data-parallel ranks when required 8: Ct,b ← St,b on the first capture, otherwise βC Cprev ,b + St,b 
+
+9: Ub ← EIGENVECTORS (Ct,b , Ub, ε, ω ) for each block b
+
+10: end if 
+
+11: M ← μM + ∇W fBt (W )
+
+12: for each locally needed block b do 
+
+13: Vb ← M:, Sb for side A, otherwise M ⊤Sb,:
+
+14: Zb ← VbUb
+
+15: if norm is ℓ∞ then 
+
+16: bZb ← sign( Zb)/√d
+
+17: else 
+
+18: bZb ← Zb with each nonzero column scaled to unit ℓ2 norm; zero columns stay zero 19: end if 
+
+20: bVb ← bZbU ⊤
+
+> b
+
+21: Store bVb in O:, Sb for side A, otherwise its transpose in OSb,:
+
+22: end for 
+
+23: W ← (1 − γtλ)W − γtτ pmax( m, n ) O
+
+24: end for 
+
+Algorithm 4 Cholesky QR with two passes. Algorithm 2 applies it to (C + εI)U with ε ≥
+
+ωλ max (C), which bounds the condition number of the input by (1 + ω)/ω .
+
+1: function CHOLESKY QR( Q)
+
+2: for pass = 1 , 2 do 
+
+3: R ← CHOLESKY (Q⊤Q) ▷ upper triangular, Q⊤Q = R⊤R
+
+4: Q ← QR −1 ▷ triangular solve 
+
+5: end for 
+
+6: return Q
+
+7: end function 
+
+# C Communication, arithmetic, and state accounting 
+
+Communication for the ablation configurations. Algorithm 3 specifies three alternative config-urations that change the basis source or coefficient normalization of Dobb, and Appendix F com-pares them. With each block within one shard, sign normalization requires no cross-shard reduction for either basis source. Column normalization changes this result only when its reduction axis is sharded. Dobb-ℓ2 reduces one squared norm for each of n coefficient columns when the output axis is sharded. Dobb-G-ℓ2 reduces m such values when the input axis is sharded. Independent norm reductions can be packed to reduce collective-launch overhead. For a square 4096 × 4096 matrix in fp32, these 4096 scalars contain 0.0164 MB. 
+
+Object size and wire traffic. For input-axis blocks of width n/B , P 
+
+> b
+
+|S b|2 = n2/B . For output-axis blocks the corresponding sum is m2/B . Multiplying by the bytes per stored scalar gives the 17 Table 7: Leading optimizer-specific cross-shard payload for the basis and normalization ablations on one m × n matrix, with each block within one shard. The ℓ2 entries are scalars reduced per update; constant collective factors and element sizes are omitted. The counts exclude the data-parallel synchronization of the block second moments.               
+
+> Configuration Output axis msharded Input axis nsharded Dobb 00
+> Dobb-G 00
+> Dobb-ℓ2O(n)0
+> Dobb-G-ℓ20O(m)
+
+second-moment object size. Communicating this object once per T updates gives an amortized size of n2/(BT ) or m2/(BT ) scalars. For a 4096 × 4096 matrix at B = 16 , T = 9 , and fp32 accumulation, the second-moment object contains 4,194,304 bytes per refresh, or approximately 0.466 MB per optimizer step. A basis exchange is a separate object whose size depends on its storage precision. For a ring all-reduce over R ranks, each rank sends 2( R − 1) /R times the input-buffer size; reduce-scatter and all-gather have different accounting. 
+
+Projection and basis maintenance. For input block widths nb, projection and reconstruction re-quire work proportional to m P 
+
+> b
+
+n2 
+
+> b
+
+. For B equal input blocks of width n/B , projection and re-construction each cost O(B m (n/B )2) = O(mn 2/B ). Orthogonal iteration and QR require work proportional to P 
+
+> b
+
+n3 
+
+> b
+
+, giving n3/B 2 per iteration. An exact cold-start eigendecomposition has the same cubic order and occurs once. Captured outer products cost Nc
+
+P 
+
+> b
+
+n2 
+
+> b
+
+. These counts exclude data movement, launch overhead, and overlap with the forward-backward pass. For output-side blocks of widths mb, use n P 
+
+> b
+
+m2 
+
+> b
+
+, P 
+
+> b
+
+m3 
+
+> b
+
+, and Nc
+
+P 
+
+> b
+
+m2 
+
+> b
+
+, respectively. 
+
+State versus workspace. The four Dobb variants retain momentum of size mn , a block second moment, and a block basis. Their element counts are mn + 2 n2/B on the activation side and 
+
+mn + 2 m2/B on the output side, before sharding and precision are applied. Captured activations, projected coefficients, and factorization buffers are additional transient memory. Dion retains mo-mentum of size mn and a factor of size r min( m, n ); its leading factor-communication payload is r(m + n). Error feedback may be represented within an existing momentum buffer rather than a separate dense allocation. Dion also uses a second factor and QR workspace during an update. Storage precision and the device mesh determine the byte count per rank for each implementation. 
+
+# D Construction of the synthetic matrices 
+
+Table 1 reports update orthogonality computed from synthetic matrices. The GPT-2 Small second-moment spectra in Figure 2, measured at 50% of training, guide the spectral shapes and effective-rank levels in panel (b). All matrices used here are synthetic. The synthetic gradients and the matrix 
+
+Y are 768 × 768 , and orthogonality is the metric defined in the caption of Table 1. 
+
+Matrices with prescribed effective rank. In panel (a), EY and PY are independent, uniformly distributed random orthogonal 768 × 768 matrices, and Y = EY diag(1 , 2−κY , . . . , 768 −κY ) P ⊤ 
+
+> Y
+
+.For each target, bisection on the exponent κY set the effective rank of Y to the target, which gave 
+
+κY = 0 .491 , 0.738, 0.997, and 1.307 for 80%, 50%, 20%, and 5%. This effective rank is that of Y
+
+itself: it follows Figure 2 with pi the ith normalized singular value of Y rather than an eigenvalue of a second moment. 
+
+Synthetic gradients. Panel (b) uses the mini-batch gradient DX ⊤/N of Equation 1 with m =
+
+n = 768 and N = 2048 token positions, omitting the step index t. We set X = √N EX Λ1/2 
+
+> X
+
+V ⊤
+
+> X
+
+and D = √N ED Λ1/2 
+
+> D
+
+P ⊤ 
+
+> D
+
+, where EX and ED are random 768 ×768 orthogonal matrices, VX and 
+
+PD are random N × 768 matrices with orthonormal columns, and ΛX and ΛD are diagonal with prescribed positive entries in decreasing order. The second moments of Equation 2 are then exactly 
+
+A = EX ΛX E⊤ 
+
+> X
+
+and G = ED ΛD E⊤ 
+
+> D
+
+, and the effective ranks in panel (b) are those of A and 18 G, computed from their eigenvalues as in Figure 2. The four random matrices are independent and uniformly distributed; independent factors match the interpretation of the K-FAC approximation as statistical independence between products of activations and products of output gradients (Martens and Grosse, 2015, Section 3.1). The diagonal entries follow the shapes of the measured spectra: in 9 of the 12 activation spectra recorded in full, from four weight-matrix types in the first, sixth, and last layers, the largest eigenvalue lies 2 to 30 times above a power law fitted to the other eigenvalues, whereas no output-gradient spectrum has a separated largest eigenvalue. We therefore gave the first entry of ΛX a fixed share of its trace and made the ith entry, for i ≥ 2, proportional to i−κX ; the ith entry of ΛD is proportional to i−κD for every i.
+
+Effective-rank levels. At 50% of training, the median effective rank over the 72 weight matrices of GPT-2 Small is 13% for the activation second moment and 55% for the output-gradient second moment; over the 48 square matrices of the query, key, value, and attention output projections, the medians are 17% and 38%. We fixed the activation effective rank at 15%, between the two activation medians, with a share of 25% and κX = 0 .94 , found by bisection along a line between the approximate ends of the measured ranges of the share (9% to 75%) and the exponent (0.74 to 1.6). For the output-gradient levels of 88%, 80%, 72%, 55%, 38%, and 22%, bisection on κD gave 0.40, 0.49, 0.57, 0.70, 0.83, and 0.97. These levels include both output-gradient medians and lie within the measured range of 0.2% to 92%; the steepest exponent, 0.97, slightly exceeds the range of 0.34 to 0.92 measured for the output-gradient spectra that follow a power law. 
+
+Updates. Both updates use the exact eigenbasis U of A as a single block ( B = 1 ), computed in double precision, and apply Equation 5 to the gradient in place of the momentum. Dobb takes the sign of the coefficients, and Dobb-ℓ2, defined in Algorithm 3, scales each coefficient column to unit 
+
+ℓ2 norm; positive scalar factors such as 1/√m do not change the orthogonality. Up to the order and signs of its columns, which affect neither update, U = EX , so X⊤ = VX ΣX U ⊤ with ΣX =
+
+√N Λ1/2 
+
+> X
+
+is the decomposition of Section 3, and the coefficients DX ⊤U /N = DV X Λ1/2 
+
+> X
+
+/√N
+
+depend on the activation spectrum only through a positive scaling of whole columns. Neither nor-malization changes under such a scaling, so the activation level does not affect panel (b). 
+
+Scope of the construction. The construction compares the orthogonality of individual updates on square synthetic gradients with independent factors and an exact activation eigenbasis. Rectangular matrices, structured singular vectors, and momentum with averaged or reused bases can change the observed orthogonality; the prescribed spectra also omit departures from a single power law in the query, key, and value factors. 
+
+# E Training protocol and update scale 
+
+AdamW learning-rate selection. The principal comparison transfers the AdamW-selected learn-ing rate to every optimizer at a given scale. Table 8 lists the selected rate, evaluation, and seeds at each scale, and Table 10 lists the grids and training budgets. Selection uses the same valida-tion procedure for every AdamW candidate; the final benchmark uses the selected rate without optimizer-specific retuning. Appendix E.2 fits the optimal learning rate as a power law in model size and extrapolates it to Large and XL. Table 8: Training protocol for the principal quality comparison. Table 10 gives the architecture, step count, training token budget, and AdamW grid at each size. Grid indices j refer to Equation 7. Validation loss is computed on a fixed set of held-out sequences.                                  
+
+> Field Small Medium Large XL Selected learning rate 3.54 ×10 −33.54 ×10 −32.5×10 −32.5×10 −3
+> Grid index j−1−1−2−2
+> Evaluation interval (steps) 1,000 1,000 1,000 1,000 Evaluation sequences 3,000 3,000 3,000 3,000 Seeds 5000 5000 5000 5000
+
+19 E.1 Update RMS of each optimizer 
+
+Under the shared update-scale protocol, every matrix optimizer in Table 9 multiplies its raw update 
+
+O by the update scale s = τ pmax( m, n ) of Equation 6 before learning-rate multiplication and weight decay. This scale replaces, rather than compounds, any earlier shape correction. All matrix dimensions refer to the full weight matrix before sharding and after the declared QKV split. Because the update scale is shared, the update RMS, RMS( sO) = s∥O∥F /√mn , differs across optimizers only through the Frobenius norm of the raw update. Liu et al. (2025) introduced this scale to bring Muon’s update RMS into the range of 0.2 to 0.4 that they observe for AdamW, and they report that Muon can then reuse the learning rate and weight decay tuned for AdamW. In our GPT-2 models, the resulting update RMS of RMNP, the four Dobb variants, and full-rank Dion also lies between 0.2 and 0.4. Under this shared update-scale protocol, we use the AdamW-selected learning rate and weight decay for all methods. Table 9: Raw-update norm, update scale s, and resulting update RMS of each matrix optimizer in exact arithmetic with nonzero coefficients. Approximate orthogonalization and zero columns can lower or perturb the attained RMS. The GPT-2 column uses τ = 0 .2 and the rank fraction 
+
+ρ = r/ min( m, n ). Every entry of the GPT-2 column lies in the range of 0.2 to 0.4 that Liu et al. (2025) observe for AdamW, except Dion’s at ρ < 1.                                        
+
+> Raw update ∥O∥2
+> FsRMS of sOGPT-2 Full-rank orthogonalized Muon min( m, n )τpmax( m, n )τ0.2 Dion, rorthonormal left / unit-norm right columns
+> rτpmax( m, n )τpr/ min( m, n )0.2√ρ
+> RMNP, unit-norm rows mτpmax( m, n )τpmax( m, n )/n 0.2 or 0.4 a
+> Dobb, Dobb-ℓ2nτpmax( m, n )τpmax( m, n )/m 0.2 or 0.4 b
+> Dobb-G, Dobb-G-ℓ2mτpmax( m, n )τpmax( m, n )/n 0.2 or 0.4 aa0.4 on the MLP input projection, for which m= 4 n; 0.2 on the other matrices.
+> b0.4 on the MLP output projection, for which n= 4 m; 0.2 on the other matrices.
+
+The Muon row is the full-rank result of Liu et al. (2025). For an activation-side Dobb block, or-thonormality gives ∥ bZbU ⊤ 
+
+> b
+
+∥2 
+
+> F
+
+= ∥ bZb∥2 
+
+> F
+
+. Unit-norm coefficient columns give |S b|, and summing over blocks gives n. Sign coefficients divided by √m give the same count when every coefficient is nonzero. Transposing the construction gives m on the output side. RMNP’s m unit-norm rows give squared norm m. For Dion’s raw factor product LR ⊤, L⊤L = Ir and unit-norm columns of 
+
+R imply ∥LR ⊤∥2 
+
+> F
+
+= tr( R⊤R) = r. Mutual orthogonality of the right columns is not required. With the shared update scale, Dion’s update RMS therefore falls with rank as τ pr/ min( m, n ).Every GPT-2 matrix has r = ρ min( m, n ) at the four rank fractions of Table 4, so Dion’s update RMS is 0.2√ρ: 0.2, 0.1, 0.05, and 0.025 at ρ = 1 , 1/4, 1/16 , and 1/64 . For ρ < 1, Dion’s update RMS therefore lies below the range of 0.2 to 0.4. We did not tune the learning rate separately for each Dion rank fraction or for each Dobb block count; all configurations at a model scale share the learning rate and weight decay. In their comparison of rank fractions across model sizes, Ahn et al. (2025) likewise use one fixed learning rate for Muon and for Dion at every rank fraction (their Appendix E.1), and their update scaling factor depends on the matrix shape but not on the rank (their Section 3.1). With the learning rate and weight decay unchanged, replacing Dion’s update scale on GPT-2 Small with the rank-corrected update scale τ pmn/r , which holds its update RMS at τ at every rank and equals the shared scale at full rank, changes the final validation loss from 3.038 to 3.034 at ρ = 1 /4, from 3.108 to 3.089 at ρ = 1 /16 , and from 3.265 to 3.267 at ρ = 1 /64 .The correction recovers at most 18% of the gap to the full-rank loss of 3.002 (0.019 of 0.106, at 
+
+ρ = 1 /16 ), so at this scale Dion’s loss increase at low rank arises mainly from the reduced rank and not from the smaller update RMS. The update scale avoids a new global norm reduction during the update. Finite-precision orthogo-nalization, normalization epsilons, and zero coefficients can change the attained RMS. 20 E.2 Learning-rate scaling 
+
+Let γ denote the peak of the learning-rate schedule γt and γ⋆ its optimal value. We sweep γ at four smaller model sizes, fit a power law for γ⋆, and extrapolate the fit to 772M and 1.56B. The 124M, 354M, 772M, and 1.56B models have the architectures of GPT-2 Small, Medium, Large, and XL (Section 6). Table 10 lists the sizes and sweeps, and Figure 3 shows the fits. Table 10: Model sizes and learning-rate sweeps. Nparam is the parameter count, including token embeddings and excluding position embeddings, and D is the training token budget. Sweeps use the grid of Equation 7, and grid ranges are inclusive. For swept sizes, bγ⋆ is the optimum of a quadratic in j fitted to the five grid points centered on the sweep’s best run, with both seeds at 62M; its 68% interval comes from a parametric bootstrap at the measured seed noise. For 772M and 1.56B, bγ⋆ is the extrapolation of Equation 11 with a 68% residual-bootstrap interval; both models are trained at 
+
+γ = 2 .5 × 10 −3 (j = −2). 
+
+Nparam Layers Width Heads Steps D Grid j Runs bγ⋆ (10 −3)
+
+Swept sizes 
+
+62M 6 640 10 5,000 2.46B −4 . . . 4 9 + 5 a 4.16 [3.74, 4.45] 124M 12 768 12 10,000 4.92B −4 . . . 4 9 3.56 [3.42, 3.72] 219M 18 896 14 15,000 7.37B −3 . . . 1 5 3.56 [3.31, 3.83] 354M 24 1024 16 20,000 9.83B −3 . . . 1 5 3.13 [2.43, 3.60] 
+
+Extrapolated sizes 
+
+772M 36 1280 20 30,000 14.75B n/a n/a 2.94 [2.70, 3.20] 1.56B 48 1600 25 40,000 19.66B n/a n/a 2.66 [2.37, 2.98] 
+
+> a
+
+Second seed over j = −2 . . . 2.1.8 2.5 3.5 5 7.1 10 learning rate ° (£10 ¡3)0.00 0.01 0.02 0.03 0.04 excess loss 
+
+> chosen for 772M & 1.56B
+> ±1 sd single-run seed noise (0.003)
+
+(a) LR sweeps and joint quadratic fit 
+
+> 62M, seed 5000 62M, seed 5001 124M 219M 354M
+
+100M 300M 1B 2B parameters Nparam (excl. position embeddings) 1.8 2.5 3.5 5optimal learning rate  ° ⋆ (£10 ¡3) extrapolated 
+
+(b) optimal LR vs. model size                     
+
+> joint fit °⋆/N¡0:14 param (68% band) extrapolated optimum (68% CI) learning rate used, j=¡2
+> 62M (2 seeds) 124M 219M 354M 772M 1.56B
+> −3 −2 −1 012grid index j(°j= 5 £10 ¡3¢2j= 2)−3 −2 −1 0grid index  j
+
+Figure 3: Learning-rate scaling. (a) Final validation loss relative to the fitted per-size minimum, with the shared-curvature parabolas of Equation 8; ticks at zero mark the fitted optima. Both seeds at 62M are shown, and the bar marks the estimated run-to-run standard deviation. (b) Optimal learning rate against parameter count. Filled points are the per-size optima of Table 10 with 68% intervals, and the line and band are the fitted law of Equation 11 with its 68% bootstrap band. Each 68% interval and band spans the 16th to 84th percentiles of its bootstrap distribution, which equals ±1 standard deviation for a normal distribution. The open circles are the extrapolated optima at 772M and 1.56B, and the diamonds mark the learning rate used for both, γ = 2 .5×10 −3 (j = −2). The shaded region lies beyond the largest swept size. 21 Optimizer and update magnitude. The sweeps train all parameters with AdamW (Loshchilov and Hutter, 2019) at a fixed weight decay, so γ is the only swept quantity. In the standard parametrization, AdamW keeps the per-element update magnitude fixed as width grows. The maxi-mal update parametrization ( μP) instead scales the Adam learning rate of hidden weights inversely with fan-in, which keeps the optimal learning rate stable across widths (Yang et al., 2021). We therefore measure how γ⋆ depends on model size instead of assuming that it transfers. 
+
+Grid search. We sweep γ over a geometric grid with ratio √2,
+
+γ = 5 × 10 −3 · 2j/ 2, j ∈ Z, (7) so adjacent grid points differ by a factor of √2 and points two steps apart by a factor of 2. The 62M and 124M sweeps use j = −4, . . . , 4, from 1.25 × 10 −3 to 2 × 10 −2. The 219M and 354M sweeps use j = −3, . . . , 1, from 1.77 × 10 −3 to 7.07 × 10 −3, because the two smaller sweeps had placed the optimum inside that window. A second 62M sweep over j = −2, . . . , 2 with a different seed measures run-to-run noise. Within a size, only γ varies. 
+
+Training recipe. All sizes follow one recipe: head dimension 64, 491,520 tokens per optimizer step (480 sequences of 1024 tokens), and 0.41B training tokens per layer, so the token budget D
+
+grows in proportion to depth. The learning rate warms up linearly over the first 10% of steps and then follows a cosine decay to 1% of its peak; the weight decay λ is 0.1. Each run is scored by its final validation loss. The 33 sweep runs use 2.0 × 10 20 FLOPs in total, counting 6Nparam D per run. 
+
+Noise floor. Across the five learning rates run with both seeds at 62M, the final losses differ by 0.005 RMS, giving an estimated run-to-run standard deviation of σ ≈ 0.003 . At 62M, the best grid point changes from j = 0 to j = −1 between the two seeds. We estimate γ⋆ by fitting the sweeps, with this noise estimate used for the per-size bootstrap intervals. 
+
+Joint fit. Let L(j; Nparam ) denote the final validation loss at grid index j for a model with Nparam 
+
+parameters. Near its minimum, L is well approximated by a quadratic in log γ, that is, in j. We fit all swept sizes jointly with a shared curvature a and an optimum that follows a power law in Nparam :
+
+L(j; Nparam ) = L⋆(Nparam ) + a  j − j⋆(Nparam )2, (8) 
+
+j⋆(Nparam ) = j⋆ 
+
+> ref
+
+− 2α log 2
+
+ Nparam /N ref 
+
+, (9) where each size has a free offset L⋆, and the reference size Nref is 354M, the largest swept size, which anchors the fit inside the data. The fit also determines j⋆ 
+
+> ref
+
+, the optimal grid index at Nref , and the exponent α. Because j = 2 log 2(γ/ 5 × 10 −3), Equation 9 is equivalent to the power law 
+
+γ⋆(Nparam ) = γ⋆
+
+> ref
+
+ Nparam /N ref 
+
+−α, (10) where γ⋆ 
+
+> ref
+
+= 5 × 10 −3 · 2j⋆  
+
+> ref /2
+
+is the optimal learning rate at Nref . The parabola is a local approx-imation, and the sweeps depart from it beyond about two grid steps from the optimum. Each size therefore contributes only the five grid points centered on its best run, with both seeds at 62M, which gives 25 points for 7 parameters. We fit by nonlinear least squares and derive confidence intervals from 600 residual-bootstrap resamples of the joint fit. 
+
+Fitted law. The joint fit gives 
+
+γ⋆(Nparam ) = 3 .28 × 10 −3
+
+ Nparam 
+
+354 M 
+
+−0.140 
+
+, (11) with α = 0 .140 (68% interval [0 .096 , 0.186] ; 95% interval [0 .051 , 0.224] ) and a 68% interval of 
+
+[3 .11 , 3.45] × 10 −3 for γ⋆ 
+
+> ref
+
+. The shared curvature is a = 0 .0023 per squared grid step, so a learning rate off by a factor of √2 raises the final loss by about 0.002, and one off by a factor of 2 raises it by about 0.009. The residual standard deviation of the fit is 0.003, which matches the measured seed noise, so the model describes the sweeps to within noise. Pooling the sizes also keeps a near-tie within one sweep from deciding the fit; at 124M, for example, j = −1 and j = 0 differ by less than 0.001. 22 Extrapolation to 772M and 1.56B. Rounding the extrapolated optima in Table 10 to the nearest grid point gives j = −2 for both sizes, so both models use γ = 2 .5 × 10 −3. Under the fitted quadratic, this rounding increases the predicted loss by less than 0.001. 
+
+Limitations. The 772M and 1.56B predictions extrapolate beyond the swept range. Because width, depth, and data grow together, Equation 11 describes this recipe and cannot attribute the change in γ⋆ to any single factor. In particular, it combines the effect of model size with that of the training horizon, which also shifts the optimal learning rate (Bjorck et al., 2025). Batch size, warmup fraction, and schedule are held fixed, and the fit applies only to these settings. 
+
+# F Ablations 
+
+Configurations for the basis and normalization ablations. We use three alternative configura-tions to isolate the choices of activation-side basis and sign normalization in Dobb. Dobb-ℓ2 retains the activation-side basis and normalizes every coefficient column to unit Euclidean norm, with a zero column mapped to zero. For an output-side basis, we partition the output coordinates and construct 
+
+Ct,b from Dt, Sb,:. We project the transposed momentum slice M ⊤
+
+> t, Sb,:
+
+, normalize its coefficients, reconstruct, and transpose back. Dobb-G uses this basis with sign normalization and denomina-tor √n; Dobb-G-ℓ2 instead normalizes each coefficient column to unit Euclidean norm. The four configurations are summarized below. Basis source Sign normalization Column normalization Input second moment At Dobb Dobb-ℓ2
+
+Output-gradient second moment Gt Dobb-G Dobb-G-ℓ2
+
+All four configurations use the update scale s = τ pmax( m, n ) of Equation 6, and Appendix E.1 gives the resulting update RMS of each. Unless stated otherwise, each ablation changes only its named component and retains the principal algorithm settings, update scale, weight decay, token budget, and evaluation procedure. Each ab-lation also uses the principal comparison’s learning rate at its model size, selected as described in Appendix E. Unless a subsection states otherwise, each ablation trains GPT-2 Small with B = 1 
+
+and T = 9 for 10,000 iterations with seed 5000, using data parallelism on four H100 GPUs, which replicates rather than shards the model. Final loss denotes final validation loss. Unless a caption states otherwise, iteration times include second-moment capture and are reported in milliseconds. Non-refresh and Refresh denote the median full-iteration times θN and θR on iterations without and with a basis refresh; Amortized denotes (θR + ( T − 1) θN)/T .
+
+# F.1 Sign versus ℓ2 normalization 
+
+Dobb and Dobb-ℓ2 share the activation-side basis and differ only in the coefficient normalization N
+
+of Equation 5: Dobb applies the sign, and Dobb-ℓ2 scales each coefficient column to unit ℓ2 norm. This ablation departs from the default setting above: it uses the principal comparison’s runs of both variants on GPT-2 Small, Medium, Large, and XL at B ∈ { 1, 4, 16 , 64 }, with the training budgets of Table 4. Table 11 shows that sign normalization gives the lower final loss in all sixteen matched comparisons, by 0.008 to 0.026. On Small, the margin decreases from 0.026 at B = 1 to 0.008 at B = 64 : Dobb’s loss rises by 0.020 over this range, while Dobb-ℓ2’s loss stays between 3.036 and 3.045. On Medium, Large, and XL, the margin stays between 0.014 and 0.019, between 0.019 and 0.021, and between 0.012 and 0.016, respectively. At these three scales, the two variants change by similar amounts from B = 1 to B = 64 : by 0.007 and 0.006 on Medium, by 0.021 and 0.020 on Large, and by 0.021 and 0.022 on XL. Against Dion at rank fraction 1/B in Table 4, Dobb-ℓ2 has lower loss at B = 16 
+
+and B = 64 on all four scales. At B = 4 , Dobb-ℓ2 is 0.001 below Dion on Small and 0.006, 0.013, and 0.002 above it on Medium, Large, and XL. The two normalizations also differ in derived cross-shard communication. Sign normalization acts on each coefficient independently, so when each block lies within one shard, Dobb adds no 23 optimizer-specific cross-shard payload beyond the data-parallel synchronization of its block second moments. Column normalization sums squares over each coefficient column, so Dobb-ℓ2 reduces n
+
+scalars per matrix when the output axis is sharded (Table 7). Table 11: Normalization ablation for the activation-side basis: final validation loss for Dobb (sign) and Dobb-ℓ2 (column ℓ2). The Dobb columns repeat Table 4; ∆ is the Dobb-ℓ2 loss minus the Dobb loss.                                                                
+
+> Small Medium Large XL
+> BDobb Dobb-ℓ2∆Dobb Dobb-ℓ2∆Dobb Dobb-ℓ2∆Dobb Dobb-ℓ2∆
+> 13.017 3.043 0.026 2.735 2.753 0.018 2.579 2.599 0.020 2.461 2.476 0.015 43.024 3.037 0.013 2.741 2.760 0.019 2.588 2.609 0.021 2.471 2.483 0.012 16 3.026 3.036 0.010 2.746 2.760 0.014 2.595 2.615 0.020 2.476 2.491 0.015 64 3.037 3.045 0.008 2.742 2.759 0.017 2.600 2.619 0.019 2.482 2.498 0.016
+
+# F.2 Input-activation versus output-gradient bases 
+
+The four Dobb variants separate the basis source from the coefficient normalization. Appendix F.1 compares the activation-side variants across scales; this ablation adds Dobb-G and Dobb-G-ℓ2 at 
+
+B ∈ { 1, 4, 16 , 64 }. We compare A versus G at each fixed normalization and block count, then compare the normalizations at each fixed basis source. Table 12 shows that the activation basis gives the lower final loss in all eight matched comparisons. Dobb-G exceeds Dobb by 0.035 to 0.054, and Dobb-G-ℓ2 exceeds Dobb-ℓ2 by 0.034 to 0.039. The two groups do not overlap: the highest activation-side loss, 3.045, is 0.022 below the lowest output-gradient loss, 3.067. Every normalization difference, at most 0.026, is smaller than every basis-source difference. With the activation basis, sign normalization gives the lower loss at every 
+
+B, as Appendix F.1 reports for all four scales. With the output-gradient basis, sign normalization gives lower loss by 0.006 at B = 1 and 0.011 at B = 64 , while at B = 4 and B = 16 the two normalizations differ by at most 0.004. Table 12: Basis-source and normalization ablation. The activation-side columns repeat the Small entries of Table 11.                      
+
+> Activation basis Output-gradient basis
+> BDobb Dobb-ℓ2Dobb-G Dobb-G-ℓ2
+> 13.017 3.043 3.071 3.077 43.024 3.037 3.067 3.071 16 3.026 3.036 3.076 3.075 64 3.037 3.045 3.072 3.083
+
+# F.3 Gradient-derived second moments 
+
+We also consider a hook-free basis constructed from the mini-batch weight gradient itself. The input- and output-side gradient Gram matrices are 
+
+Sin  
+
+> t
+
+= ∇W fBt (Wt)⊤∇W fBt (Wt),
+
+Sout  
+
+> t
+
+= ∇W fBt (Wt) ∇W fBt (Wt)⊤.
+
+(12) These gradient Gram matrices are the type of statistics accumulated by Shampoo and by SOAP, which runs Adam in the Shampoo eigenbasis (Gupta et al., 2018; Vyas et al., 2025). A one-sided block eigenbasis uses sign or column normalization. The input-side construction stores a block-diagonal second moment and its basis, 2n2/B scalars, and each refresh factorizes B blocks of width 
+
+n/B . With ℓ∞ (sign) normalization, the output-side construction matches the one-sided simplifica-tion of SPlus in the unified view of rotated steepest descent (Gong et al., 2026), and the input-side construction is its counterpart on the input side; SPlus itself rotates by both Shampoo eigenbases 24 and adds shape-aware scaling and iterate averaging (Frans et al., 2025). The ablation compares final loss for each source under both normalizations. The two kinds of source also differ in sampling: each gradient Gram matrix enters its exponential average at every iteration and uses the full mini-batch gradient, whereas the capture hooks record only the first micro-batch on refresh iterations. The comparison changes both the statistic and its sampling schedule. Table 13 shows that every input-side source has lower final loss than every output-side source under both normalizations. Under ℓ∞ normalization, final loss rises from 3.017 for the activation second moment to 3.027 and 3.055 for the input- and output-side gradient Gram matrices, and to 3.071 for the output-gradient second moment. Under ℓ2 normalization the ordering is the same, except that the activation second moment and the input-side gradient Gram matrix differ by 0.001 (3.043 and 3.042). On the input side, the activation second moment has 0.010 lower final loss than the gradient Gram matrix under sign normalization. On the output side, the gradient Gram matrix has lower final loss than the output-gradient second moment by 0.016 under ℓ∞ and by 0.013 under ℓ2
+
+normalization; this difference combines the statistic with its denser sampling. Table 13: Second-moment-source ablation.             
+
+> Norm Source Final loss
+> ℓ∞Activation second moment (Dobb) 3.017 Gradient Gram, input side 3.027 Gradient Gram, output side 3.055 Output-gradient second moment (Dobb-G) 3.071
+> ℓ2Activation second moment (Dobb-ℓ2)3.043 Gradient Gram, input side 3.042 Gradient Gram, output side 3.064 Output-gradient second moment (Dobb-G-ℓ2)3.077
+
+# F.4 Basis-refresh period 
+
+The principal period is T = 9 . We compare final loss and iteration time at T = 1 , 4, 9, 16 , 100 .Because capture occurs only on refresh iterations, T determines how long the basis is reused and, over a fixed training budget, how many micro-batches contribute to the second-moment accumulator. Table 14 shows that refreshing at every iteration gives the lowest final loss, 3.005, which is 0.012 below the 3.017 of the principal T = 9 . From T = 4 to T = 100 , final loss stays between 3.014 and 3.017 without a monotone trend. Relative to T = 1 , the principal T = 9 reduces the amortized iteration time from 762.5 to 403.6 ms, or by 47%. For fixed refresh and non-refresh times, the amortized refresh overhead decreases as 1/T . The measured amortized iteration time falls from 403.6 ms at T = 9 to 384.8 ms at T = 16 and to 363.4 ms at T = 100 , so the longer periods lower it by at most 40.2 ms and change final loss by at most 0.002. Table 14: Refresh-period ablation for Dobb. Full iteration reports the amortized time.             
+
+> TFinal loss Full iteration (ms) 13.005 762.5 43.014 459.3 93.017 403.6 16 3.017 384.8 100 3.015 363.4
+
+# F.5 Orthogonal iterations per refresh 
+
+Let k denote the number of warm-started orthogonal iterations per refresh; Algorithm 2 uses k = 1 .We compare this principal setting with k = 2 and k = 3 and with an exact eigendecomposition at every refresh. Each additional iteration repeats the product (Ct,b + εI)Ub and its QR orthonormal-ization, with ε selected as in Algorithm 2, so the derived refresh arithmetic grows linearly in k. The 25 exact variant computes the eigendecomposition of Ct,b + εI in fp32 at every refresh and discards the warm start. The block update is invariant to the sign and order of the basis columns, so the sign and ordering conventions of the eigensolver do not affect it. Table 15 shows that final loss varies by 0.004 across the four settings, from 3.015 for the exact eigendecomposition to 3.019 at k = 2 , and does not decrease monotonically with k. The extra cost falls on refresh iterations. Non-refresh iterations take 358.5 to 360.1 ms in all four settings, while each additional orthogonal iteration adds 375 to 381 ms to a refresh iteration and the exact eigendecomposition adds 632 ms. At T = 9 these refresh costs raise the amortized iteration time by 10.6%, 20.6%, and 17.5% for k = 2 , k = 3 , and the exact variant. The principal k = 1 setting has the lowest amortized iteration time, 403.6 ms; exact eigendecomposition takes 474.4 ms and lowers loss from 3.017 to 3.015. Table 15: Orthogonal-iteration ablation for Dobb.                         
+
+> Full iteration (ms) Basis refresh Final loss Non-refresh Refresh Amortized
+> k= 1 (principal) 3.017 359.5 756.5 403.6
+> k= 2 3.019 359.9 1137.8 446.4
+> k= 3 3.017 358.5 1512.3 486.7 Exact eigendecomposition 3.015 360.1 1388.9 474.4
+
+# F.6 Householder versus Cholesky QR 
+
+This ablation compares Householder QR with the Cholesky QR of Algorithm 4 at ω = 10 −2 in Dobb at B = 1 and B = 4 .Cholesky QR lowers the iteration time with little change in final loss. Table 16 shows that the QR routine changes final loss by at most 0.002: Cholesky QR gives 3.016 against 3.017 for Householder QR at B = 1 , and 3.022 against 3.024 at B = 4 . At iteration 1000, Cholesky QR has 0.012 higher validation loss at both block counts; from iteration 2000 onward, the two routines differ by at most 0.005. The time saving falls primarily on refresh iterations: their median time decreases from 760.3 to 486.3 ms at B = 1 and from 604.7 to 431.8 ms at B = 4 , while the non-refresh medians change by at most 3.5 ms. At T = 9 , Cholesky QR lowers the amortized iteration time from 409.1 to 375.6 ms, a reduction of 33.5 ms (8.2%), at B = 1 and from 417.6 to 397.5 ms, a reduction of 20.1 ms (4.8%), at B = 4 .Table 16: QR-routine ablation for Dobb.                        
+
+> Full iteration (ms)
+> BQR routine Final loss Non-refresh Refresh Amortized 1Householder 3.017 365.2 760.3 409.1 Cholesky 3.016 361.7 486.3 375.6 4Householder 3.024 394.2 604.7 417.6 Cholesky 3.022 393.2 431.8 397.5
+
+# F.7 First-micro-batch capture 
+
+The principal policy, first-micro-batch capture, forms the second moment on each refresh iteration from the first micro-batch alone. The alternative, all-micro-batch capture, forms a token-weighted second moment from every micro-batch of that iteration. Both policies use the full mini-batch stochastic gradient for momentum, so they differ only in the data from which the second moment is estimated. Each iteration accumulates gradients over eight micro-batches of 15 sequences on each of the four GPUs, so first-micro-batch capture pools 60 of the iteration’s 480 sequences across GPUs. We run the comparison for Dobb and Dobb-G. 26 Table 17 shows that capturing every micro-batch does not lower final loss. For Dobb it gives 3.021 against 3.017 with first-micro-batch capture, and for Dobb-G both policies give 3.071. Capturing every micro-batch raises the median refresh iteration time by 132.4 ms for Dobb and by 59.6 ms for Dobb-G, while the non-refresh medians differ by at most 0.9 ms. At T = 9 this raises the amortized iteration time by 15.5 ms (3.8%) for Dobb and by 6.5 ms (1.5%) for Dobb-G. Table 17: Capture-policy ablation for Dobb and Dobb-G.                        
+
+> Full iteration (ms) Method Capture policy Final loss Non-refresh Refresh Amortized Dobb First micro-batch 3.017 360.9 755.7 404.8 All micro-batches 3.021 361.8 888.1 420.3 Dobb-G First micro-batch 3.071 370.4 835.1 422.0 All micro-batches 3.071 370.2 894.7 428.5
+
+# F.8 Second-moment and basis precision 
+
+The principal setting accumulates the block second moments in fp32 and stores the bases in bf16. The implementation forms each captured outer product in the activation dtype and casts it to the accumulator dtype; at each refresh it casts the accumulator to fp32 before adding the shift and fac-torizing. Accumulation precision therefore affects the exponential average and its storage, not the factorization arithmetic, while basis precision affects the projection and reconstruction in Equa-tion 5. For side A the accumulator and the basis each hold n2/B entries per matrix, so each bf16 choice halves that buffer. We compare the four combinations of accumulation and basis precision. Table 18 shows that fp32 accumulation gives lower final loss than bf16 accumulation at both basis precisions: 3.023 against 3.028 with fp32 bases, and 3.017 against 3.027 with bf16 bases. Basis precision changes final loss by 0.006 at fp32 accumulation and by 0.001 at bf16 accumulation, in both cases in favor of bf16 bases. The principal combination, fp32 accumulation with bf16 bases, has the lowest final loss of the four. Relative to the principal setting, bf16 accumulation reduces the derived second-moment and basis storage from 6n2/B to 4n2/B bytes per matrix and raises final loss by 0.010. Table 18: Precision ablation for Dobb. Median iteration is the median full-iteration time in millisec-onds on iterations without an eigenbasis refresh. The storage column gives the second-moment and basis storage per matrix and is derived from buffer sizes, not measured.                     
+
+> Accumulation Basis Final loss Median iteration (ms) Storage per matrix (bytes) fp32 fp32 3.023 361.2 8n2/B
+> fp32 bf16 (principal) 3.017 360.4 6n2/B
+> bf16 fp32 3.028 361.0 6n2/B
+> bf16 bf16 3.027 360.9 4n2/B
+
+# F.9 Nesterov momentum 
+
+The principal Dobb definition uses ordinary momentum with Nesterov disabled. The ablation com-pares the update input Mt with the Nesterov input ∇W fBt (Wt) + μMt after the same momentum accumulation. It tests whether the additional gradient contribution changes final quality under the shared update scale. The principal comparison disables Nesterov momentum for Dobb, Muon, and RMNP at every model size. We test Dobb at B = 1 , 4, and 16, and the Muon and RMNP baselines. Table 19 shows that the effect of Nesterov momentum on Dobb changes sign with B. It lowers final loss by 0.003 at B = 1 (3.017 to 3.014) and by 0.001 at B = 4 , and raises it by 0.004 at B = 16 
+
+(3.026 to 3.030). For the baselines, Nesterov momentum leaves the final loss of Muon at 3.004 and lowers that of RMNP by 0.011, from 3.083 to 3.072. Nesterov momentum changes the amortized iteration time of Dobb by at most 0.7%. 27 Table 19: Nesterov ablation.                   
+
+> Method BOff On Dobb 13.017 3.014 Dobb 43.024 3.023 Dobb 16 3.026 3.030 Muon n/a 3.004 3.004 RMNP n/a 3.083 3.072
+
+# G Details of the distributed iteration-time experiments 
+
+This appendix gives the settings and the full timing breakdown of the four campaigns summarized in Table 5. Three campaigns used our implementation, built on PyTorch FSDP2 with DTensor-based TP (Liang et al., 2025): GPT-2 Large and XL on A5000 GPUs (Appendix G.3), GPT-2 XL on H100 GPUs, and GPT-2 3B, 6B, and 8B on H100 GPUs (Appendix G.4). The fourth campaign timed Qwen3-8B and Qwen3-32B on H100 GPUs with an implementation built on the open-source Dion codebase (Ahn et al., 2025), which we call the Dion-based implementation (Appendix G.5). It also uses PyTorch FSDP2 with DTensor-based TP. For Qwen3, this appendix also reports timings for the output-gradient basis with column normalization, Dobb-G-ℓ2, defined in Algorithm 3. All four campaigns used NCCL over TCP sockets between nodes. The optimizer-call times are measured, and the pooled iteration times are derived from measured means; the communication counts in Section 5 are analytical, and the tables report times only. Pooled iteration time is the comparison metric (Appendix G.1). In every campaign, Dobb refreshes its bases every T = 9 iterations. Both Qwen3 series use the fixed-count partition of Appendix B, with B = FS blocks per weight matrix. Each Qwen3 series pairs Dion’s rank fraction with a width of 1024 /FS , following the width–rank match of Section 5. In the GPT-2 campaigns, Dobb’s blocks follow the shards, so each block lies within one shard. Our implementation applies the matrix optimizers to the two-dimensional weights of the transformer blocks and AdamW to the remaining parameters. It runs a distributed Muon (Jordan et al., 2024) that orthogonalizes each whole weight matrix with Newton–Schulz iterations. Every GPT-2 run started from a random initialization, used a global batch of 480 OpenWebText sequences of 1024 tokens, and kept the gathered FSDP weights across accumulation micro-steps. Our implementation compiles the model with torch.compile , whereas the Dion-based imple-mentation disables model compilation; both log timings on one rank. 
+
+# G.1 Pooled iteration time 
+
+At a given model and device mesh, the forward-backward pass performs the same model computa-tion for every optimizer; for Dobb it also contains the second-moment capture on refresh iterations and the reduction of the captured second moments, which our implementation launches from the capture hook behind the backward pass. We measured the run-to-run variation of forward-backward time on GPT-2 Large at FS = 10 , TP = 2 on 20 A5000 GPUs in three allocations, each running AdamW, Muon, Dion r = 400 , and Dobb once in each of four rounds, for 48 runs of 30 timed iterations; the run order was fixed in one allocation and balanced over position and predecessor by a Williams Latin square in the other two. Table 20 compares the forward-backward pass means and their run-to-run variation. Dobb’s mean forward-backward time of 7740 ms lies between the lowest and highest baseline means, 7713 ms for Dion and 7788 ms for Muon. After round and method effects within each allocation are removed, a run’s mean forward-backward time has a standard deviation of 16.6 ms (0.21%). In the 12 pairs of Dobb and AdamW runs from the same round, Dobb’s forward-backward mean exceeds AdamW’s by 16.8 ms (0.22%) on average, with a 95% confidence interval of 2.4 to 31.3 ms; this overhead is comparable to the run-to-run stan-dard deviation and small against the variation of a single pair’s difference, about ±51 ms at the 95% level. Dobb’s mean iteration time exceeds AdamW’s by 13.6 ms (0.18%), with a 95% confidence interval of −1.1 to 28.4 ms that includes zero. Muon’s and Dion’s mean iteration times exceed 28 Table 20: Forward-backward time on GPT-2 Large at FS = 10 , TP = 2 on 20 A5000 GPUs. Each optimizer has 12 runs across three allocations, with 30 timed iterations per run. The standard deviation and range width describe the 12 run means. All times are in milliseconds. Optimizer Mean Run-to-run SD Range width AdamW 7723 22.8 77 Muon 7788 26.9 81 Dion r = 400 7713 16.0 56 Dobb 7740 15.3 48 AdamW’s by 672 ms (8.68%) and 1209 ms (15.61%). Thus, Dobb’s total iteration-time overhead is indistinguishable from network timing noise in these runs. To compare optimizer-step costs more fairly in the presence of this noise, we compute pooled iteration times by adding each method’s measured optimizer-call mean to shared estimates of forward-backward time and the remaining it-eration time, each averaged over all reported runs of the same configuration. Each method then adds its own measured optimizer-call mean, so within a configuration, pooled iteration times differ only by the optimizer call, and pooling excludes optimizer-specific work inside forward-backward, in-cluding Dobb’s capture and reduction. In the Qwen3-32B runs, the Dion-based TP implementation reduces Dobb’s second moments inside the optimizer call instead (Appendix G.5), so there pooling excludes only the capture. For Dobb, the optimizer-call mean is averaged over one refresh cycle, 
+
+(Refresh + 8 · Non-refresh )/9.
+
+# G.2 Work that can leave the optimizer call 
+
+An operation can leave the optimizer call once its inputs are available if it does not require the current mini-batch weight gradient. Table 21 classifies the operations of the compared optimizers and of Shampoo, SOAP, and K-FAC by this criterion. Every operation of AdamW, Muon, and the standard Dion update reads the gradient. The lazy variant of Dion refreshes its right factor only every k steps, and the CPU variant computes this refresh on CPUs from the momentum of earlier steps while forward-backward runs on the GPUs (Ahn et al., 2025, Section 5.1). Shampoo and SOAP accumulate their statistics from the gradient, so their inverse roots or eigenbases can leave the optimizer call only if they use statistics from earlier steps. SOAP recomputes its eigenbases at the end of a step and first uses them in the next (Vyas et al., 2025, Algorithm 3), and Shi et al. (2023) describe a JAX implementation of Shampoo that overlaps the root-inverse computation, offloaded to CPUs, with updates that use stale roots. K-FAC and Dobb estimate their statistics from activations and output gradients instead, so neither their statistics nor the inverses or bases derived from them read the gradient of any step. Martens and Grosse (2015) obtain the K-FAC output-gradient factor from an additional backward pass with sampled targets (their Section 5), recompute the inverses every 20 iterations in their experiments, and note that these computations can run simultaneously with the gradient computation (their Section 8). 
+
+Scheduling Dobb’s work outside the optimizer call. The refresh reads only the block second moments and the previous basis (Algorithm 2), yet both implementations run it inside the optimizer call on refresh iterations. For the activation-side basis, the refresh of a weight matrix could start once its second moment has been captured and reduced, while forward-backward computation continues for other layers. Work moved out of the optimizer call still occupies the GPUs, so it shortens the iteration only to the extent that it fills intervals in which they would otherwise wait; we did not measure this overlap. Osawa et al. (2023) assign the curvature and inversion work of K-FAC to the bubbles of pipeline-parallel schedules and refresh the curvature once every few steps, so that preconditioning is the only added computation. Explicit scheduling of Dobb’s capture, reduction, and basis refresh into idle intervals remains future work. 
+
+# G.3 GPT-2 on A5000 GPUs 
+
+The A5000 campaign ran on nodes with two RTX A5000 GPUs each. GPT-2 Large ran at DP ×
+
+FS × TP = 1 × 10 × 2 on 10 nodes without activation checkpointing, with micro-batches of 8 29 Table 21: Dependence of optimizer operations on the current gradient, the mini-batch gradient of a weight matrix after its reduction across data-parallel ranks. Step: the operation reads the gradient and runs in the optimizer call. Fwd/bwd: it reads activations or output gradients and runs during forward-backward. Movable: it reads no gradient and can run before the optimizer call of the same iteration, once its inputs exist. Lagged: it reads statistics or momentum that include gradients, so it can leave the optimizer call only by using values from earlier steps. The first Dion row describes the standard algorithm used in our experiments. Decoupled weight decay reads only the weights and is omitted. aOur GPT-2 implementation launches the reduction behind the backward pass and runs the refresh inside the optimizer call.                                                    
+
+> Optimizer Operation Reads Frequency Placement AdamW First and second moments; element-wise update Gradient Every step Step Muon Momentum; Newton–Schulz orthogonalization Gradient Every step Step Dion Momentum; power iteration with orthonormalization; column normalization; error feedback Gradient Every step Step Right-factor refresh in the lazy and CPU variants Momentum Periodic Lagged Shampoo, SOAP Gradient Gram matrices Gradient Every step Step Inverse roots (Shampoo) or eigenbases (SOAP) Gram matrices Every fsteps Lagged Preconditioned update, or Adam in the eigenbasis Gradient Every step Step K-FAC Activation and output-gradient factors Activations, output gradients Every step Fwd/bwd Damped factor inverses Factors Every T3steps Movable Preconditioned gradient Gradient Every step Step Dobb Capture and block second moments Activations Every Tsteps Fwd/bwd Second-moment reduction Block second moments Every Tsteps Movable a
+> Basis refresh Block second moments, previous basis Every Tsteps Movable a
+> Momentum; projection, sign, and reconstruction Gradient Every step Step
+
+sequences and 6 accumulation micro-steps. GPT-2 XL ran on 16 nodes at 1 × 32 × 1, 2 × 16 × 1, and 
+
+2 × 8 × 2, with activation checkpointing of every transformer block and the largest micro-batches that fit: 15 sequences, with one accumulation micro-step at TP = 1 and two at TP = 2 . The 
+
+2 × 8 × 2 mesh uses 20 attention heads instead of 25, because 25 heads do not split over two TP ranks; the matrix shapes and the parameter count are unchanged. Each run lasted 40 iterations, of which the first 10 were untimed, and the runs of each mesh ran in sequence in one allocation. At 
+
+2 × 16 × 1, contention bursts of 1 to 3 s per iteration on the shared network affected that allocation and two of the three rounds of an interleaved rerun; Table 22 uses the remaining round, in which each run lasted 20 iterations with the first 5 untimed. On GPT-2 Large, Dion uses rank r = 400 , at which its per-GPU optimizer state equals that of Dobb; on GPT-2 XL, it uses the rank fraction in 
+
+{1/3, 1/4, 1/8, 1/16 , 1/32 } closest to the rank with equal state. At 2 × 16 × 1, where Dobb’s blocks are twice as wide as at 1 × 32 × 1 and its second-moment reduction also crosses the two replicas, its refresh calls take 98.5 ms, and its amortized call, 23.3 ms, exceeds AdamW’s 18.3 ms. 
+
+# G.4 GPT-2 on H100 GPUs 
+
+The two H100 campaigns used H100 80 GB GPUs. GPT-2 XL, with 48 layers of width 1600 and 25 attention heads (1.56B parameters), ran at DP × FS × TP = 1 × 16 × 1 on two nodes of eight GPUs and at 2 × 16 × 1 on four such nodes, with micro-batches of 15 sequences and two and one 30 Table 22: GPT-2 optimizer-call times and pooled iteration times on A5000 GPUs, in milliseconds. The GPT-2 XL runs use activation checkpointing. Refresh and Non-refresh give Dobb’s mean optimizer-call time on iterations with and without an eigenbasis refresh, over three refresh itera-tions per run and two at 2 × 16 × 1. Amortized is the mean optimizer-call time, for Dobb averaged over one refresh cycle (Appendix G.1); the other methods perform the same update on every iter-ation, so their split entries are empty. Optimizer-call means cover 30 timed iterations, and 15 at 
+
+2 × 16 × 1. Pooled iteration times are derived from the measured means (Appendix G.1). Dion’s label gives its rank r or rank fraction ρ.                                                                                                              
+
+> Optimizer call (ms) Pooled Model DP ×FS ×TP GPUs Method Non-refresh Refresh Amortized iteration GPT-2 Large 1×10 ×220 AdamW ––11.3 7764.5 Muon ––623.0 8376.2 Dion r= 400 ––1224.1 8977.3 Dobb 6.0 13.7 6.9 7760.1 GPT-2 XL 1×32 ×132 AdamW ––14.5 8059.0 Muon ––840.9 8885.4 Dion ρ= 1 /8––1036.7 9081.2 Dobb 7.9 17.5 9.0 8053.5
+> 2×16 ×132 AdamW ––18.3 8389.3 Muon ––742.2 9113.2 Dion ρ= 1 /4––1703.1 10,074.1 Dobb 13.9 98.5 23.3 8394.3
+> 2×8×232 AdamW ––18.7 11,648.9 Muon ––946.5 12,576.6 Dion ρ= 1 /3––2523.2 14,153.3 Dobb 14.2 32.9 16.3 11,646.4
+
+accumulation micro-steps, respectively. At DP = 2 , each FSDP group spans two nodes, and the two replicas also all-reduce their gradient shards. Capacity preemptions split the runs of each GPT-2 XL mesh over two allocations: AdamW, Muon, and Dion ρ = 1 /4 ran in one, and Dion ρ = 1 /16 and Dobb in the other. GPT-2 3B (60 layers, width 2048, 32 heads; 3.13B parameters), 6B (72 layers, width 2560, 40 heads; 5.79B), and 8B (84 layers, width 2816, 44 heads; 8.14B) ran at 1 × 16 × 2,
+
+1 × 8 × 4, and 1 × 16 × 4 on 32, 32, and 64 GPUs, with micro-batches of 15 sequences and 2, 4, and 2 accumulation micro-steps. Dion ran at rank fractions ρ ∈ { 1, 1/3, 1/4, 1/8} at these three sizes; the 3B run at ρ = 1 /3 came from a separate retry. Each H100 run lasted 30 iterations, of which the first 10 were untimed, and no H100 run used activation checkpointing. Table 23 reports both H100 campaigns. 
+
+# G.5 Qwen3 FSDP and tensor-parallel series 
+
+Setup. The Qwen3 series used the matrix shapes of the dense Qwen3-8B and Qwen3-32B mod-els with random initialization (Yang et al., 2025). Qwen3-8B has 36 layers of width 4096 and MLP width 12288; Qwen3-32B has 64 layers of width 5120 and MLP width 25600. Both models have eight key-value heads of dimension 128, so the key and value projections have 1024 outputs. Training read OpenWebText under the GPT-2 tokenizer, whose token indices lie within the Qwen3 vocabulary. The tokenizer changes token values but not tensor shapes, which determine the compu-tation and communication of each iteration. Each iteration processed one 1024-token sequence per FSDP rank, a global batch of FS sequences; the TP ranks of a group shared their sequence. Each run lasted 80 iterations. Means use the last 63 of 69 timed iterations, seven complete T = 9 cycles. The timed window excludes first-iteration startup: Dion’s optimizer compilation and the exact cold-start eigendecompositions of Dobb and Dobb-G-ℓ2. Dobb and Dobb-G-ℓ2 used fp32 second-moment accumulation and one warm orthogonal iteration per refresh. All runs used H100 GPUs, eight per host. The runs at FS = 8 occupied one host, and the runs at larger FS spanned hosts. The Qwen3 campaign compared Dobb and Dobb-G-ℓ2 with Dion only and included no Muon or AdamW runs. Dion ran before Dobb and Dobb-G-ℓ2, with separate allocations. 31 Table 23: GPT-2 optimizer-call times and pooled iteration times on H100 GPUs, in milliseconds. Columns follow Table 22. Optimizer-call means cover 20 timed iterations, and Dobb’s Refresh entries cover two refresh iterations per run. The measured means determine pooled iteration times through the calculation in Appendix G.1. Dion’s label gives its rank fraction ρ. †The abstract and Section 6.2 cite this pair, which has the configuration of the GPT-2 XL loss comparison in Table 4: Dobb with B = 16 blocks per weight matrix, here one block per FSDP shard, and Dion at ρ = 1 /16 .                                                                                                                                                                                                          
+
+> Optimizer call (ms) Pooled Model DP ×FS ×TP GPUs Method Non-refresh Refresh Amortized iteration GPT-2 XL 1×16 ×116 AdamW ––8.5 1154.3 Muon ––83.7 1229.5 Dion ρ= 1 /4––204.6 1350.4 Dion ρ= 1 /16 ––130.0 1275.8 Dobb 5.6 22.6 7.5 1153.3
+> 2×16 ×132 AdamW ––9.3 1069.2 Muon ––82.7 1142.6 Dion ρ= 1 /4––232.7 1292.6 Dion ρ= 1 /16 †––124.1 1184.0 Dobb †5.8 36.8 9.2 1069.1 GPT-2 3B 1×16 ×232 AdamW ––49.4 2387.7 Muon ––454.3 2792.6 Dion ρ= 1 ––3508.4 5846.7 Dion ρ= 1 /3––1841.7 4180.0 Dion ρ= 1 /4––1385.6 3723.9 Dion ρ= 1 /8––1161.9 3500.2 Dobb 6.7 15.0 7.6 2345.9 GPT-2 6B 1×8×432 AdamW ––13.9 4822.8 Muon ––2106.8 6915.7 Dion ρ= 1 ––3407.8 8216.7 Dion ρ= 1 /3––1505.7 6314.6 Dion ρ= 1 /4––1112.0 5920.9 Dion ρ= 1 /8––829.7 5638.6 Dobb 9.7 20.6 10.9 4819.8 GPT-2 8B 1×16 ×464 AdamW ––15.2 5337.0 Muon ––2782.1 8103.9 Dion ρ= 1 ––4819.4 10,141.2 Dion ρ= 1 /3––2081.5 7403.3 Dion ρ= 1 /4––1653.1 6974.9 Dion ρ= 1 /8––1179.6 6501.4 Dobb 9.1 16.9 10.0 5331.7
+
+Block layout. With B = FS , the blocks on the 1024-wide key and value axes have width 
+
+1024 /FS . Longer basis axes receive proportionally wider blocks. In the Qwen3-8B series, B = FS 
+
+makes each output-axis block coincide with one rank’s FSDP shard, and Dobb-G-ℓ2 requires each rank to hold whole blocks. Under TP, the Dion-based implementation applies FSDP to the input axis of column-parallel weights and to the output axis of row-parallel weights, so the TP and FSDP shards of each weight lie on different axes. With B = FS , each block then lies within one shard. In the Qwen3-32B TP runs, B is 32 or 64 on every matrix, so B ≥ 16 · TP . Dobb issues no opti-mizer collective on the TP group. Dobb-G-ℓ2 completes its column norms across TP for row-parallel weights and across FSDP for column-parallel weights; both reductions are the O(m) entry of Ta-ble 7. The TP series compares Dobb and Dobb-G-ℓ2 with Dion; the Dion-based implementation does not support Muon under TP, whereas our implementation does. 
+
+FSDP on Qwen3-8B. Table 24 gives the three-way comparison for Qwen3-8B. At FS = 8 , Dobb and Dobb-G-ℓ2 have pooled iteration times of 349.3 and 366.3 ms, against 422.6 ms for Dion. At this degree, where each run occupies one host, Dion’s pooled iteration time is 1.21 times that of Dobb. At FS ≥ 16 , pooled iteration times are 5.2 to 6.0 s, and those of Dobb and Dobb-G-ℓ2
+
+32 Table 24: Qwen3-8B FSDP optimizer-call times and pooled iteration times in milliseconds, with 
+
+TP = 1 and B = FS blocks per weight matrix. Non-refresh and Refresh give the mean optimizer-call time on iterations without and with an eigenbasis refresh; Amortized is the mean over the timed window. Dion performs the same update on every iteration, so its split entries are empty. Pooled iteration time follows Appendix G.1, with shared components averaged over the three runs at each 
+
+FS .                                                         
+
+> Optimizer call (ms)
+> FS Method Non-refresh Refresh Amortized Pooled iteration 8Dion ––159.5 422.6 Dobb 75.7 170.0 86.2 349.3 Dobb-G-ℓ288.7 219.5 103.2 366.3 16 Dion ––146.1 5317.7 Dobb 26.1 331.7 60.1 5231.7 Dobb-G-ℓ228.5 336.3 62.7 5234.3 32 Dion ––114.8 5552.1 Dobb 10.7 165.0 27.9 5465.2 Dobb-G-ℓ211.0 179.2 29.7 5467.0 64 Dion ––138.6 5986.8 Dobb 5.5 92.1 15.1 5863.3 Dobb-G-ℓ25.5 134.1 19.8 5868.0
+
+are 83.4 to 123.5 ms below Dion’s, the differences in their optimizer-call means. At these degrees, Dion’s optimizer call is at most 2.7% of its pooled iteration time. Across the Qwen3-8B series, refresh calls take 92.1 to 331.7 ms for Dobb and 134.1 to 336.3 ms for Dobb-G-ℓ2, and both peak at 
+
+FS = 16 .Table 25: Qwen3-32B FSDP and TP optimizer-call times and pooled iteration times in milliseconds, with B = FS blocks per weight matrix. Columns and averaging follow Table 24.                                                 
+
+> Optimizer call (ms)
+> FS TP Method Non-refresh Refresh Amortized Pooled iteration 32 2Dion ––1307.7 17,664.1 Dobb 32.8 1249.2 168.0 16,524.4 Dobb-G-ℓ253.0 1917.9 260.2 16,616.6 64 2Dion ––1287.5 18,423.8 Dobb 14.5 634.9 83.4 17,219.7 Dobb-G-ℓ227.9 1007.3 136.7 17,273.0 64 4Dion ––797.3 14,443.9 Dobb 8.5 560.6 69.9 13,716.5 Dobb-G-ℓ225.7 876.8 120.2 13,766.8
+
+Tensor parallelism on Qwen3-32B. Table 25 reports optimizer-call times and pooled iteration times at (FS , TP) ∈ { (32 , 2) , (64 , 2) , (64 , 4) }. Across Dobb and Dobb-G-ℓ2, optimizer-call means range from 69.9 to 260.2 ms, against Dion’s 797.3 to 1307.7 ms, while pooled iteration times are 13.7 to 18.4 s; Dion’s optimizer call is at most 7.4% of its pooled iteration time. At TP = 2 , the Dobb and Dobb-G-ℓ2 pooled iteration times are 1047.5 to 1204.1 ms below Dion’s. At TP = 4 ,Dobb and Dobb-G-ℓ2 have pooled iteration times of 13,716.5 and 13,766.8 ms, against 14,443.9 ms for Dion. Across the three meshes, Dion’s pooled iteration time is 1.05 to 1.07 times that of Dobb. The Dion-based TP implementation of Dobb reduces its second moments inside the optimizer call rather than from the capture hook, so its optimizer-call times include this reduction. Refresh calls take 560.6 to 1249.2 ms for Dobb and 876.8 to 1917.9 ms for Dobb-G-ℓ2.33

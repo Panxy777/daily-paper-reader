@@ -1,0 +1,925 @@
+Title: The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch
+
+URL Source: https://arxiv.org/pdf/2610.38228v1
+
+Published Time: Fri, 30 Oct 2026 00:56:43 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch 
+
+Zejian Wang ∗
+
+wangzejian@kuaishou.com KlingAI Research Shanghai, China 
+
+Yifan Zhao 
+
+zhaoyifan14@kuaishou.com KlingAI Research Shanghai, China 
+
+Kaihui Ren ∗
+
+renkaihui@kuaishou.com KlingAI Research Beijing, China 
+
+Xiaoling Zhou ∗
+
+zhouxiaoling03@kuaishou.com KlingAI Research Beijing, China 
+
+Yubin Wang 
+
+wangyubin05@kuaishou.com KlingAI Research Beijing, China 
+
+Chenhao Guan ∗
+
+guanchenhao@kuaishou.com KlingAI Research Shanghai, China 
+
+Lin Zhang 
+
+zhanglin22@kuaishou.com KlingAI Research Shanghai, China 
+
+Yufeng Li 
+
+liyufeng06@kuaishou.com KlingAI Research Shanghai, China 
+
+Zhikang Mo 
+
+mozhikang@kuaishou.com KlingAI Research Shanghai, China 
+
+Zhuoru Ma 
+
+mazhuoru@kuaishou.com KlingAI Research Shanghai, China 
+
+Yingtong Xiong 
+
+xiongyingtong@kuaishou.com KlingAI Research Shanghai, China 
+
+Jihu Guo ∗
+
+guojihu@kuaishou.com KlingAI Research Shanghai, China 
+
+Yiqiao Liao †
+
+liaoyiqiao@kling.ai KlingAI Research Beijing, China 
+
+Chengru Song †
+
+songchengru@kuaishou.com KlingAI Research Beijing, China 
+
+## Abstract 
+
+Fully Sharded Data Parallelism (FSDP2) maintains parameters and gradients as per-parameter tensors, whereas its collective path operates on flat, rank-major buffers. Converting between these layouts copies all-gather outputs into parameter storage and packs gradients into full-group fp32 buffers. Layout conversion alone accounts for 6.4% of step time in Llama-3.1 70B training at 8K tokens per GPU. Communication kernels impose a second cost: a default NCCL reduce-scatter can slow a concurrent GEMM that would otherwise complete in a single wave by 69%. We present TIDE, a set of zero-copy collectives built on public NCCL 2.31+ APIs. TIDE preserves FSDP2’s per-parameter storage and compute kernels while folding layout placement into collective addressing. TIDE-AG delivers shards directly to parameter storage using NVSwitch multicast and paced recursive-doubling RDMA, with no SMs used for transport or placement. TIDE-RS consumes per-parameter bf16 gradients directly and reduces them into fp32 
+
+shards—a mixed-precision mode that NCCL does not provide—using copy engines and short-lived thread blocks (CTAs) for node-local accumulation and NVSwitch for cross-node reduction. A two-phase pipeline separates gradient reads from network progress; Slot-Reuse optionally stages gradients in vacated all-gather slots. On 64 GPUs, TIDE reduces step time by up to 27.1% relative to Stock FSDP2 and 6.0% relative to FSDP2+SymmMem across Llama-3.1 70B, Wan2.2, and Qwen3-30B-A3B. It reduces reduce-scatter SM time by factors of 12 .5–14 .5 and cuts interference with concurrent compute by up to an order of magnitude. Its reduce-scatter buffer remains nearly constant from 16 to 64 GPUs at a fixed per-GPU output size, and its peak memory is up to 4.7 GiB below FSDP2+SymmMem’s and, with Slot-Reuse on Wan2.2, below Stock FSDP2’s.  
+
+> ∗This work was conducted during the author’s internship at KlingAI.
+> †Corresponding authors.
+> Forward all-gather Backward reduce-scatter FSDP2 TIDE
+
+𝑁 𝑆 2𝑁 𝑆     
+
+> AG copy-out _chunk_cat RS
+
+Σ  
+
+> r0 r1 r2 r3 r0 r1 r2 r3 p0 p1 p2 copy engine / RDMA, 0 SMs copy engine, TMA
+
+Σ, NVSwitch Σ  
+
+> r0 r1 r2 r3 r0 r1 r2 r3 p0 p1 p2 SM kernel temporary buffer copy engine / RDMA
+
+Figure 1: FSDP2’s contract boundary for one parameter group (3 parameters, 𝑁 = 4 ranks, shard size 𝑆 ; tile color marks the owning rank, and colored lines trace rank 1’s pieces). Stock FSDP2 converts layouts with SM kernels and temporary buffers; TIDE writes each piece once, at its final address. 
+
+## Keywords 
+
+distributed training, fully sharded data parallelism, collective com-munication, tensor layout, communication–computation overlap 
+
+## 1 Introduction 
+
+Fully Sharded Data Parallelism (FSDP2 [21, 51]), rooted in ZeRO-3 [35], is the workhorse paradigm for training dense and Mixture-of-Experts (MoE) foundation models [9, 20, 34] across hundreds to thousands of GPUs [17, 33]. FSDP2 shards parameters, gradi-ents, and optimizer states across 𝑁 data-parallel ranks, rebuilds each layer’s parameters with an all-gather (AG), and aggregates its gradients with a reduce-scatter (RS). arXiv:2610.38228v1 [cs.DC] 28 Oct 2026 Zejian Wang et al. 
+
+Table 1: Design space of fully sharded communication subsystems.                                                          
+
+> Dimension Stock FSDP2 FSDP2+SymmMem [32] Flat-Buffer FSDP [23, 45] PACE [27] TIDE (Ours)
+> Preserves DTensor storage Yes Yes No (flat/uneven) Yes Yes
+> AG direct landing No No Yes Yes Yes ‡
+> RS input preparation Full-group pack Full-group pack Fused wgrad / copy SM staging / cast In-Place Read †
+> AG SM budget 16–32 0/0–1 0
+> RS SM budget 16–32 ≈13 /32 8§
+> Extra buffer footprint 3𝑁 𝑆 3𝑁 𝑆 private Θ(𝑁 𝑆 )2𝑁 𝑆 +rings ≈1.1NS
+> “/” inherits the configured NCCL CTA budget. Buffer footprints are large-scale bf16 /fp32 terms, with 𝑁 𝑆 denoting one unsharded bf16 group; see Section 5.4.
+> ‡Mixed-precision AG retains the fp32 →bf16 cast. †Slot-Reuse copies gradients into the vacated AG slot. §TIDE uses short-lived sum and landing CTAs with tunable budgets; see Sections 2.2 and 6.3.
+
+Wire speed is not end-to-end efficiency. Well-tuned large-message collectives approach link bandwidth on NVSwitch nodes with rail-aligned RoCEv2 or InfiniBand NICs, yet FSDP2 pays for more than wire time. Its model view is per-parameter: 𝑃 independently shaped tensors, each with a persistent dimension-0 DTensor shard [4, 30]. Its collective path is rank-major and flat: NCCL sees contiguous buffers ordered by rank, and our target configurations reduce gradi-ents in fp32 . Translating between the two layouts and sharing SMs and HBM with the model cost three measurable forms of overhead (Figure 1, Section 2): (1) Layout conversion and packing. Stock FSDP2 copies each rank-major all-gather output into per-parameter storage and packs bf16 gradients into a transient full-group fp32 buffer before each reduce-scatter, so each group’s parameters and gradients briefly exist twice, and the copies take 0.33 s of each Llama-3.1 70B step at 8K tokens/GPU. (2) SM wave quantization. Small-𝑀 GEMMs in MoE layers and narrow projections often finish in one wave of thread-block clusters. A reduce-scatter that stays resident for the whole transfer pushes part of that wave into a second one: NCCL’s default reduce-scatter slows such a GEMM by 69%, and its symmetric-memory variant by 11% at the median. (3) HBM direction contention. Per byte served, remote service reads and switch-reduction reads slow co-running memory-bound kernels 2 .2–4 × more than inbound copy-engine writes, depending on the clock regime (Section 2.4). This overhead scales with sharded parameter bytes, whereas useful compute scales with activated parameters times tokens per GPU: Recoverable FSDP Overhead Fraction ∝ Ψtotal 
+
+Ψactive · 𝑇 tok /gpu 
+
+, (1) where Ψtotal is the sharded parameter volume, Ψactive is the activated parameter count per token, and 𝑇 tok /gpu is the per-GPU token bud-get per step. The overhead therefore grows under strong scaling, sequence parallelism, and sparse MoE routing ( Ψtotal ≫ Ψactive ). On dense Llama-3.1 70B, TIDE’s absolute saving over Stock FSDP2 stays at 0.51–0.54 s from 16K to 32K tokens/GPU, so its relative reduction falls from 6.1% to 3.1% (Figure 8a). 
+
+Why existing approaches fall short. Existing systems fix one side of the problem or change FSDP2’s storage contract (Table 1). Py-Torch’s symmetric-memory FSDP2 path [26, 32] removes all-gather transport SMs but keeps rank-major outputs, full-group gradi-ent packing, and 13 reduce-scatter CTAs. AMD MORI [1] lands all-gather data directly within one node; PACE [27] extends di-rect placement to reduce-scatter but stages and converts its multi-tensor input in a 32-CTA SM ring. Megatron-FSDP [23] and veScale-FSDP [45] avoid packing by replacing per-parameter storage with persistent flat windows. Among the systems considered, none con-sumes per-parameter tensors directly across nodes, keeps fp32 re-duction, and moves transport off SMs while leaving FSDP2’s storage intact. 
+
+Our approach and contributions. Layout conversion in FSDP2 is a collective problem, not a copy problem. When the collective itself reads every tensor where the model stores it and delivers every result to its final address—with copy engines, RDMA, and NVSwitch moving the bytes and SMs performing only short-lived 
+
+fp32 accumulation—the layout copies, the packing buffers, and most of the SM interference disappear together. TIDE builds such collectives on public NCCL 2.31+ APIs (Figure 2). They are zero-copy in a precise sense: FSDP2’s layout copies (all-gather copy-in and copy-out, and reduce-scatter packing) and their full-group buffers are gone; only required dtype casts, bounded multi-node staging, and an optional memory-saving gradient copy remain. The design also frees memory: all-gather slots double as parameter storage and, optionally, as reduce-scatter input. This paper makes three contributions: 
+
+• Zero-copy collectives (Sections 2 to 4): TIDE-AG and TIDE-RS consume FSDP2’s per-parameter tensors without packing. TIDE-AG uses no SMs: copy engines multicast shards through NVSwitch, and paced recursive-doubling RDMA carries them across nodes. TIDE-RS reduces bf16 gradients into fp32 shards, a mixed-precision mode that NCCL lacks. Copy engines push slices to their owners, short-lived TMA CTAs sum them into fp32 
+
+node partials, and Latin-square placement lets the destination NVSwitch sum up to 𝐿 nodes’ partials in one reduction. 
+
+• Pipelining, memory, and runtime (Sections 5 and 6): A two-phase pipeline separates gradient reads from network progress. In-Place mode reads gradients where autograd leaves them and runs the next all-gather early; Slot-Reuse mode copies them into a vacated all-gather slot and frees their storage. For 64 nodes, the analysis in Section 5.4 bounds the live bytes during a layer’s backward at 3 .72 𝑁 𝑆 (In-Place) and 2 .29 𝑁 𝑆 (Slot-Reuse), versus FSDP2’s 4 𝑁 𝑆 ; TIDE’s measured peak memory (Section 7.2) is The Endgame of FSDP Communication 
+
+Table 2: Notation.                                           
+
+> Symbol Meaning
+> 𝑀 ,𝐿 ,𝑁 =𝑀𝐿 nodes, GPUs per NVSwitch domain, ranks
+> 𝑟 =𝑛𝐿 +𝑙 node-major rank of local GPU 𝑙 on node 𝑛 𝑃 ,𝑝 parameters in an FSDP2 group, parameter index
+> 𝑅 𝑝 ,𝐾 𝑝 padded per-rank rows and row length of 𝑝 𝑠 𝑝 ,𝑜 𝑝 per-rank shard bytes and prefix offset of 𝑝 𝑆 ,𝑁 𝑆 per-rank packed shard bytes; unsharded group bytes
+> 𝑆 fp32 per-rank fp32 reduce-scatter output, 2 𝑆 𝐵 pack FSDP2’s packed fp32 reduce-scatter input
+> 𝑘 maximum concurrent rail transfers per round
+> 𝑊 wave ,𝑊 contributors per wave, number of waves
+> 𝑛 out outbox blocks per bank
+> 𝑛 stg local bf16 staging slots
+> 𝑛 par inbox buffer generations (1 or 2)
+> 𝑛 part sub-slice passes per reduce-scatter
+> 𝑛 ctx RMA contexts per communicator
+
+up to 4.7 GiB below FSDP2+SymmMem’s and, with Slot-Reuse, below Stock FSDP2’s on Wan2.2. A topology-scoped rail com-municator keeps connection, memory, submission, and SM costs bounded at scale. 
+
+• Evaluation (Section 7): On 64 GPUs, TIDE is the fastest system at every measured point across Llama-3.1 70B, Wan2.2, and Qwen3-30B-A3B, reducing step time by up to 27.1% relative to Stock FSDP2 and 6.0% relative to FSDP2+SymmMem. Training-shape replays attribute the gains to zero-SM all-gather and 12 .5– 14 .5× less reduce-scatter SM time. 
+
+## 2 Motivation and Design Principles 
+
+Table 2 summarizes the notation used throughout the paper. 
+
+## 2.1 The Layout Mismatch in FSDP2 
+
+Consider a cluster of 𝑀 nodes with 𝐿 GPUs per NVSwitch domain and 𝑁 = 𝑀𝐿 total ranks. We use node-major rank 𝑟 = 𝑛𝐿 +𝑙 for 𝑛 ∈[0, 𝑀 ) and 𝑙 ∈ [ 0, 𝐿 ). An FSDP2 parameter group ( FSDPParamGroup )manages 𝑃 parameters sharded along dimension 0. Logically re-shape parameter 𝑝 ∈ [ 0, 𝑃 ) as (𝐷 𝑝 , 𝐾 𝑝 ), where 𝐷 𝑝 is its dimension-0 extent and 𝐾 𝑝 is the product of its trailing dimensions. Its padded per-rank row count is 𝑅 𝑝 = ⌈𝐷 𝑝 /𝑁 ⌉, shard byte size is 𝑠 𝑝 = 𝑅 𝑝 𝐾 𝑝 𝑏 ag 
+
+(where 𝑏 ag ∈ { 2, 4} is the all-gather item size), prefix byte offset is 
+
+𝑜 𝑝 = Í𝑖 <𝑝 𝑠 𝑖 , and total packed shard size is 𝑆 = Í𝑃 −1 
+
+> 𝑝 =0
+
+𝑠 𝑝 .
+
+The forward/recompute all-gather boundary. Stock FSDP2’s 
+
+foreach_all_gather packs (and, under mixed precision, casts to bf16 ) the rank’s 𝑃 shards into an 𝑆 -byte send buffer. The rank-major all-gather output places rank 𝑟 ’s shard of parameter 𝑝 at byte offset 𝑟𝑆 + 𝑜 𝑝 , but compute kernels need each unsharded parameter as a contiguous (𝐷 𝑝 , 𝐾 𝑝 ) view, so that slice must land at the parameter-major landing offset 
+
+Landing (𝑝, 𝑟 ) = 𝑜 𝑝 𝑁 + 𝑟𝑠 𝑝 . (2) FSDP2 bridges the two with split_with_sizes_copy on the com-pute stream right before the layer runs: 2 𝑁 𝑆 bytes of HBM traffic on the critical path, with both 𝑁 𝑆 -byte buffers live. 
+
+The backward reduce-scatter boundary. After a layer’s backward pass, autograd leaves 𝑃 unsharded gradients 𝐺 (𝑢 ) 
+
+> 𝑝
+
+(typically bf16 ) on each source rank 𝑢 ∈ [ 0, 𝑁 ). Let 𝑏 grad ∈ { 2, 4} be the gradient item size and 𝑆 grad = 𝑏 grad 
+
+Í𝑝 𝑅 𝑝 𝐾 𝑝 the packed per-rank gradient shard size. Destination rank 𝑟 owns rows I𝑝,𝑟 = [𝑟𝑅 𝑝 , (𝑟 + 1)𝑅 𝑝 ) of each 
+
+𝐺 (𝑢 ) 
+
+> 𝑝
+
+(rows past 𝐷 𝑝 are zero). Because ncclReduceScatter reduces one rank-major buffer in its own datatype and our target configura-tions reduce in fp32 , stock FSDP2 calls torch._chunk_cat on the compute stream to slice, zero-pad, upcast, and pack all gradients into a transient fp32 buffer of 
+
+𝐵 pack = 4 
+
+> 𝑃 −1
+
+∑︁ 
+
+> 𝑝 =0
+
+𝑁 𝑅 𝑝 𝐾 𝑝 = 4
+
+𝑏 grad 
+
+𝑁 𝑆 grad (3) bytes (2 𝑁 𝑆 grad for bf16 gradients) before the reduce-scatter can begin. Both copy kernels also wait on the compute stream for a host-to-device (H2D) copy of their address and size tables. This metadata copy is serialized with activation-prefetch H2D transfers and can therefore wait behind a much larger transfer, resulting in head-of-line blocking. The two boundaries are inverse layout transformations that leave the mathematical collective unchanged. TIDE removes both by making placement part of the collective address map. 
+
+## 2.2 SM Wave Quantization 
+
+FSDP inserts collectives around every layer and overlaps them with neighboring compute on side streams, which provide concur-rency but not isolation: SM-based communication kernels compete with model kernels for SMs, registers, and shared memory. High-throughput CUTLASS/CuTe tensor-memory-accelerator (TMA) GEMMs use over 200 KB of shared memory per thread block (CTA), so at most one CTA fits on each of the 𝑁 SM = 148 SMs. These GEMMs also launch CTAs as thread-block clusters, which the hardware co-schedules within one GPU processing cluster (GPC) [25]. A GPU therefore offers only 𝑛 slot slots for clusters of a given size and footprint. With 𝑛 gemm GEMM clusters and 𝑛 blk 
+
+slots blocked by resident communication CTAs, a first-order model predicts 
+
+𝑇 gemm ≈
+
+ 𝑛 gemm 
+
+𝑛 slot − 𝑛 blk 
+
+
+
+𝑇 wave , (4) where 𝑇 wave is the duration of one isolated wave [22]. A clustered communication kernel blocks at least one slot per cluster; single CTAs block none when they land outside the GEMM’s slots and up to one each when they spread across GPCs. Consider a small-𝑀 GEMM (256 ×8192 ×8192), as in MoE experts or narrow projections at small token counts. Its 128 CTAs form 
+
+𝑛 gemm = 32 four-CTA clusters, and each CTA’s 213 KB of shared memory and 255 registers per thread fill an SM. The GPU holds 
+
+𝑛 slot = 33 such clusters, so the GEMM runs in one wave with one spare slot and 16 SMs outside any slot (Figure 3a). NCCL 2.31 launches four-CTA clusters by default; its 32 MiB reduce-scatter on 8 nodes runs 16 CTAs, whose four clusters take the spare slot and three GEMM slots. The 12 displaced GEMM CTAs run as a second wave (Figure 3b), slowing the GEMM by 69%. Capping NCCL at 8 CTAs still blocks two slots (67 .8%). With cluster size 1, the eight CTAs fit outside the GEMM’s slots (6 .3%; Figure 4), but in the same runs the reduce-scatter takes 13.0 ms, about twice as long as TIDE’s. Zejian Wang et al.                        
+
+> (a) All-gather
+> node 0 node 1 NVSwitch NVSwitch GPU 0 GPU 0 GPU 1 GPU 1 GPU 2 GPU 2 GPU 3 GPU 3 NIC
+> 123
+> RDMA, ⌈log 2𝑀 ⌉rounds
+> (b) Reduce-scatter
+> node 0 node 1 NVSwitch NVSwitch GPU 0 GPU 0 GPU 1 GPU 1 GPU 2 GPU 2 GPU 3 GPU 3 bf16 TMA Σ
+> 456
+> fp32 partial
+> ΣΣΣΣ
+> 7
+> copy-engine write NVSwitch multicast or ΣRDMA on one rail SM work, few CTAs data from node 0 from node 1
+
+Figure 2: TIDE’s collective paths (two nodes; four of eight GPUs shown). (a) All-gather: local multicast 1 , rail RDMA 2 ,destination multicast 3 . (b) Reduce-scatter: copy-engine staging 4 , TMA fp32 sums 5 , rail RDMA 6 , NVSwitch reduction 7 .     
+
+> (a) GEMM alone
+> 32 clusters of 4 CTAs
+> (b) + NCCL RS
+> 16 CTAs in 4 clusters
+> (c) + TIDE RS
+> 16 + 4 single CTAs spill: 12 CTAs 1 wave 2 waves 1 wave GEMM latency GEMM CTA resident comm. CTA transient CTA idle SM
+
+Figure 3: SM wave quantization for the 256 ×8192 ×8192 GEMM (schematic; slot counts and CTA displacement measured with an SM-id probe, Table 5). Each 2 × 2 block is a slot for one four-CTA cluster; the bottom row holds the spare slot and the 16 SMs outside any slot. 
+
+We verify this accounting with an SM-id probe: a kernel with the GEMM’s cluster shape and per-CTA footprint whose CTAs record their SM id and entry and exit timestamps. The measured occupancy is 33 clusters. During a 32 MiB reduce-scatter, default NCCL’s four clusters push exactly the predicted 12 probe CTAs into a second wave in 64% of the probe windows (Stock FSDP2: 65%); capping NCCL at 8 CTAs pushes 4, and a 4-CTA cap and both TIDE configurations push none (Table 5). Placement determines which kernels displace a wave; residence time determines how often. NCCL’s ring and symmetric-memory reduce-scatter kernels stay resident for the whole transfer, polling peer progress, so every overlapping GEMM pays. Placement also separates the two NCCL kernels: the symmetric-memory kernel is resident just as long—its CTAs appear in over 90% of probe windows—yet displaces almost no GEMM CTA, because its 13 CTAs land on the SMs outside the GEMM’s cluster slots. Its 11% one-wave slowdown is therefore not wave quantization but the HBM direction cost of switch-reduction reads (Section 2.4). A spin kernel that holds its CTAs for the whole GEMM shows the cost of residence: with its CTAs spread across GPCs, 8 single CTAs slow the GEMM by 66% and 20 by 271% (Figure 4). TIDE’s 16 sum and 4 landing CTAs each live 0.2–0.4 ms and are resident for about a third of a reduce-scatter; together they slow the GEMM by less than 5%. A grouped GEMM 0 4 8 12 16 20 24 28 32 
+
+Communication CTAs on the GPU     
+
+> 1.5 515 50 150 500
+> GEMM slowdown (%, log scale)
+> NCCL default NCCL ≤8NCCL symmetric NCCL ≤4NCCL ≤8, cluster size 1 TIDE 4+4 TIDE 16+4 (training)
+> spin kernel, single CTAs spin kernel, 4-CTA clusters
+
+Figure 4: Slowdown of the 256 × 8192 × 8192 GEMM versus com-munication CTAs at a fixed SM clock. Lines: spin kernels res-ident for the whole GEMM. Markers: 32 MiB reduce-scatters on 8 nodes (64-GPU median), with TIDE’s short-lived CTAs at their peak count (labels: sum + landing CTAs; 16+4 is the training configuration); runs separate from Table 4. 
+
+that fills every SM (Qwen3-30B-A3B experts, 128 groups of 512 rows) has no spare capacity: every NCCL and symmetric-memory reduce-scatter we measured slows it by about 70%, even with cluster size 1 or a 4-CTA cap, whereas TIDE’s training configuration slows it by about 5%. Table 4 and Figure 11 show the resulting trade-off. Default NCCL finishes the reduce-scatter in 6.75 ms but slows the GEMM by 69 .0%; capping it at 4 CTAs, one cluster in the spare slot, cuts the slowdown to 2 .7% but stretches the reduce-scatter to 26.35 ms. TIDE’s training configuration matches that 2 .9% while finishing in 6.96 ms, faster than default NCCL: rather than capping an SM collective, it moves transport and peer waiting off SMs and spends its CTA budget only on local fp32 accumulation and landing. Stream priority cannot clear the way either: CUDA does not pre-empt resident CTAs, so a high-priority kernel waits for a persistent GEMM to retire its CTAs. GEMMs built on Cluster Launch Con-trol [24] admit it within two tile boundaries, which suits short-lived CTAs (Appendix B). The Endgame of FSDP Communication 
+
+Table 3: HBM interference by traffic direction.              
+
+> Served traffic (GB/s) Victim slowdown Initiator Pull Push Pull Push
+> SM 788 721 46 .7% 12 .1% Copy engine 838 798 43 .9% 11 .0%
+> GPUs 1–7 of one NVSwitch node drive traffic at GPU 0, which runs a 256 MiB memory-bound victim. Slowdown: median victim kernel time during 10 s of traffic relative to the pre- and post-traffic baselines.
+
+## 2.3 Limits of Symmetric Input Windows 
+
+NVSwitch reduces in the switch via PTX multimem.ld_reduce [24], so one might place unsharded gradients in a symmetric window and let each owner reduce the 𝐿 = 8 local copies with a 2-CTA kernel. With per-parameter bf16 gradients and fp32 reduction, this fails either way: (1) A bf16 window breaks fp32 semantics. The acc::f32. bf16x2 form of multimem.ld_reduce accumulates in fp32 but returns bf16x2 , so every node partial is rounded to bf16 before cross-node accumulation, and small contributions can be lost as 𝑀 grows. (2) An fp32 window is prohibitive. multimem.ld_reduce. add.v4.f32 needs fp32 inputs: a persistent 2 𝑁 𝑆 -byte sym-metric allocation per active group (2 × the unsharded bf16 
+
+group), plus either rewriting every gradient-producing kernel to write fp32 into window offsets or an SM cast-pack pass that reintroduces the traffic, SMs, and buffers TIDE removes. TIDE instead consumes FSDP2’s native bf16 gradients, stages bounded chunks, and accumulates once in fp32 locally. 
+
+## 2.4 The HBM Direction Tax 
+
+Even with an fp32 window, traffic direction matters: per byte served, remote service reads disrupt compute 2 .2–4 × more than inbound copy-engine writes, depending on the clock regime. In a 2 ×2 matrix of initiator (SM or copy engine) and direction (pull or push), GPUs 1–7 generate traffic against GPU 0 while it runs a 256 MiB bf16 
+
+memory-bound victim (Table 3). Normalized by served bandwidth, pulls slow the victim by 5.2–5 .9% per 100 GB/s and pushes by 1 .4–1 .7%. The asymmetry is not a power-cap artifact: at a fixed 1200 MHz SM clock, pulls cost 4 .46 (SM) and 3 .81 (copy engine) versus 2 .04 and 1 .21% per 100 GB/s for pushes, a 2 .2–3 .2× per-byte gap. Across the two clock regimes, a pull therefore costs 2 .2–4 × as much per byte as a push, and we quote this range rather than a single factor. A real 2-CTA switch-reduction collective slows the same victim by 27%, TIDE-RS by 2 .6%. L2-resident victims (32–64 MiB) slow by at most 3 .4%, so the cost is HBM contention, not L2 eviction. DRAM counters show no extra bytes, consistent with interleaved service reads lowering DRAM efficiency while inbound writes are coalesced before writeback. 
+
+Architectural synthesis. These findings shape TIDE-RS’s two lev-els (Figure 2b). Within a node, copy engines push unreduced bf16 
+
+gradients 4 —half the bytes, in the low-interference direction—into small staging chunks, and 4–16 TMA CTAs 5 accumulate the 8 → 1 sum in fp32 . Across nodes, each node contributes one 4-byte 
+
+fp32 partial per element instead of eight 2-byte values (4 × less in-put); partials arrive over rail RDMA 6 , and multimem.ld_reduce. add.v4.f32 7 lets 1–4 landing CTAs fold up to 8 nodes per wave in fp32 . Switch reads thus see only the 4 × smaller partial stream. 
+
+## 2.5 Design Requirements and Scope 
+
+TIDE targets six requirements: 
+
+• G1 (Preserve the FSDP2 contract): per-parameter dimension-0 
+
+DTensor shards, fp32 reduction, and unmodified compute ker-nels. 
+
+• G2 (Placement, not packing): land all-gather shards in parameter-major storage and consume per-parameter gradients directly, keeping only required dtype casts. 
+
+• G3 (Bound SM interference): no SMs for all-gather, and a reduce-scatter CTA budget independent of node count, with no peer polling on SMs in the default path. 
+
+• G4 (Scale across nodes): 𝑂 (log 𝑀 ) all-gather rounds, about 
+
+𝑂 (𝑀 /𝑘 ) wave-aligned reduce-scatter rounds with 𝑘 concurrent rail transfers each, and rail communicators over 𝑀 rather than 
+
+𝑁 ranks. 
+
+• G5 (Bounded memory): no persistent full-group fp32 window, a closed-form memory model, and two time–memory modes. 
+
+• G6 (Public NCCL APIs): public NCCL 2.31+ APIs only; unsup-ported groups fall back to stock collectives. TIDE targets PyTorch 2.13, dimension-0 sharding, node-major deployments with up to eight GPUs per NVSwitch domain, rail-aligned RDMA NICs, NVSwitch multimem , and compute capability 
+
+≥ 9.0 with at least 207 KB of shared memory per block. It does not yet support CUDA-graph capture or asynchronous unshard; groups outside these contracts, including those with more than 256 trainable parameters, fall back to stock collectives. 
+
+## 3 TIDE-AG: Layout-Aware All-Gather 
+
+TIDE-AG makes parameter-major storage the final collective output: multi-node shards may transit a bounded receive stage, but FSDP2 never sees a rank-major buffer or performs copy-out. A copy engine multicasts each shard through NVSwitch into every local GPU 1 ,local GPU 𝑙 forwards it over rail 𝑙 2 , and a copy engine on each receiving node multicasts it into place 3 (Figure 2a). The final landing resides in an NCCL symmetric arena. 
+
+## 3.1 In-Place Shards and Paced Doubling 
+
+In-place shard adoption vs. mixed-precision cast. When a group’s sharded dtype matches the all-gather dtype (e.g., bf16 ), TIDE re-serves a persistent 𝑆 -byte resident-shard region for it in the sym-metric arena. At the first forward pass, the adapter copies each padded shard there once and repoints the sharded parameter and its 
+
+DTensor local view to zero-offset views over it, so later all-gathers read shards in place without copy-in. Mixed-precision groups ( fp32 
+
+master shards) keep FSDP2’s fused cast but write its output into the first receive-stage slot once the previous call releases it. 
+
+Single-node multicast and multi-node Bruck recursive doubling. 
+
+On a single node ( 𝑀 = 1, 𝑁 = 𝐿 ≤ 8), the arena is bound to Zejian Wang et al.                                               
+
+> (a) Recursive doubling on rail 𝑙 (𝑀 =5)
+> node 0 node 1 node 2 node 3 node 4 start 01234round 0 (+1 shard) 0 1 1 2 2 3 3 4 4 0 round 1 (+2 shards) 0 1 2 3 1 2 3 4 2 3 4 0 3 4 0 1 4 0 1 2 round 2 (+1 shard) 0 1 2 3 4 1 2 3 4 0 2 3 4 0 1 3 4 0 1 2 4 0 1 2 3
+> (b) One strided multicast copy per parameter ( 𝐿 =2)
+> stage
+> 𝑝 0storage
+> 𝑝 0𝑝 1𝑝 2
+> 0123401234pitch 𝐿𝑠 0
+> source pitch 𝑆
+> dest. pitch 𝐿𝑠 0
+> CE multicast to all 𝐿 local GPUs
+
+Figure 5: TIDE-AG on one rail. (a) Recursive doubling gathers 
+
+𝑀 = 5 shards in ⌈log 2 𝑀 ⌉ = 3 rounds. (b) One strided copy per parameter multicasts a run of stage slots into every local GPU; hatched rows belong to the other local GPU. 
+
+NVSwitch multicast. After a stream-memory-operation entry fence, rank 𝑟 issues one batched copy with 𝑃 descriptors to each param-eter’s final multicast address, so every write reaches all 𝐿 GPUs once instead of through 𝐿 − 1 peer unicasts. Cumulative completion counters prevent consumption until every local rank finishes. Across 𝑀 > 1 nodes, FSDP2’s default prefetch depth of one uses two alternating 𝑁 𝑆 -byte landings, and a group needs a receive stage of (𝑀 − 1)𝑆 bytes ( 𝑀𝑆 with a cast); without expert subgroups, both landings share that stage. Rather than an (𝑀 − 1)-round ring, TIDE-AG runs Bruck’s recursive doubling [5] in 𝑅 = ⌈log 2 𝑀 ⌉ rounds (Figure 5a). In round 𝑑 , node 𝑛 forwards its first 𝑐 𝑑 = min (2𝑑 , 𝑀 −2𝑑 )
+
+accumulated shard slots to rail peer (𝑛 − 2𝑑 ) mod 𝑀 and receives as many from (𝑛 + 2𝑑 ) mod 𝑀 ; since Í𝑑 𝑐 𝑑 = 𝑀 − 1, any 𝑀 is covered. As slots arrive, a copy-engine stream multicasts them into the parameter-major landing. Consecutive stage slots come from consecutive rail-peer ranks, so their rows in parameter 𝑝 have a constant destination pitch 𝐿𝑠 𝑝 and source pitch 𝑆 (Figure 5b). TIDE therefore merges each run of at least four slots into one strided copy and splits the last round into at most four groups, cutting descriptors from 𝑂 (𝑀𝑃 ) to 𝑂 (𝑃 log 𝑀 ).
+
+Lead-based round pacing and per-area credits. Unpaced multi-peer puts can trigger RoCE receiver incast and DCQCN rate cuts. TIDE therefore starts round 𝑑 ≥ 1 only after the round’s target confirms that round 𝑑 − 1 has arrived. To hide the roughly 0.12 ms signal round trip, each transfer is split into a head and a tail (8 MiB of heads in total by default); the receiver signals once all heads arrive, so the signal overlaps the tail. Without pacing, training sees 9 ×
+
+more PFC pauses and 2 .6× more ECN marks. Per-area cumulative credits, emitted once every slot of a call has been scattered, guard receive-stage reuse across calls. 
+
+## 3.2 Decoupled Stream Completion 
+
+Three conditions differ: a landing is free to overwrite, its new pa-rameters are ready to consume, and a remote receive stage may be reused. Serializing them on FSDP2’s all_gather_stream would resynchronize local ranks behind the slowest sibling.                                          
+
+> (a) Level 1 on node A: one fp32 partial per sub-slice
+> GPU 0 GPU 1 GPU 3 GPU 2 bf16 staging on GPU 2 CE push TMA Σ
+> fp32, few CTAs own gradient, in place Afp32 partial rail 2 to node D
+> (b) Level 2: Latin-square placement on node D
+> 𝑠 0𝑠 1𝑠 2𝑠 3
+> GPU 0 DABCGPU 1 CDABGPU 2 BCDAGPU 3 ABCDrail 𝑗 from A, B, C NVSwitch Σ, fp32 one ld_reduce per column A, B, C: ¯𝑐 =1,2,3
+> D: destination, ¯𝑐 =0
+> 𝑗 =(𝑠 −¯𝑐 )mod 𝐿
+
+Figure 6: Two-level TIDE-RS. (a) Copy engines stage local 
+
+bf16 slices and bounded TMA CTAs form fp32 node partials. (b) Latin-square placement distributes contributors across destination GPUs so NVSwitch reduces each aligned sub-slice. 
+
+TIDE-AG therefore separates them across three internal streams. A readiness stream waits until the landing is free and publishes local readiness; the caller’s stream flushes prior credits, queues the readiness waits and the 𝑅 RDMA rounds, and forks scatters to a copy-engine stream; and a completion stream joins the scatters, runs the node-wide completion fence, and records the event that FSDP2 waits on before consuming the parameters. The next call’s credit flush waits only for this rank’s previous scatter, not for the previous node-wide fence or the slowest local sibling. Safety requires a credit before stage reuse, completion before consumption, and the same call order on all ranks. Removing any one in fault injection causes detected corruption or a timeout. 
+
+## 4 TIDE-RS: Layout-Aware Reduce-Scatter 
+
+TIDE-RS applies TIDE’s placement principle to FSDP2 gradient reduction (Figure 6). It consumes per-parameter gradients {𝐺 (𝑢 ) 
+
+> 𝑝
+
+}
+
+without rank-major packing, either directly in place or from a layout-preserving slot copy (Section 5.3). It materializes neither the transient 𝐵 pack buffer in Equation (3) nor a persistent full-group symmetric input window, and produces on rank 𝑟 ∈ [ 0, 𝑁 ) the concatenated fp32 shard out 𝑟 = É𝑃 −1 
+
+> 𝑝 =0
+
+out 𝑝,𝑟 of total byte size 
+
+𝑆 fp32 = 4 Í𝑃 −1 
+
+> 𝑝 =0
+
+𝑅 𝑝 𝐾 𝑝 , where É concatenates the per-parameter shards out 𝑝,𝑟 ← (accumulate ? out 𝑝,𝑟 : 0 ) + 𝛼  
+
+> 𝑁 −1
+
+∑︁ 
+
+> 𝑢 =0
+
+𝐺 (𝑢 ) 
+
+> 𝑝
+
+[I 𝑝,𝑟 ]. (5) The output has stock FSDP2’s packed per-rank layout; 𝛼 folds FSDP2’s divide factors and AVG or PREMUL_SUM scaling, and 
+
+accumulate fuses gradient accumulation into the output. TIDE-RS has two levels. Level 1 forms one fp32 node partial from the 𝐿 local contributions— bf16 in our target configuration— using copy-engine pushes and a bounded TMA sum. Level 2 sends these partials over the rails and uses Latin-square placement so the destination NVSwitch combines up to 𝐿 nodes per wave. The Endgame of FSDP Communication 
+
+## 4.1 Level 1: Node-Local Reduction 
+
+For each destination node, every local GPU owns one sub-slice span-ning its 𝐿 destination ranks. The other 𝐿 − 1 local ranks push their 
+
+bf16 contributions into the owner’s bounded staging area, while the owner reads its own contribution directly from the per-parameter gradient (Figure 6a). Staging is processed and reused in chunks; device-side counters prevent a chunk from being overwritten before the owner finishes reading it. 
+
+Coalescing the destination-rank axis. Flattening every destina-tion row separately requires (𝐿 − 1)𝑃𝑀𝐿 copy descriptors per rank per call (107 ,520 at (𝐿, 𝑀, 𝑃 ) = (8, 64 , 30 )). The 𝐿 destination ranks on one node are consecutive, however, so their slices within each parameter and their staging rows have constant source and destina-tion pitches. One strided descriptor therefore replaces 𝐿 flat copies for each owner, parameter, and destination node (plus a short tail for a final padded row), cutting the count to (𝐿 − 1)𝑃𝑀 . On six nodes, host issue time drops from 2.0 to 0.8 ms for 𝑃 = 16 and from 3.6 to 1.2 ms for 𝑃 = 30. 
+
+Keeping pace with the rail. At 𝐿 = 8, each 4-byte fp32 node partial requires eight bf16 reads (16 bytes) and one fp32 write (4 bytes), so Level 1 must process 5 × the NIC output rate: 237.5 GB/s of logical read-plus-write traffic for a 47.5 GB/s rail. A warp-specialized TMA pipeline raises the kernel-only rate from 32 to 99 GB/s per CTA in this metric; on six nodes, a reduce-scatter takes 4.81 ms with four sum CTAs versus 4.60 ms with eight, so four CTAs keep up with a 400 Gb/s rail. The sum CTAs retire when the read phase completes and never poll peers, so extra CTAs add transient contention with-out reserving SMs for the network transfer; the pipeline can use more of them to meet an earlier gradient-read deadline. 
+
+## 4.2 Level 2: Latin-Square NVSwitch Waves 
+
+SM-resident baselines keep 13–16 CTAs active for the whole trans-fer (Section 2.2). TIDE-RS instead delegates cross-node fp32 summa-tion to the destination node’s NVSwitch via multimem.ld_reduce. relaxed.sys.global.add.v4.f32 .
+
+Latin-square sub-slice placement. For one multimem.ld_reduce 
+
+to sum partials from several contributor nodes, they must sit at the same symmetric offset on distinct local GPUs 𝑗 ∈ [0, 𝐿 ) of destination node 𝑚 , while rail alignment lets local rank 𝑗 on a sender reach only local rank 𝑗 on the receiver. The idea is to trade contributor identity for GPU placement. Fix one sub-slice: if every contributor of a wave places its partial at the same offset on a different destination GPU, one reduction through the multicast pointer sums them all. The only problem is the assignment: no two contributors in a wave may land on the same GPU, yet each sender must still use its own rail. Rotating the assignment with the contributor index—a Latin square, shown for 
+
+𝐿 = 4 in Figure 6b—satisfies both constraints at once, as Theorem 4.1 proves. TIDE satisfies both constraints with a Latin-square sub-slice rotation (Figure 6b). Let 𝐸 stg be the aligned per-rank staging span. For the one-pass schedule, we split it into 𝐿 equal-capacity sub-slices 𝑠 ∈ [ 0, 𝐿 ), each with vector-aligned capacity 𝐸 sub ≥ ⌈ 𝐸 stg /𝐿 ⌉;the final live range may be shorter. For destination node 𝑚 and contributor node 𝑛 ∈ [ 0, 𝑀 ), define the send-order contributor index: 
+
+𝑐 (𝑚, 𝑛 ) =
+
+(
+
+(𝑚 − 𝑛 ) mod 𝑀, if 𝑛 ≠ 𝑚 (1 ≤ 𝑐 < 𝑀 ),𝑀, if 𝑛 = 𝑚 (own node ). (6) Write ¯ 𝑐 = 𝑐 mod 𝑀 , so the own-node contributor has ¯ 𝑐 = 0. In step 
+
+𝑐 ∈ { 1, . . . , 𝑀 − 1}, sender node 𝑛 targets 𝑡 = (𝑛 + 𝑐 ) mod 𝑀 . Local rank 𝑗 ∈ [ 0, 𝐿 ) selects sub-slice 
+
+𝑠 = ( 𝑗 + ¯𝑐 ) mod 𝐿 (7) and performs Level 1 reduction for all 𝐿 ranks on destination node 𝑡 .It stores the fp32 partials in a contiguous outbox block with 𝐿 rows of 𝐸 sub elements, then transfers it over rail 𝑗 to inbox block 𝑠 on rank (𝑡, 𝑗 ). Equivalently, from the perspective of a fixed destination node 𝑚 and a fixed sub-slice 𝑠 ∈ [ 0, 𝐿 ), contributor 𝑐 ’s partial lands in inbox block 𝑠 of destination local GPU: 
+
+𝑗 (𝑠, 𝑐 ) = (𝑠 − ¯𝑐 ) mod 𝐿. (8) For a fixed 𝑠 , the rotation sends each contributor in a wave to a distinct destination GPU at the same symmetric offset, turning contributor identity into GPU placement so that one NVSwitch reduction folds up to 𝐿 cross-node partials. Rail transfers use no SM kernel; only a short landing kernel runs after each wave arrives. Proposition 4.1 (Multi-Wave Latin-Sqare Collision-Free-dom). Let 𝑊 wave be the maximum contributors per wave and 𝑤 ∈[0,𝑊 ) the wave index. When the 𝑀 contributors 𝑐 ∈ { 1, . . . , 𝑀 } are partitioned in increasing order into 𝑊 = ⌈𝑀 /𝑊 wave ⌉ waves of width 
+
+𝑊 wave dividing 𝐿 (in particular, the default 𝑊 wave = 𝐿 ), no two con-tributors in the same wave 𝑤 map to the same local GPU 𝑗 (𝑠, 𝑐 ) on destination node 𝑚 for any sub-slice 𝑠 ∈ [ 0, 𝐿 ).
+
+Appendix D gives the proof and exhaustive planner validation. 
+
+Bounded waves and safe reuse. When 𝑀 > 𝐿 , contributors are split into waves of at most 𝐿 nodes. The inbox has 𝐿 symmetric blocks per buffer generation, with one generation for a single-wave schedule and two alternating generations otherwise—an inbox double buffer—so its size does not grow with 𝑀 . Once a wave arrives, a fixed-size landing kernel reads the aligned blocks through the multicast pointer and accumulates their fp32 partials into the output. Blocks written by the previous wave on the same buffer generation but not the current one are zeroed before landing, and an own-node partial that would overwrite a buffer generation still being read goes to a spare block until that generation is free. 
+
+Wave-aligned network rounds. TIDE confines each network round to one wave, preserving the bounded inbox while expos-ing up to 𝑘 concurrent rail transfers. Very large calls may repeat the same mapping over multiple passes without changing the buffer-generation or stale-block rules. Sections 5.2 and 6.3 describe pipelining and schedule selection. 
+
+## 4.3 Numerical Semantics and Determinism 
+
+TIDE-RS changes the association of the sum relative to stock FSDP2 but never narrows an intermediate partial. Level 1 adds the 𝐿 − 1staged contributions in local-rank order, then the own contribu-tion, in fp32 (add.rn.f32.bf16 rounds once on SM100+); Level 2 adds fp32 node partials in the NVSwitch. A plan fixes the topol-ogy, rank placement, and (𝑀, 𝐿,𝑊 wave ). Repeated executions of a Zejian Wang et al. 
+
+plan are bitwise identical in outputs, losses, and parameters, as are runs that change tuning knobs that preserve operand grouping: CTA counts, chunk sizes, passes, staging slots, host- versus device-initiated execution, and In-Place versus Slot-Reuse. TIDE thus adds no nondeterminism of its own (Section 7.5). Standard-normal 
+
+bf16 and fp32 inputs match a distributed fp64 reference within 10 −5 max (1, ∥𝑦 ref ∥∞); integer inputs with exactly representable sums match stock FSDP2 bit for bit; and NaN and ±∞ inputs pro-duce the expected output classes. 
+
+## 5 Pipelining and Memory Efficiency 
+
+Low-SM collectives must still become training-level overlap with bounded memory. TIDE separates gradient reads from network progress and makes gradient residence an explicit choice: In-Place keeps gradients in autograd storage and prefetches the next all-gather early, while Slot-Reuse moves them into a vacated all-gather slot and frees their storage immediately. 
+
+## 5.1 Scheduling and Allocator Constraints 
+
+Let ℓ index layers in forward order and 𝑒 successive reduce-scatter calls. When TIDE-RS reads autograd’s gradients {𝐺 𝑝 } in place, they stay live until its Level 1 pushes and sums finish; FSDP2 keeps a collective’s input until the next group’s post_backward observes its completion event, which is therefore the default release point. Three constraints shape the schedule. 
+
+Read–network coupling. With one shared outbox bank, call 𝑒 
+
+cannot start reading until call 𝑒 − 1’s sends release the bank, and forcing the compute stream to wait for reads puts their latency on the critical path. Local reads therefore need independent temporary state. 
+
+The host-time allocator paradox. Asynchronous reclamation via 
+
+record_stream or a polling thread is GPU-safe, but PyTorch’s caching allocator assigns blocks when the CPU enqueues work, one or two layers ahead of the GPU. By the time an event reports layer ℓ safe to free, later layers have already claimed fresh segments (Figure 13, Appendix E), so reclamation must happen at an allocator-visible host callback. 
+
+Backward prefetch inversion. FSDP2’s post_backward enqueues the current reduce-scatter before the next pre_backward enqueues the next all-gather, which can then wait behind a whole multi-node network phase. Whether TIDE can move it ahead depends on the mode: In-Place leaves the landing slot free, whereas Slot-Reuse stores gradients there until reads complete. 
+
+## 5.2 Two-Phase Read–Network Pipelining 
+
+For call 𝑒 , TIDE splits source consumption from inter-node progress and assigns its temporary state to bank 𝑏 = 𝑒 mod 2 (Figure 7): 
+
+• Read phase. As soon as backward produces {𝐺 𝑝 }, Level 1 con-sumes them into an outbox bank and own-node spares without waiting for the previous call’s network phase; a read-completion event marks when the source is no longer needed. 
+
+• Network phase. In collective order, rail rounds send ready out-box blocks and trigger the Level 2 wave landings (Section 4.2). A full outbox has a block for every remote output, so all reads             
+
+> In-Place
+> compute AG RS Level 1 RS Level 2 gradients
+> Slot-Reuse
+> compute AG RS Level 1 RS Level 2 gradients bwd L7 bwd L6 bwd L5 AG L5 AG L4 read L7 read L6 net L7 net L6 L7 L6 two groups live bwd L7 bwd L6 bwd L5 AG L5 AG L4 read L7 read L6 net L7 net L6 L7 in AG slot copy autograd storage released gated by read completion
+
+Figure 7: Backward scheduling in the two modes. In-Place lets the next all-gather run during reduce-scatter but briefly keeps two gradient groups live; Slot-Reuse copies gradients into a vacated all-gather slot and gates the slot’s reuse on read completion. 
+
+proceed without waiting for the network; a partial outbox recy-cles blocks after their sends, overlapping the remaining reads with network progress. Read completion thus controls source lifetime, per-round progress controls block reuse, and final completion preserves collective order. 
+
+Safety and progress. The schedule enforces three happens-before relations: gradients and slot copies stay live until read completion; an outbox block or inbox buffer generation is reused only after its previous send or landing; and every wait targets a producer already enqueued in the same collective order on all ranks. With Theo-rem 4.1, these give reclamation safety, buffer safety, and deadlock freedom; Appendix E details the event protocol and fault-injection checks. 
+
+## 5.3 In-Place and Slot-Reuse Modes 
+
+The two modes choose where gradients reside while TIDE-RS con-sumes them (Figure 7). Both preserve the parameter-major layout and avoid packing; they differ in gradient lifetime, all-gather slot availability, and the number 𝑛 out of outbox blocks per bank. Let RS net (ℓ) denote layer ℓ’s network phase. 
+
+In-Place. TIDE reads {𝐺 𝑝 } directly. For the default one-pass plan, a full outbox holds all 𝑀 − 1 remote destinations ( 𝑛 out = 𝑀 − 1), so read completion does not wait for the NIC; FSDP2 frees layer ℓ’s gra-dients at the next group’s post_backward , so two gradient groups are briefly live. Once layer ℓ has resharded and released its ring slot, TIDE issues the next backward all-gather ahead of RS net (ℓ),tracking forward invocation order so that repeated checkpointed or accumulated invocations stay distinct. 
+
+Slot-Reuse. At post_backward (ℓ), the layer has vacated an all-gather slot with the same byte geometry as {𝐺 𝑝 }. TIDE copies the gradients into it, keeping their layout, and frees their storage at the current host callback. The slot is now the reduce-scatter source, so its next all-gather waits for read completion instead The Endgame of FSDP Communication 
+
+of early prefetch. Since memory is already reclaimed, reads can follow network progress through a partial outbox that covers two consecutive rounds. With 𝑘 𝑖 ≤ 𝑘 transfers in round 𝑖 , the per-bank depth is 
+
+𝑛 out = max 
+
+> 𝑖
+
+ 𝑘 𝑖 + 𝑘 𝑖 −1
+
+ ≤ 2𝑘, 𝑘 −1 = 0. (9) 
+
+## 5.4 Bounded Memory Analysis 
+
+Within TIDE’s arena, the two modes differ only in outbox depth. We bound the per-GPU temporary RS staging Area RS for our target configuration ( 𝐿 = 8, bf16 inputs, one-pass pipeline), excluding the output shard, autograd gradients, and the shared all-gather ring and receive stage. Let 𝑆 be one rank’s bf16 shard size in the largest group ( 𝑆 fp32 = 2𝑆 ), 𝑛 stg the local staging slots, and 𝑛 par ∈ { 1, 2} the number of inbox buffer generations. Then Area RS ≤  4𝑛 stg + 8𝑛 par + 2𝑛 out + 2𝑆 fp32 . (10) since each bf16 staging slot takes at most 4 𝑆 fp32 , each buffer gen-eration eight blocks, the two outbox banks 2 𝑛 out blocks, and each bank one own-node spare. With the default 𝑛 stg = 2, Area InPlace ≤  2𝑀 + 8𝑛 par + 8𝑆 fp32 =
+
+ 12 + 2𝑛 par + 2
+
+𝑀 
+
+
+
+𝑁 𝑆, (11) Area Slot ≤  4𝑘 + 8𝑛 par + 10 𝑆 fp32 = 2𝑘 + 4𝑛 par + 52𝑀 𝑁 𝑆. (12) At fixed 𝑘 , In-Place approaches 0 .5𝑁 𝑆 as 𝑀 grows, whereas Slot-Reuse decays as 𝑂 (𝑘 /𝑀 ). At 𝑀 = 64, 𝑛 par = 2, and 𝑘 = 4, the bounds are 0 .594 𝑁 𝑆 and 0 .164 𝑁 𝑆 (fixed-size chunks lower In-Place to 0 .56 𝑁 𝑆 ). During a layer’s backward, FSDP2 holds 4 𝑁 𝑆 : the layer’s un-sharded parameters, the prefetched all-gather output (allocated on another stream, so the reduce-scatter never reuses its memory), and the previous layer’s fp32 reduce-scatter input (2 𝑁 𝑆 ). TIDE’s two ring slots and receive stage ( (2 + 1/𝐿 )𝑁 𝑆 ) replace the first two, so with the staging above and, for In-Place, the previous layer’s bf16 
+
+gradients ( 𝑁 𝑆 ; Slot-Reuse keeps them in a vacated slot), TIDE holds at most 3 .72 𝑁 𝑆 under In-Place and 2 .29 𝑁 𝑆 under Slot-Reuse. Ap-pendix F covers the adapter’s storage and expert-subgroup details. 
+
+## 6 Implementation and Runtime 
+
+TIDE comprises about 5,100 lines of C++/CUDA, 2,300 lines of Python, and 1,800 lines of tests. It uses only public NCCL 2.31 APIs (symmetric windows, local peer pointers, multicast bindings, and RMA puts and signals), so it runs on unmodified NCCL; all reported runs use stock NCCL 2.31.2. The FSDP2 adapter replaces FSDP2’s internal all-gather, copy-out, reduce-scatter, unsharded-parameter allocation, and post-forward (and, for In-Place, backward-prefetch) hooks after checking their signatures; model code and compute kernels are unchanged. Neither collective copies metadata to the GPU per call: the reduce-scatter passes gradient pointers as kernel parameters and reads a segment table uploaded at registration. The control plane must scale too: TIDE bounds connection state with topology-scoped communicators, host submission with a small stream pool, and SM and memory use with plan selection. 
+
+## 6.1 Topology-Scoped Communicators 
+
+A single symmetric-window RMA communicator scales poorly. In NCCL 2.31’s host RMA proxy, the first ncclCommWindowRegister 
+
+opens a send and a receive RDMA queue pair (QP) from each of 
+
+𝑛 ctx RMA contexts to every rank and runs an 𝑁 -rank ring barrier after each connection: 𝑂 (𝑛 ctx 𝑁 2) barrier steps and 2 𝑛 ctx 𝑁 QPs per GPU. Yet rank 𝑟 = 𝑛𝐿 + 𝑙 only ever sends to its 𝑀 − 1 same-rail peers, so TIDE splits the domains: (1) Node-local domain. The main 𝑁 -rank communicator has no RMA contexts but keeps local symmetric addressing (LSA) peer pointers and NVSwitch multicast. (2) Rail domains. ncclCommSplit forms 𝐿 disjoint 𝑀 -rank rail communicators with 𝑛 ctx contexts each (four in our evaluation). (3) Shared storage. Each arena is registered in both domains; the main handle serves LSA and multicast, the rail handle RMA. Both communicators cap their unused NCCL channels at one. The split cuts per-GPU QPs by 𝐿 × and barrier work by 𝐿 2× (8 × and 64 × at 𝐿 = 8). On 8 nodes, with lazy connection, communicator state takes 0.21 GiB per GPU versus 6.95 GiB for eager 32-channel initialization, and the rail split plus RMA connection takes 1.3–1.7 s .
+
+## 6.2 Bounded Host Execution 
+
+Long copy-descriptor chains can block host submission behind queued GPU work. TIDE spreads descriptor batches over a small pool of internal streams, with device-side slot counters preserving order, which keeps median enqueue latency at 0.62 ms for TIDE-AG and 0.80–0.82 ms for TIDE-RS across tested queue depths. The network phase is host-driven by default, and in training this host work stays hidden behind backward compute. Where NCCL’s GPU-initiated networking (GIN) runs over GDAKI, an optional device path replaces per-round host calls with a 1-CTA kernel per wave (Appendix G); all reported results use the host path. 
+
+## 6.3 Plan Selection and Validation 
+
+Before the first registration, a calibrated first-order model picks the sum and landing CTA budgets, round width 𝑘 , chunk size, pass count, and outbox depth from measured NIC, local-sum, landing, and per-round wait rates: it provisions enough local-sum through-put to feed the rail, bounds the landing tail, and widens rounds only when that amortizes peer waits (Appendix G). On our eight-node system, the solver selects 𝑘 = 4 and four sum CTAs. Because over-lap tightens the gradient-read deadline, the training configuration raises the sum budget to 16 (Section 7.1), which changes neither placement nor arithmetic. At installation, all ranks agree on tensor signatures, options, and capabilities; unsupported groups fall back to stock collectives, and inconsistent global capabilities abort. A 239-configuration test suite covers bitwise and tuning invariance, non-finite inputs, HSDP and expert subgroups, EMA/checkpoint paths, and 41 fault-injection negative tests over 11 fault kinds (Ap-pendices E and F). 
+
+## 7 Evaluation 
+
+We ask how much step time and memory TIDE saves in training (Section 7.2), where the saving comes from (Section 7.3), and how the collectives scale (Section 7.4). Zejian Wang et al. 
+
+## 7.1 Experimental Setup 
+
+We use up to eight nodes, with eight GPUs per NVSwitch domain and one RDMA rail per GPU; all training runs use 64 GPUs. We train dense Llama-3.1 70B at 8K–32K tokens/GPU, the MoE Qwen3-30B-A3B at 16K–32K tokens/GPU, and the high-noise expert of Wan2.2-T2V-A14B , a 14B dense diffusion transformer, at 17 frames and local batch 1–4 (7.8K–31.2K tokens/GPU). We compare Stock FSDP2, FSDP2 with PyTorch Symmetric Memory (FSDP2+SymmMem), and TIDE, using In-Place for Llama and Qwen3 and Slot-Reuse for Wan; TIDE-RS runs 16 sum and 4 landing CTAs with 𝑘 = 4. All systems share the model, precision, optimizer, activation checkpointing, and inputs. We report median step times over 40–100 post-warm-up steps from repeated launches and pair launches by round; memory is the whole-device peak. 
+
+## 7.2 End-to-End Performance and Memory 
+
+TIDE is the fastest system at every point (Figure 8a–c). On Llama it cuts step time by 16.2% at 8K tokens/GPU and 3.1% at 32K versus Stock, and from 16K to 32K it saves 0.51–0.54 s per step, 1.9–2.4 ×
+
+what FSDP2+SymmMem saves, so the relative reduction shrinks only because the step grows. Wan shows the same pattern on a shorter step: 7.4%, 2.8%, and 1.4% versus Stock at 7.8K, 15.6K, and 31.2K tokens/GPU, about twice what FSDP2+SymmMem saves at the two larger sizes. For Llama and Wan, every paired-𝑡 95% interval against FSDP2+SymmMem excludes zero, and fixed-clock reruns of Llama 24K and Wan at 15.6K tokens/GPU keep the same ordering. Qwen3 shows the largest gains, as Equation (1) predicts: sparse MoE routing activates only a small fraction of the sharded parame-ters per token, while every rank still gathers and reduces the full parameter volume, so the recoverable overhead is a larger share of the step. From 16K to 32K tokens/GPU, TIDE cuts step time by 27.1%, 21.4%, and 17.3% versus Stock and by 6.0%, 4.8%, and 4.3% versus FSDP2+SymmMem (Figure 8c). TIDE uses less memory than FSDP2+SymmMem on all three models, and Slot-Reuse uses less than Stock on Wan (Figure 8d). At Llama 24K, FSDP2+SymmMem holds the same live bytes as Stock but peaks 6.6 GiB higher: its private pool reserves 9.4 GiB that no other tensor can share, more than TIDE’s whole 6.1 GiB arena, which also holds the unsharded parameters. Stock takes the fp32 reduce-scatter input from the compute pool, where it shares memory with activations. In-Place therefore peaks 4.7 GiB below FSDP2+SymmMem, adding 1.9 GiB over Stock, mostly a communicator and an arena reserved once for the largest group (Llama’s vocabulary layer); its reduce-scatter staging does not grow with the GPU count (Section 7.4). On Wan, Slot-Reuse peaks 1.0– 1.4 GiB below Stock and 1.5–1.7 GiB below FSDP2+SymmMem. In-Place is only 0.3% faster at batch 2 and uses 0.8 GiB more, so Wan uses Slot-Reuse. On Qwen3 at 32K tokens/GPU, TIDE peaks 3.7 GiB below FSDP2+SymmMem (87.3 vs. 91.0 GiB), within 0.3 GiB of Stock. 
+
+## 7.3 Where the Gain Comes From 
+
+Both collectives contribute, and the gains add. Replacing one col-lective at a time, in separate In-Place launches, returns about half the combined saving: the all-gather alone is 50% of it at Llama 24K and 55% at Wan 15.6K, the reduce-scatter alone 58% and 43%, and the two shares sum to 108% and 98%. TIDE removes the layout copies and keeps communication off the SMs. In a profile of one GPU during a Llama 8K step, Stock and FSDP2+SymmMem spend 0.33 and 0.32 s per step on those copies. Communication drops from 78 SM ·s per step under Stock and 34 under FSDP2+SymmMem to 3.8, and a communication kernel is resident for 8% of the step instead of 89% and 59%. TIDE’s GEMMs are 1.3% and 5.5% shorter than under the two baselines. TIDE-AG is the fastest all-gather and barely slows concurrent compute; TIDE-RS cuts that slowdown several-fold (Figure 9; Ta-ble 6 lists the values). TIDE-AG uses no SMs, so concurrent compute slows by at most 0.5%. FSDP2+SymmMem cuts all-gather SM time by 2.5–2.7 × but barely touches the reduce-scatter, whose packing and reduction still run on SMs. TIDE-RS uses 12.5–14.5 × less SM time than either baseline, lowering the slowdown from 9.6–11.6% to 3.5% on Llama and from 20.6–23.2% to 2.1% on Wan. The advantage holds beyond the training shapes. Only TIDE’s training configuration finishes a 32 MiB reduce-scatter on 8 nodes faster than Stock FSDP2 while slowing a one-wave GEMM by less than 4% (Appendix A, Table 4, and Figure 11); against a large GEMM and a memory-bound kernel, the training configuration adds 4.2% and 1.6%, versus 13.6% and 13.3% for Stock FSDP2. 
+
+## 7.4 Scaling and Resource Efficiency 
+
+TIDE-AG stays ahead of FSDP2’s fastest all-gather, copy-out in-cluded, and uses no SMs (Figure 10a). Across 1–8 nodes and 32– 128 MiB shards the median speedup is 1 .06–1 .42 ×. On 128 MiB shards it grows from 1 .13 × at 16 GPUs to 1 .42 × at 64; 32 MiB shards stay between 1 .06 × and 1 .22 ×.TIDE-RS keeps a flat buffer while FSDP2’s grows with the GPU count (Figure 10b). FSDP2 packs one fp32 block per GPU, each the size of the output shard, so a fixed output makes that buffer linear in the GPU count. TIDE-RS stays within 18–21 such blocks from two to eight nodes (0.58–0.64 GiB at 32 MiB outputs and 2.26–2.51 GiB at 128 MiB), and FSDP2’s buffer is 3 .2× as large at 64 GPUs for both sizes (0 .9× and 1 .7× at 16 and 32). For a fixed model, FSDP2 packs 2 𝑁 𝑆 at every scale; the 64-node analysis of Section 5.4 bounds TIDE’s staging at 0 .59 𝑁 𝑆 (In-Place) and 0 .16 𝑁 𝑆 
+
+(Slot-Reuse), at most 1.2 and 0.3 GiB per GPU on Llama’s largest group against FSDP2’s 3.9 GiB. On one node TIDE-RS is also 1.4– 1.8 × faster than both FSDP2 paths, and for 128 MiB outputs on eight nodes its median latency is lower than both (Table 8). 
+
+## 7.5 Correctness and Robustness 
+
+TIDE’s training loss stays inside Stock FSDP2’s own run-to-run variation (Figure 12 in Appendix C). Deterministic kernels stay off, because they would change timing, so two Stock runs already diverge and that spread is the reference. Over steps 500–1,000 of a 1,000-step run of Qwen3-30B-A3B, an MoE model, on public C4, the 50-step moving averages differ from a first Stock run by at most 0.73% for TIDE and 1.12% for a second Stock run. Validation with EMA weight swaps, asynchronous checkpoint save/resume, unsupported-group fallback, and peer-stall fail-stop also pass. These runs are in addition to the operator checks in Section 4.3. The Endgame of FSDP Communication 8K 16K 24K 32K 
+
+Tokens per GPU       
+
+> 0.0 0.5 1.0
+> Saved vs. Stock (s/step)  16.2% 6.1% 4.0% 3.1% 5.13 s 8.77 s 12.74 s 16.68 s Stock
+> ↑beer
+
+(a) Llama-3.1 70B   
+
+> 7.8K 15.6K 31.2K
+
+Tokens per GPU (17 frames)     
+
+> 0.00 0.05 0.10 0.15
+> Saved vs. Stock (s/step)  7.4% 2.8% 1.4% 1.74 s 3.20 s 6.28 s Stock
+> ↑beer
+
+(b) Wan2.2-T2V-A14B   
+
+> 16K 24K 32K
+
+Tokens per GPU      
+
+> 0.0 0.2 0.4 0.6
+> Saved vs. Stock (s/step)
+> 27.1% 21.4% 17.3% 2.15 s 2.70 s 3.23 s Stock
+> ↑beer
+
+(c) Qwen3-30B-A3B (MoE)          
+
+> 24K 7.8K 15.6K 31.2K 32K
+> −20246
+> Δ vs. Stock (GiB)  +6.6 +0.5 +0.5 +0.3 +4.0 +1.9
+> −1.0 −1.0 −1.4 +0.3 98 GiB 26 GiB 39 GiB 65 GiB 87 GiB Stock
+
+Llama Wan2.2 Qwen3  
+
+> ↓beer
+
+(d) Peak device memory Stock FSDP2 FSDP2+SymmMem TIDE 
+
+Figure 8: TIDE is fastest at every point and uses less memory than FSDP2+SymmMem (64 GPUs; Llama and Qwen3: In-Place; Wan: Slot-Reuse). (a–c) Time saved versus Stock; labels are the relative saving, Stock’s step time is under each group, and error bars summarize run-to-run variation. (d) Peak memory versus Stock (repeats within 0.1 GiB). AG RS AG RS 0510 15 
+
+> p50 latency (ms)
+> 4.9 10.6 2.6 5.6
+
+Llama-3.1 70B Wan2.2 (a) Collective latency     
+
+> AG RS AG RS 010 20
+> Slowdown (%)
+> 0.3 3.5 0.5 2.1
+
+Llama-3.1 70B Wan2.2 (b) Slowdown of concurrent compute       
+
+> AG RS AG RS 0200 400 600
+> SM ·ms per call
+> 045 019
+
+Llama-3.1 70B Wan2.2 (c) SM time per collective Stock FSDP2 FSDP2+SymmMem TIDE 
+
+Figure 9: TIDE-AG barely slows concurrent compute; TIDE-RS cuts that slowdown several-fold (training shapes, fixed SM clock; lower is better; labels are TIDE’s values). (a) Isolated calls. (b) MLP GEMM (Llama) or self-attention (Wan). 8 16 32 64 
+
+GPUs 
+
+> 1.0 1.1 1.2 1.3 1.4
+> Speedup ( ×) 1.42 ×
+> FSDP2 (best path)
+
+(a) All-gather vs. FSDP2    
+
+> 816 32 64
+
+GPUs 
+
+> 0.25 0.5 1248
+> Buffer (GiB/GPU)
+> 3.2 ×
+
+(b) Reduce-scaer buffer    
+
+> FSDP2 TIDE 128 MiB 32 MiB
+
+Figure 10: TIDE-AG stays faster from 8 to 64 GPUs; its reduce-scatter buffer stays flat (Tables 7 and 8). (a) Median speedup over FSDP2’s fastest all-gather. (b) Buffer per GPU. 
+
+## 8 Related Work 
+
+Sharded data parallelism and layout restructuring. ZeRO [35], ZeRO++ [42], MiCS [48], PyTorch FSDP [51], FSDP2 / TorchTi-tan [21], and SimpleFSDP [47] partition model states across data-parallel ranks, while Megatron-LM [18, 38] and DeepSpeed-MoE [34] combine data, tensor, sequence, and expert parallelism. FSDP2’s per-parameter layout forces the packing and copy-out of Section 2.1; veScale-FSDP [45] and Megatron-FSDP [23] remove them by restructuring model storage around persis-tent flat or uneven collective buffers. TIDE instead preserves FSDP2’s per-parameter DTensor storage and expresses non-contiguous placement through a byte table, analogous to MPI derived datatypes [11, 40]. 
+
+Symmetric memory and direct placement. NCCL 2.28–2.31 [24, 26] exposes symmetric windows, copy-engine collectives, NVLink SHARP multimem , host RMA, and device GIN. Related symmetric-memory and direct-placement systems include PyTorch’s FSDP2 in-tegration [32], AMD MORI [1], DeepEP [49], and NCCL PACE [27]. PyTorch’s symmetric FSDP2 path removes all-gather transport SMs but keeps rank-major outputs and gradient packing, and its multi-node copy-engine all-gather is unpaced, which can trigger RoCE incast (Section 3.1). TIDE co-designs placement for both collectives while preserving FSDP2’s storage contract. 
+
+Collective libraries and GPU-initiated communication. NCCL [26] is the de facto GPU collective library, and Hu et al. [14] dissect its protocols and algorithms. Blink [43], TACCL [37], and MSC-CLang [8] generate or express topology-aware collective algorithms, and MSCCL++ [15] exposes GPU-driven communication primitives. Zejian Wang et al. 
+
+GPUDirect Async [2] lets the GPU trigger network operations pre-pared by the CPU, and Unat et al. [41] survey GPU-centric commu-nication more broadly. TIDE adds no programming model: it com-poses NCCL’s public copy-engine, symmetric-memory, multimem ,and RMA primitives into collectives whose output layout matches FSDP2’s storage. 
+
+GPU sharing and interference. Co-running kernels contend for SMs, registers, shared memory, and memory bandwidth. Chimera [29] and Simultaneous Multikernel [46] add hardware preemption and fine-grained sharing of each SM among kernels, while REEF [12], Orion [39], and Tally [50] preempt, schedule, or slice co-located DNN kernels in software to bound interference. For concurrent computation and communication, ConCCL [3] moves all-gather and all-to-all, but not reductions, onto GPU DMA engines, and FiCCO [28] explores DMA-based finer-grain overlap. TIDE shares this goal for FSDP2’s collectives: it keeps transport off SMs, models the remaining SM cost by cluster slots and resi-dence time (Section 2.2), and adds the direction-dependent HBM asymmetry of Section 2.4. 
+
+Overlap and in-network reduction. CoCoNet [16], decomposi-tion pipelines [44], Centauri [7], T3 [31], FLUX [6], TileLink [52], and FlashOverlap [13] fuse or schedule compute–communication overlap across general, tensor-parallel, and MoE workloads. TIDE instead targets the FSDP2 layout boundary while leaving com-pute kernels unchanged. InfiniBand SHARP [10], SwitchML [36], and ATP [19] aggregate inside the inter-node network. TIDE in-stead maps remote partials onto destination GPUs so a node-local NVSwitch performs the final fp32 reduction across multi-node rail topologies, without programmable inter-node switch support. 
+
+## 9 Conclusion 
+
+Layout conversion in FSDP2 is a collective problem, not a copy problem. Solving it inside the collective lets TIDE keep FSDP2’s per-parameter storage, overlap gradient reads with the network through a two-phase pipeline, and reuse all-gather slots as parameter storage and, optionally, as reduce-scatter input. On 64 GPUs training Llama-3.1 70B, Wan2.2, and Qwen3-30B-A3B, TIDE is the fastest system at every measured point, cutting step time by up to 27.1% relative to Stock FSDP2 and 6.0% relative to FSDP2+SymmMem; its peak memory is up to 4.7 GiB below FSDP2+SymmMem’s and, with Slot-Reuse on Wan2.2, below Stock FSDP2’s. Its all-gather uses no SMs and is up to 1 .42 × faster than FSDP2’s fastest all-gather plus copy-out, and in training-shape replays its reduce-scatter cuts interference with concurrent com-pute by 2 .8–11 ×. Throughout, it preserves fp32 reduction and plan-scoped determinism. 
+
+Artifact availability. We intend to release TIDE’s implementa-tion, benchmark drivers, and automated correctness gate upon publication. 
+
+## References 
+
+[1] Advanced Micro Devices, Inc. 2026. [RFC] SDMA AllGather and Zero-Copy Output for PyTorch FSDP2. https://github.com/pytorch/pytorch/issues/186601. PyTorch RFC #186601. [2] Elena Agostini, Davide Rossetti, and Sreeram Potluri. 2018. GPUDirect Async: Exploring GPU Synchronous Communication Techniques for InfiniBand Clusters. 
+
+J. Parallel and Distrib. Comput. 114 (2018), 28–45. doi:10.1016/j.jpdc.2017.12.007 [3] Anirudha Agrawal, Shaizeen Aga, Suchita Pati, and Mahzabeen Islam. 2025. ConCCL: Optimizing ML Concurrent Computation and Communication with GPU DMA Engines. In 2025 IEEE International Symposium on Performance Analysis of Systems and Software (ISPASS) . IEEE, Piscataway, NJ, USA, 1–11. doi:10.1109/ISPASS64960.2025.00018 [4] Jason Ansel, Edward Yang, Horace He, Natalia Gimelshein, Animesh Jain, Michael Voznesensky, Bin Bao, Peter Bell, David Berard, Evgeni Burovski, Geeta Chauhan, Anjali Chourdia, Will Constable, Alban Desmaison, Zachary DeVito, Elias Ellison, Will Feng, Jiong Gong, Michael Gschwind, Brian Hirsh, Sherlock Huang, Kshiteej Kalambarkar, Laurent Kirsch, Michael Lazos, Mario Lezcano, Yanbo Liang, Jason Liang, Yinghai Lu, C. K. Luk, Bert Maher, Yunjie Pan, Christian Puhrsch, Matthias Reso, Mark Saroufim, Marcos Yukio Siraichi, Helen Suk, Shunting Zhang, Michael Suo, Phil Tillet, Xu Zhao, Eikan Wang, Keren Zhou, Richard Zou, Xiaodong Wang, Ajit Mathews, William Wen, Gregory Chanan, Peng Wu, and Soumith Chintala. 2024. PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation. In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 . Association for Computing Machinery, New York, NY, USA, 929–947. doi:10.1145/3620665.3640366 [5] Jehoshua Bruck, Ching-Tien Ho, Shlomo Kipnis, Eli Upfal, and Derrick Weath-ersby. 1997. Efficient Algorithms for All-to-All Communications in Multiport Message-Passing Systems. IEEE Transactions on Parallel and Distributed Systems 
+
+8, 11 (1997), 1143–1156. doi:10.1109/71.642949 [6] Li-Wen Chang, Wenlei Bao, Qi Hou, Chengquan Jiang, Ningxin Zheng, Yinmin Zhong, Xuanrun Zhang, Zuquan Song, Chengji Yao, Ziheng Jiang, Haibin Lin, Xin Jin, and Xin Liu. 2024. FLUX: Fast Software-based Communication Overlap on GPUs Through Kernel Fusion. arXiv:2406.06858 https://arxiv.org/abs/2406.06858 [7] Chang Chen, Xiuhong Li, Qianchao Zhu, Jiangfei Duan, Peng Sun, Xingcheng Zhang, and Chao Yang. 2024. Centauri: Enabling Efficient Scheduling for Communication-Computation Overlap in Large Model Training via Commu-nication Partitioning. In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 3 . Association for Computing Machinery, New York, NY, USA, 178–191. doi:10.1145/3620666.3651379 [8] Meghan Cowan, Saeed Maleki, Madanlal Musuvathi, Olli Saarikivi, and Yifan Xiong. 2023. MSCCLang: Microsoft Collective Communication Language. In 
+
+Proceedings of the 28th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 . Association for Computing Machinery, New York, NY, USA, 502–514. doi:10.1145/3575693. 3575724 [9] William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. Journal of Machine Learning Research 23, 120 (2022), 1–39. [10] Richard L. Graham, Vladimir Koushnir, Lion Levi, Alex Margolin, Tamir Ronen, Alexander Shpiner, Oded Wertheim, Eitan Zahavi, Devendar Bureddy, Pak Lui, Hal Rosenstock, Gilad Shainer, Gil Bloch, Dror Goldenberg, Mike Dubman, and Sasha Kotchubievsky. 2016. Scalable Hierarchical Aggregation Protocol (SHArP): A Hardware Architecture for Efficient Data Reduction. In 2016 First International Workshop on Communication Optimizations in HPC (COMHPC) . IEEE, Piscataway, NJ, USA, 1–10. doi:10.1109/COMHPC.2016.006 [11] William Gropp, Ewing Lusk, and Anthony Skjellum. 1999. Using MPI: Portable Parallel Programming with the Message-Passing Interface (2nd ed.). MIT Press, Cambridge, MA, USA. [12] Mingcong Han, Hanze Zhang, Rong Chen, and Haibo Chen. 2022. Microsecond-scale Preemption for Concurrent GPU-accelerated DNN Inferences. In 16th USENIX Symposium on Operating Systems Design and Implementation (OSDI) .USENIX Association, Berkeley, CA, USA, 539–558. https://www.usenix.org/ conference/osdi22/presentation/han [13] Ke Hong, Xiuhong Li, Minxu Liu, Qiuli Mao, Tianqi Wu, Zixiao Huang, Lufang Chen, Zhong Wang, Yichong Zhang, Zhenhua Zhu, Guohao Dai, and Yu Wang. 2026. Efficient and Adaptable Overlapping for Computation and Communication via Signaling and Reordering. In Proceedings of the 21st European Conference on Computer Systems (EuroSys) . Association for Computing Machinery, New York, NY, USA, 1894–1911. doi:10.1145/3767295.3769370 [14] Zhiyi Hu, Siyuan Shen, Tommaso Bonato, Sylvain Jeaugey, Cedell Alexander, Eric Spada, James Dinan, Jeff Hammond, and Torsten Hoefler. 2025. Demys-tifying NCCL: An In-Depth Analysis of GPU Communication Protocols and Algorithms. In 2025 IEEE Symposium on High-Performance Interconnects (HOTI) .IEEE, Piscataway, NJ, USA, 48–59. doi:10.1109/HOTI66940.2025.00024 [15] Changho Hwang, Peng Cheng, Roshan Dathathri, Abhinav Jangda, Saeed Maleki, Madan Musuvathi, Olli Saarikivi, Aashaka Shah, Ziyue Yang, Binyang Li, Caio Rocha, Qinghua Zhou, Mahdieh Ghazimirsaeed, Sreevatsa Anantharamu, and Jithin Jose. 2026. MSCCL++: Rethinking GPU Communication Abstractions for AI Inference. In Proceedings of the 31st ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume The Endgame of FSDP Communication 
+
+2. Association for Computing Machinery, New York, NY, USA, 1201–1215. doi:10. 1145/3779212.3790188 [16] Abhinav Jangda, Jun Huang, Guodong Liu, Amir Hossein Nodehi Sabet, Saeed Maleki, Youshan Miao, Madanlal Musuvathi, Todd Mytkowicz, and Olli Saarikivi. 2022. Breaking the Computation and Communication Abstraction Barrier in Distributed Machine Learning Workloads. In Proceedings of the 27th ACM Inter-national Conference on Architectural Support for Programming Languages and Operating Systems . Association for Computing Machinery, New York, NY, USA, 402–416. doi:10.1145/3503222.3507778 [17] Ziheng Jiang, Haibin Lin, Yinmin Zhong, Qi Huang, Yangrui Chen, Zhi Zhang, Yanghua Peng, Xiang Li, Cong Xie, Shibiao Nong, Yulu Jia, Sun He, Hongmin Chen, Zhihao Bai, Qi Hou, Shipeng Yan, Ding Zhou, Yiyao Sheng, Zhuo Jiang, Haohan Xu, Haoran Wei, Zhang Zhang, Pengfei Nie, Leqi Zou, Sida Zhao, Liang Xiang, Zherui Liu, Zhe Li, Xiaoying Jia, Jianxi Ye, Xin Jin, and Xin Liu. 2024. MegaScale: Scaling Large Language Model Training to More Than 10,000 GPUs. In 21st USENIX Symposium on Networked Systems Design and Implementation (NSDI) . USENIX Association, Berkeley, CA, USA, 745–760. https://www.usenix. org/conference/nsdi24/presentation/jiang-ziheng [18] Vijay Anand Korthikanti, Jared Casper, Sangkug Lym, Lawrence McAfee, Michael Andersch, Mohammad Shoeybi, and Bryan Catanzaro. 2023. Reducing Activation Recomputation in Large Transformer Models. In Proceedings of Machine Learning and Systems (MLSys) . MLSys, Miami, FL, USA, 341–353. [19] ChonLam Lao, Yanfang Le, Kshiteej Mahajan, Yixi Chen, Wenfei Wu, Aditya Akella, and Michael Swift. 2021. ATP: In-Network Aggregation for Multi-Tenant Learning. In 18th USENIX Symposium on Networked Systems Design and Implementation (NSDI) . USENIX Association, Berkeley, CA, USA, 741–761. https://www.usenix.org/conference/nsdi21/presentation/lao [20] Dmitry Lepikhin, HyoukJoong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. 2021. GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding. In International Conference on Learning Representations (ICLR) . OpenReview.net, Amherst, MA, USA, 35 pages. https://openreview.net/forum?id=qrwe7XHTmYb [21] Wanchao Liang, Tianyu Liu, Less Wright, Will Constable, Andrew Gu, Chien-Chin Huang, Iris Zhang, Wei Feng, Howard Huang, Junjie Wang, Sanket Puran-dare, Gokul Nadathur, and Stratos Idreos. 2025. TorchTitan: One-stop PyTorch Native Solution for Production Ready LLM Pretraining. In International Confer-ence on Learning Representations (ICLR) . OpenReview.net, Amherst, MA, USA, 21 pages. https://openreview.net/forum?id=SFN6Wm7YBI [22] NVIDIA Corporation. 2023. Matrix Multiplication Background User’s Guide. https://docs.nvidia.com/deeplearning/performance/dl-performance-matrix-multiplication/index.html. NVIDIA Deep Learning Performance Docu-mentation, Section 3.2, Wave Quantization. [23] NVIDIA Corporation. 2025. Megatron-FSDP: High-Performance Fully Sharded Data Parallelism in Megatron-Core. https://docs.nvidia.com/megatron-core/. NVIDIA Megatron-Core Documentation. [24] NVIDIA Corporation. 2025. Parallel Thread Execution ISA Version 9.0. https: //docs.nvidia.com/cuda/parallel-thread-execution/. CUDA Toolkit Documenta-tion. [25] NVIDIA Corporation. 2026. CUDA C++ Programming Guide: Thread Block Clus-ters. https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/ programming-model.html. CUDA Programming Guide, accessed October 25, 2026. [26] NVIDIA Corporation. 2026. NVIDIA Collective Communications Library (NCCL) v2.31 Documentation. https://docs.nvidia.com/deeplearning/nccl/. NVIDIA Developer Documentation. [27] NVIDIA Corporation. 2026. PACE: Parallelism-Aware Collective Engine. https: //github.com/NVIDIA/nccl/tree/master/contrib/pace. NCCL contrib software. [28] Shagnik Pal, Shaizeen Aga, Suchita Pati, Mahzabeen Islam, and Lizy K. John. 2026. FiCCO: Design Space Exploration of DMA-Based Finer-Grain Compute Communication Overlap. In 2026 IEEE International Symposium on Workload Characterization (IISWC) . IEEE, Piscataway, NJ, USA, 15 pages. doi:10.1109/ IISWC71020.2026.00030 [29] Jason Jong Kyu Park, Yongjun Park, and Scott A. Mahlke. 2015. Chimera: Col-laborative Preemption for Multitasking on a Shared GPU. In Proceedings of the Twentieth International Conference on Architectural Support for Programming Languages and Operating Systems . Association for Computing Machinery, New York, NY, USA, 593–606. doi:10.1145/2694344.2694346 [30] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gre-gory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Desmaison, Andreas Köpf, Edward Yang, Zachary DeVito, Martin Raison, Alykhan Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith Chintala. 2019. PyTorch: An Imperative Style, High-Performance Deep Learning Library. In Advances in Neural Information Processing Systems (NeurIPS) .Curran Associates, Inc., Red Hook, NY, USA, 8024–8035. [31] Suchita Pati, Shaizeen Aga, Mahzabeen Islam, Nuwan Jayasena, and Matthew D. Sinclair. 2024. T3: Transparent Tracking & Triggering for Fine-grained Overlap of Compute & Collectives. In Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2 . Association for Computing Machinery, New York, NY, USA, 1146– 1164. doi:10.1145/3620665.3640410 [32] PyTorch Contributors. 2026. Enable Copy Engine All-Gather in FSDP. https: //github.com/pytorch/pytorch/pull/176613. PyTorch Pull Request #176613. [33] Kun Qian, Yongqing Xi, Jiamin Cao, Jiaqi Gao, Yichi Xu, Yu Guan, Binzhang Fu, Xuemei Shi, Fangbo Zhu, Rui Miao, Chao Wang, Peng Wang, Pengcheng Zhang, Xianlong Zeng, Eddie Ruan, Zhiping Yao, Ennan Zhai, and Dennis Cai. 2024. Alibaba HPN: A Data Center Network for Large Language Model Training. In 
+
+Proceedings of the ACM SIGCOMM 2024 Conference . Association for Computing Machinery, New York, NY, USA, 691–706. doi:10.1145/3651890.3672265 [34] Samyam Rajbhandari, Conglong Li, Zhewei Yao, Minjia Zhang, Reza Yaz-dani Aminabadi, Ammar Ahmad Awan, Jeff Rasley, and Yuxiong He. 2022. DeepSpeed-MoE: Advancing Mixture-of-Experts Inference and Training to Power Next-Generation AI Scale. In Proceedings of the 39th International Confer-ence on Machine Learning (Proceedings of Machine Learning Research, Vol. 162) .PMLR, Cambridge, MA, USA, 18332–18346. https://proceedings.mlr.press/v162/ rajbhandari22a.html [35] Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, and Yuxiong He. 2020. ZeRO: Memory Optimizations Toward Training Trillion Parameter Models. In Proceedings of the International Conference for High Performance Comput-ing, Networking, Storage and Analysis (SC) . IEEE, Piscataway, NJ, USA, 1–16. doi:10.1109/SC41405.2020.00024 [36] Amedeo Sapio, Marco Canini, Chen-Yu Ho, Jacob Nelson, Panos Kalnis, Changhoon Kim, Arvind Krishnamurthy, Masoud Moshref, Dan Ports, and Pe-ter Richtarik. 2021. Scaling Distributed Machine Learning with In-Network Aggregation. In 18th USENIX Symposium on Networked Systems Design and Im-plementation (NSDI) . USENIX Association, Berkeley, CA, USA, 785–808. https: //www.usenix.org/conference/nsdi21/presentation/sapio [37] Aashaka Shah, Vijay Chidambaram, Meghan Cowan, Saeed Maleki, Madan Musuvathi, Todd Mytkowicz, Jacob Nelson, Olli Saarikivi, and Rachee Singh. 2023. TACCL: Guiding Collective Algorithm Synthesis Using Communication Sketches. In 20th USENIX Symposium on Networked Systems Design and Imple-mentation (NSDI) . USENIX Association, Berkeley, CA, USA, 593–612. https: //www.usenix.org/conference/nsdi23/presentation/shah [38] Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. 2019. Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism. arXiv:1909.08053 https://arxiv.org/ abs/1909.08053 [39] Foteini Strati, Xianzhe Ma, and Ana Klimovic. 2024. Orion: Interference-aware, Fine-grained GPU Sharing for ML Applications. In Proceedings of the Nineteenth European Conference on Computer Systems (EuroSys) . Association for Computing Machinery, New York, NY, USA, 1075–1092. doi:10.1145/3627703.3629578 [40] Rajeev Thakur, Rolf Rabenseifner, and William Gropp. 2005. Optimization of Collective Communication Operations in MPICH. The International Journal of High Performance Computing Applications 19, 1 (2005), 49–66. doi:10.1177/ 1094342005051521 [41] Didem Unat, Ilyas Turimbetov, Mohammed Kefah Taha Issa, Doğan Sağbili, Flavio Vella, Daniele De Sensi, and Ismayil Ismayilov. 2026. The Landscape of GPU-Centric Communication. Comput. Surveys 58, 12 (2026), 1–36. doi:10.1145/ 3813799 [42] Guanhua Wang, Heyang Qin, Sam Ade Jacobs, Xiaoxia Wu, Connor Holmes, Zhewei Yao, Samyam Rajbhandari, Olatunji Ruwase, Feng Yan, Lei Yang, and Yuxiong He. 2024. ZeRO++: Extremely Efficient Collective Communication for Large Model Training. In International Conference on Learning Representations (ICLR) . OpenReview.net, Amherst, MA, USA, 12 pages. https://openreview.net/ forum?id=gx2BT0a9MQ [43] Guanhua Wang, Shivaram Venkataraman, Amar Phanishayee, Nikhil De-vanur, Jorgen Thelin, and Ion Stoica. 2020. Blink: Fast and Generic Collectives for Distributed ML. In Proceedings of the 3rd Conference on Machine Learning and Systems (MLSys) . MLSys, Austin, TX, USA, 15 pages. https://proceedings.mlsys.org/paper_files/paper/2020/hash/ cd3a9a55f7f3723133fa4a13628cdf03-Abstract.html [44] Shibo Wang, Jinliang Wei, Amit Sabne, Andy Davis, Berkin Ilbeyi, Blake Hecht-man, Dehao Chen, Karthik Srinivasa Murthy, Marcello Maggioni, Qiao Zhang, Sameer Kumar, Tongfei Guo, Yuanzhong Xu, and Zongwei Zhou. 2023. Over-lap Communication with Dependent Computation via Decomposition in Large Deep Learning Models. In Proceedings of the 28th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1 . Association for Computing Machinery, New York, NY, USA, 93–106. doi:10.1145/3567955.3567959 [45] Zezhou Wang, Youjie Li, Zhiqi Lin, Jiacheng Yang, Cong Xie, Guanyu Feng, Zheng Zhong, Ziyue Huang, Hongyu Zhu, Zhi Zhang, Yanghua Peng, and Xin Liu. 2026. veScale-FSDP: Flexible and High-Performance FSDP at Scale. In Proceedings of the 9th Conference on Machine Learning and Systems (MLSys), Industry Track . MLSys, Bellevue, WA, USA, 14 pages. https://proceedings.mlsys.org/paper_files/paper/ 2026/hash/d5cd70b708f726737e2ebace18c3f71b-Abstract-Conference.html [46] Zhenning Wang, Jun Yang, Rami G. Melhem, Bruce R. Childers, Youtao Zhang, and Minyi Guo. 2016. Simultaneous Multikernel GPU: Multi-tasking Throughput Zejian Wang et al. 
+
+Processors via Fine-Grained Sharing. In 2016 IEEE International Symposium on High Performance Computer Architecture (HPCA) . IEEE, Piscataway, NJ, USA, 358–369. doi:10.1109/HPCA.2016.7446078 [47] Ruisi Zhang, Tianyu Liu, Will Feng, Andrew Gu, Sanket Purandare, Wanchao Liang, and Francisco Massa. 2024. SimpleFSDP: Simpler Fully Sharded Data Parallel with torch.compile. arXiv:2411.00284 https://arxiv.org/abs/2411.00284 [48] Zhen Zhang, Shuai Zheng, Yida Wang, Justin Chiu, George Karypis, Trishul Chilimbi, Mu Li, and Xin Jin. 2022. MiCS: Near-linear Scaling for Training Gigantic Model on Public Cloud. Proceedings of the VLDB Endowment 16, 1 (2022), 37–50. doi:10.14778/3561261.3561265 [49] Chenggang Zhao, Shangyan Zhou, Liyue Zhang, Chengqi Deng, Zhe Xu, Yibo Liu, Kuai Yu, Jiashi Li, and Liang Zhao. 2025. DeepEP: An Efficient Expert-Parallel Communication Library. https://github.com/deepseek-ai/DeepEP. Open-source software repository. [50] Wei Zhao, Anand Jayarajan, and Gennady Pekhimenko. 2025. Tally: Non-Intrusive Performance Isolation for Concurrent Deep Learning Workloads. In 
+
+Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1 . Association for Com-puting Machinery, New York, NY, USA, 1052–1068. doi:10.1145/3669940.3707282 [51] Yanli Zhao, Andrew Gu, Rohan Varma, Liang Luo, Chien-Chin Huang, Min Xu, Less Wright, Hamid Shojanazeri, Myle Ott, Sam Shleifer, Alban Desmaison, Can Balioglu, Pritam Damania, Bernard Nguyen, Geeta Chauhan, Yuchen Hao, Ajit Mathews, and Shen Li. 2023. PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel. Proceedings of the VLDB Endowment 16, 12 (2023), 3848– 3860. doi:10.14778/3611540.3611569 [52] Size Zheng, Jin Fang, Xuegui Zheng, Qi Hou, Wenlei Bao, Ningxin Zheng, Ziheng Jiang, Dongyang Wang, Jianxi Ye, Haibin Lin, Li-Wen Chang, and Xin Liu. 2025. TileLink: Generating Efficient Compute-Communication Overlapping Kernels Using Tile-Centric Primitives. In Proceedings of the 8th Conference on Machine Learning and Systems (MLSys) . MLSys, Santa Clara, CA, USA, 16 pages. The Endgame of FSDP Communication 
+
+## Appendix A Full Collective Measurements 
+
+This appendix lists the operator measurements behind Sections 2.2, 7.3 and 7.4: the reduce-scatter overlap experiment behind Section 2.2 (Table 4, plotted in Figure 11), the SM-id probe of CTA placement (Table 5), the training-shape replay of Figure 9 (Table 6), and all-gather and reduce-scatter latency and buffer memory across 1–8 nodes (Tables 7 and 8). 5 8 12 16 24 32 
+
+Reduce-scaer time alone (ms, log scale)     
+
+> 020 40 60 80
+> GEMM slowdown (%)
+> NCCL symmetric NCCL Stock FSDP2 NCCL, ≤8 CTAs NCCL, ≤4 CTAs TIDE 16+4 (training)
+> TIDE 4+4
+> ↙beer
+
+Figure 11: Reduce-scatter time versus one-wave GEMM slow-down (Table 4). Hollow markers: pre-packed fp32 input. Table 4: Concurrent 32 MiB reduce-scatters on 8 nodes at a fixed SM clock (medians of three launches). Bold: lowest slowdown among rows no slower than Stock FSDP2.                                                             
+
+> RS alone Victim slowdown (%) Configuration CTAs (ms) 1-wave 28-wave Elementwise
+> TIDE, training 16 +46.96 2.9 4.2 1.6
+> TIDE, 4+4 4+412.02 1.3 4.0 0.6 Stock FSDP2 16 9.01 71.0 13.6 13.3 FSDP2+SymmMem 13 7.45 9.7 10.6 13.6 NCCL default 16 6.75 69.0 13.5 7.4 NCCL symmetric 13 5.57 11.4 10.2 13.4 NCCL, ≤8CTAs ≤814.61 67.8 7.0 7.3 NCCL, ≤4CTAs ≤426.35 2.7 3.8 4.1 Victims: the one-wave GEMM of Section 2.2, a GEMM of about 28 waves, and a 256 MiB elementwise kernel. NCCL rows start from pre-packed fp32 input.
+
+## B Scheduler Characterization 
+
+A statically scheduled persistent GEMM launches 𝑁 SM long-running CTAs that loop over tiles in software, so a higher-priority communication kernel must wait for one of them to retire. Dynamic persistent GEMMs based on Cluster Launch Control (CLC) [24], in contrast, request further work from the hardware scheduler at tile boundaries. Table 9 characterizes both with two probes during a running persistent GEMM. A high-priority communication kernel enters a CLC GEMM within two tile boundaries, whereas static or equal-priority scheduling delays it until the final GEMM wave. At low communication duty (one reduce-scatter every 16 GEMMs), cooperative CLC sharing slows the GEMM by 1 .4% versus 4 .9% with 16 statically reserved SMs under the power cap, and by 1 .2% versus 13 .7% at a fixed clock. This is cooperative scheduling, not 
+
+Table 5: SM-id probe during a 32 MiB reduce-scatter on 8 nodes at a fixed SM clock (two launches). The probe launches the one-wave GEMM’s 32 four-CTA clusters, each CTA filling an SM and recording its SM id and entry and exit timestamps; 
+
+displaced counts probe CTAs that start after the first wave. Resident CTAs come from a second probe with one CTA on each of the 148 SMs.                                    
+
+> Configuration Displaced Windows Resident CTAs (mode) hit (%) CTAs (mean)
+> TIDE, training 002.0 TIDE, 4+4 001.5 Stock FSDP2 12 65 13.4 FSDP2+SymmMem 0012.0 NCCL default 12 64 14.7 NCCL symmetric 0712.6 NCCL, ≤8CTAs 463 7.3 NCCL, ≤4CTAs 003.5
+
+Table 6: Training-shape replay at a fixed SM clock (medians of three launches of 30 isolated calls).                                                       
+
+> Latency Victim SM-ms Op System p50 (ms) slowdown per call
+> Llama-3.1 70B
+> AG Stock FSDP2 8.07 6.60% 218.2 AG FSDP2+SymmMem 7.23 3.05% 86.3 AG TIDE 4.90 0.33% 0.0
+> RS Stock FSDP2 14.12 11.61% 651.4 RS FSDP2+SymmMem 11.97 9.60% 584.3 RS TIDE 10.60 3.48% 44.8
+> Wan2.2
+> AG Stock FSDP2 3.88 7.97% 104.6 AG FSDP2+SymmMem 3.19 2.66% 38.3 AG TIDE 2.56 0.48% 0.0
+> RS Stock FSDP2 6.12 23.17% 265.9 RS FSDP2+SymmMem 5.24 20.63% 240.1 RS TIDE 5.58 2.05% 19.2
+
+preemption: it favors kernels with few short-lived CTAs, such as TIDE’s sum and landing kernels, but statically scheduled persistent GEMMs remain non-preemptible. 
+
+## C Convergence 
+
+The run in Figure 12 trains Qwen3-30B-A3B (128 experts, eight active per token) from random initialization with four 4,096-token sequences per GPU. TIDE uses In-Place; the two Stock FSDP2 runs use the same configuration, so their difference measures ordinary run-to-run variation. 
+
+## D Latin-Square Collision-Freedom Proof 
+
+Proof of Theorem 4.1. Let 𝑐 0 be the first contributor in wave 
+
+𝑤 and len that wave’s contributor count. Within any wave 𝑤 ∈[0,𝑊 ), the contributor indices form a contiguous integer interval 
+
+[𝑐 0, 𝑐 0 + len ) of length len ≤ 𝑊 wave ≤ 𝐿 . For all remote contrib-utors 𝑐 ∈ { 1, . . . , 𝑀 − 1}, 𝑐 mod 𝑀 = 𝑐 . If wave 𝑤 contains only remote contributors, their (𝑐 mod 𝑀 ) values are len ≤ 𝐿 consec-utive integers, which are pairwise incongruent modulo 𝐿 ; thus 
+
+𝑗 (𝑠, 𝑐 ) = (𝑠 − 𝑐 ) mod 𝐿 is injective over wave 𝑤 . The only contrib-utor with 𝑐 mod 𝑀 = 0 is the own node 𝑐 = 𝑀 , which appears Zejian Wang et al. 
+
+Table 7: All-gather latency, min (median) ms, for 𝑃 = 30 tensors. “+ Copy-out” adds FSDP2’s fused split_with_sizes_copy ; TIDE lands directly. Bold: the fastest path that yields FSDP2’s parameter layout; the last column compares medians. 
+
+Nodes (GPUs) Shard TIDE-AG (0 SM) NCCL Ring NCCL CE Ring + Copy-out CE + Copy-out vs. Best FSDP2 
+
+1 (8 GPUs) 32 MiB 0.38 (0.38) 0.40 (0.41) 0.35 (0.36) 0.50 (0.51) 0.45 (0.46) 1.22 ×
+
+2 (16 GPUs) 32 MiB 1.11 (1.12) 1.35 (1.59) 1.08 (1.10) 1.53 (1.58) 1.26 (1.28) 1.14 ×
+
+4 (32 GPUs) 32 MiB 2.57 (2.60) 2.71 (2.79) 3.14 (3.22) 3.11 (3.14) 3.56 (3.62) 1.21 ×
+
+8 (64 GPUs) 32 MiB 5.52 (5.86) 5.46 (5.78) 7.25 (7.42) 6.15 (6.21) 7.96 (8.19) 1.06 ×
+
+1 (8 GPUs) 128 MiB 1.40 (1.41) 1.50 (1.52) 1.27 (1.28) 1.85 (1.87) 1.61 (1.63) 1.16 ×
+
+2 (16 GPUs) 128 MiB 4.19 (4.20) 5.29 (6.09) 4.04 (4.13) 5.99 (6.84) 4.73 (4.76) 1.13 ×
+
+4 (32 GPUs) 128 MiB 9.76 (9.80) 10.78 (13.48) 12.03 (13.27) 12.42 (13.01) 13.64 (14.06) 1.33 ×
+
+8 (64 GPUs) 128 MiB 20.89 (21.41) 21.73 (23.41) 28.01 (30.90) 24.74 (30.35) 31.00 (32.75) 1.42 ×
+
+Table 8: Reduce-scatter latency, min (median) ms, and buffer (GiB/GPU) for 𝑃 = 16 bf16 gradients. FSDP2 columns include 
+
+_chunk_cat ; Bare NCCL starts from packed fp32 . Bold: lowest among per-parameter paths, and the smaller buffer. 
+
+Nodes (GPUs) Output TIDE-RS Stock FSDP2 FSDP2+SymmMem Bare NCCL Buffer (TIDE / FSDP2) 
+
+1 (8 GPUs) 32 MiB 0.41 (0.42) 0.59 (0.60) 0.60 (0.61) 0.39 (0.40) 0.29 / 0.28 2 (16 GPUs) 32 MiB 2.08 (2.12) 1.67 (1.75) 1.16 (1.27) 1.30 (1.45) 0.58 / 0.53 4 (32 GPUs) 32 MiB 3.70 (3.75) 3.39 (4.06) 3.06 (3.07) 2.69 (2.78) 0.61 / 1.03 
+
+8 (64 GPUs) 32 MiB 6.61 (8.12) 6.82 (7.96) 6.67 ( 6.84 ) 5.40 (5.52) 0.64 / 2.03 
+
+1 (8 GPUs) 128 MiB 1.29 (1.33) 2.23 (2.25) 2.36 (2.37) 1.44 (1.46) 0.38 / 1.12 
+
+2 (16 GPUs) 128 MiB 7.63 (7.68) 6.70 (6.78) 4.62 (4.96) 5.17 (5.27) 2.26 / 2.12 4 (32 GPUs) 128 MiB 13.93 (13.99) 13.67 (14.02) 11.64 (11.70) 10.66 (11.30) 2.38 / 4.12 
+
+8 (64 GPUs) 128 MiB 25.02 (25.59) 27.69 (34.77) 26.42 (27.16) 21.62 (23.91) 2.51 / 8.12 
+
+Table 9: Scheduler probes during a persistent GEMM. CLC-normal/high: normal/high-priority communication. 
+
+Metric Static or CLC-normal CLC-high 
+
+Communication admission Final GEMM wave ≤ 2 tile boundaries Added RS latency 0.38 –0.90 ms 0.09 –0.54 ms GEMM penalty ≈ 0 (RS waits) 0.015 –0.14 ms Admission uses a synthetic communication kernel; latency (relative to no GEMM) and penalty use 64–512 MiB NCCL reduce-scatters submitted 30% into the GEMM, across power-capped and fixed-clock runs. 0 200 400 600 800 1000 468
+
+> Loss
+
+(a) Training loss (50-step moving average) 
+
+0 200 400 600 800 1000 
+
+Step 
+
+−202
+
+> vs. Stock (%)
+
+(b) Difference from the first Stock run 
+
+Stock FSDP2 Stock FSDP2, rerun TIDE In-Place 
+
+Figure 12: Qwen3-30B-A3B trained from scratch on public C4 (64 GPUs, 1,000 steps). (a) 50-step moving-average loss. (b) Difference from the first Stock run; Section 7.5 reports maxima over the shaded steps 500–1,000. 
+
+exclusively as the final element of the last wave 𝑤 = 𝑊 − 1 along-side remote contributors 𝑐 ∈ [( 𝑊 − 1)𝑊 wave + 1, 𝑀 − 1]. Because 
+
+host GPU 
+
+ℓ ℓ −1 ℓ −2 enqueue allocate grads of ℓ −1, ℓ −2
+
+stream-ordered release at post_bwd: ℓ −2 reuses it bwd ℓ bwd ℓ −1
+
+read ℓ
+
+GPU-safe release: too late, new segments 
+
+Figure 13: Host-time allocation: the host allocates later layers’ gradients before the GPU finishes reading layer ℓ, so a GPU-safe release is too late for them to reuse its storage. 
+
+𝑊 wave | 𝐿 (say 𝐿 = 𝑞𝑊 wave for integer 𝑞 ≥ 1), the open interval 
+
+(( 𝑊 −1)𝑊 wave ,𝑊 ·𝑊 wave ) contains no multiple of 𝑊 wave , and hence no multiple of 𝐿 = 𝑞𝑊 wave . Therefore, every remote contributor in the final wave satisfies 𝑐 mod 𝐿 ≠ 0 = (𝑀 mod 𝑀 ) mod 𝐿 , and 
+
+𝑗 (𝑠, 𝑐 ) is strictly injective across every wave 𝑤 . □
+
+For non-divisor test widths 𝑊 wave ∤ 𝐿 , the final wave can straddle a multiple of 𝐿 alongside the own node 𝑐 = 𝑀 (e.g., at 𝑀 = 9, 𝐿 =
+
+8,𝑊 wave = 3, wave 𝑤 = 2 holds 𝑐 ∈ { 7, 8, 9}, and 𝑐 = 8 and 𝑐 = 9 both have (𝑐 mod 9 ) mod 8 = 0), so the planner checks the per-wave inbox block bitmask and rejects such configurations. An offline regression test covers 𝑀 ∈ [ 2, 1024 ] at 𝐿 = 8: all 458 ,304 accepted base plans (𝑀,𝑊 wave , 𝑘, 𝑚𝑒 ), where 𝑚𝑒 selects the memory-efficient variant, are collision-free and stale-block free, and 65 ,472 colliding plans are rejected; sub-slice pass counts 𝑛 part ∈ { 2, 3, 4} are checked separately for every eligible base plan. The Endgame of FSDP Communication 
+
+Algorithm 1 Two-Phase Pipelined TIDE-RS (Epoch 𝑒 , Bank 𝑏 =
+
+𝑒 mod 2)                                                                                  
+
+> Require: Gradients {𝐺 𝑝 }, output out , events readyEv ,gateEv ,readEv , stream
+> 𝑠 comm
+> Read phase (waits only on readyEv )1: for 𝐽 =1. . . min (𝑛 out , 𝐷 rem )do
+> 2: wait until outbox [𝑏 ] [ 𝐽 mod 𝑛 out ]is reusable 3: push and sum destination 𝐽 ; record sumEv [𝑏 ] [ 𝐽 ]
+> 4: end for
+> 5: sum own-node partials into bank-𝑏 spares 6: if 𝑛 out ≥𝐷 rem then record readEv
+> 7: end if Network phase (behind call 𝑒 −1and gateEv )8: for wave 𝑤 =0. . .𝑊 −1with buffer generation 𝑞 =𝑤 mod 2 do
+> 9: for each 𝑘 -way round in wave 𝑤 do
+> 10: wait for sums and credits; issue striped puts; wait for arrivals 11: mark sent outbox blocks reusable 12: if an unsummed destination remains then
+> 13: sum it into the newly reusable block; record final readEv when all sources are consumed 14: end if
+> 15: end for
+> 16: copy the own-node spare if present; land wave 𝑤 ; mark buffer generation 𝑞
+> reusable 17: end for
+> 18: signal credits and record network-order completion
+
+## E Pipeline Protocol Details 
+
+Rejected release schedules. Three alternatives motivate the split used in Section 5.2. First, returning read completion while consecu-tive calls shared one outbox bank tied the read event to the previous call’s network phase and lengthened compute-stream waits. Second, forcing the compute stream to wait at a mid-layer release point ex-posed local-read latency on the critical path. Third, record_stream 
+
+and event-polling release preserved GPU safety but occurred too late in host time (Figure 13); peak reserved memory grew because allocations for two later layers had already been enqueued. 
+
+Detailed event protocol. Let 𝐷 rem = 𝑛 part (𝑀 − 1) be the num-ber of remote destination blocks across all passes. Algorithm 1 gives the full schedule; a missing prefetch gate is treated as an already-complete event. Here 𝐽 indexes remote destination blocks, 
+
+outbox [𝑏 ] is bank 𝑏 ’s reusable send storage, and 𝑠 comm is the com-munication stream. Events readyEv , gateEv , and readEv signal source availability, the prefetch gate, and source-read completion; 
+
+sumEv [𝑏 ] [ 𝐽 ] signals local reduction for destination 𝐽 .
+
+Protocol invariants. The implementation checks four invariants with fault-injection negative tests: (I1) every contributor lands ex-actly once and stale blocks from the previous use of the same buffer generation are zeroed; (I2) gradients or slot copies remain live through readEv ; (I3) staging, outbox, and inbox storage is reused only after its previous consumer completes; and (I4) every event or memory-op wait has an earlier producer in the common collective order. 
+
+CUDA hardware work queues. With the default eight CUDA connections, blocking memory operations from the network phase aliased onto the same hardware FIFO as later local reads and stretched the read span; raising CUDA_DEVICE_MAX_CONNECTIONS 
+
+to 32 removed the observed aliasing. This is an empirical require-ment: CUDA does not guarantee each stream its own hardware queue. 
+
+## F FSDP2 Adapter and Expert Subgroups 
+
+Position-aware ring slots and ring-tail folding. Under FSDP2’s default prefetch depth of 1, at most two ring groups are unsharded at once, so group 𝑔 (in execution order) uses all-gather slot 𝑔 mod 2, and TIDE sizes each slot for the groups assigned to it rather than for the global maximum. The final Transformer block ( reshard_ after_forward=False ) is live only across the turn-around bound-ary and alternates with its predecessor like a ring group; TIDE folds it into the 2-slot ring and re-shards it after forward during no-gradient validation, saving a dedicated full-size slot. 
+
+Zero-offset views and PyTorch MemPool accounting. FSDP2 builds unsharded parameters with torch.as_strided at storage_ offset=0 , and EMA validation’s copy.deepcopy of get_model_ state_dict() raises invalid python storage if a DTensor ’s local tensor has a non-zero storage offset. TIDE’s C++ adapter therefore roots a fresh at::Storage at the arena offset, with 
+
+storage_offset() == 0 and its own version counter. To make symmetric arenas visible to torch.cuda.memory_reserved() ,TIDE allocates the arena inside a torch.cuda.MemPool , registers the 2 MiB-aligned pointer with NCCL, and avoids a reference cycle. 
+
+Expert-parallel ( 𝐿 sub = 1) rail lanes and HSDP.. When MoE routed experts are sharded across 𝐸 ep = 𝐿 = 8 modulo subgroups of size 
+
+𝑁 /𝐸 ep , each subgroup has 𝐿 sub = 1 rank per node ( 𝑀 rail peers, no LSA peers), and TIDE specializes both collectives on a dedicated lane. All-gather runs ⌈log 2 𝑀 ⌉ recursive-doubling RDMA rounds directly from landing to landing, with no receive-stage memory or copy-engine scatters. Reduce-scatter skips Level 1 staging, sends 
+
+bf16 pieces across four rail parts into a double-buffered inbox, and uses a fixed eight-source TMA sum to combine the arriving blocks and own contribution in fp32 . Under HSDP, the shard-group output proceeds to FSDP2’s replica all-reduce. 
+
+## G Device-Initiated Path and Sizing Solver 
+
+Device-initiated network phase. When GIN runs over GDAKI, the optional device path runs the network phase as one 1-CTA kernel per wave plus a 1-CTA finalizer on a highest-priority stream. Before launching the kernel for wave 𝑤 , the host queues waits for that wave’s Level 1 sums and, for 𝑤 ≥ 2, for the landing of wave 𝑤 − 2, which last used the same inbox buffer generation. In each round, the kernel waits for per-peer credits, issues striped gin.put calls with a strong signal on the last chunk per peer and RMA context, waits for incoming data signals, and flushes its contexts before an outbox block is reused. Waits are timed against %globaltimer because SM cycle counters stretch under clock throttling. On timeout, the kernel records the NIC send-queue state in mapped host memory and parks in a loop of volatile reads, which the compiler cannot remove as a side-effect-free infinite loop; its completion event therefore never fires, and the host monitor exits fail-stop. 
+
+RoCE traffic-class alignment. GDAKI queue pairs do not inherit the NIC’s global traffic class and otherwise use a lossy priority that can stall under congestion, so TIDE sets NCCL_GIN_IB_TC to the traffic class of the host RMA path before creating communicators. 
+
+Analytical sizing solver equations. With input itemsize 𝑏 grad ∈{2, 4} and wire time 𝑡 NIC = (𝑀 − 1)𝑆 fp32 /BW NIC , the first-order Zejian Wang et al. 
+
+solver selects 𝐶 sum and 𝐶 mc . Here BW NIC is sustained per-rail throughput, 𝐶 sum and 𝐶 mc are sum and landing CTA budgets, BW sum and BW land their per-CTA rates, and BW cap the landing fabric ceiling: 
+
+𝐶 sum =
+
+
+
+𝛾 skew ·
+
+ 𝐿 𝑏 grad 
+
+4 + 1
+
+ BW NIC 
+
+BW sum 
+
+
+
+, (13) 
+
+𝐶 mc = min 
+
+  BW cap 
+
+BW land 
+
+
+
+,
+
+ 𝑆 fp32 /𝑛 part 
+
+𝜂 tail · 𝑡 NIC · BW land 
+
+ 
+
+, (14) where 𝛾 skew = 1.5 absorbs arrival skew and 𝜂 tail = 0.05 bounds the final-wave landing tail to 5% of 𝑡 NIC . Let 𝑁 rounds (𝑀 − 1, 𝑘,𝑊 wave )
+
+count network rounds for 𝑀 − 1 contributions at wave width 𝑊 wave 
+
+and at most 𝑘 transfers per round; 𝑡 rnd is calibrated wait over-head. Round width 𝑘 starts at min (2, 𝑀 − 1) and doubles up to 
+
+𝑘 max = 4 whenever 𝑁 rounds (𝑀 − 1, 𝑘,𝑊 wave ) · 𝑡 rnd > 0.10 · 𝑡 NIC 
+
+and doubling 𝑘 reduces the round count. On the evaluation plat-form, calibration gives BW NIC = 47 .5 GB/s, BW sum = 99 GB/s/CTA, BW land = 21 GB/s/CTA in situ with a 90 GB/s fabric ceiling, and 
+
+𝑡 rnd = 1.3 ms.

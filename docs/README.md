@@ -48,17 +48,17 @@
 <section class="dpr-home-dashboard-card dpr-home-report-card">
   <div class="dpr-home-dashboard-header">
     <div>
-      <span class="dpr-home-dashboard-kicker">2026-10-29</span>
+      <span class="dpr-home-dashboard-kicker">2026-10-30</span>
       <h3 class="dpr-home-dashboard-title">今日汇总</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">共 0 篇</strong>
+    <strong class="dpr-home-dashboard-count">共 6 篇</strong>
   </div>
   <dl class="dpr-home-dashboard-stats">
     <div class="dpr-home-dashboard-stat"><dt>累计更新</dt><dd>1 次</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>0</dd></div>
-    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>0</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>精读</dt><dd>2</dd></div>
+    <div class="dpr-home-dashboard-stat"><dt>速读</dt><dd>4</dd></div>
   </dl>
-  <p class="dpr-home-dashboard-body">最近更新：2026-10-29 23:14:06 UTC<br>状态：成功</p>
+  <p class="dpr-home-dashboard-body">最近更新：2026-10-30 23:32:25 UTC<br>状态：成功</p>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-brief-card">
   <div class="dpr-home-dashboard-header">
@@ -69,7 +69,7 @@
     <strong class="dpr-home-dashboard-count">AI</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p>今日无新推荐，系统未产出可展示论文。</p>
+<p>今日精读2篇、速读4篇，重点聚焦大模型分布式训练的通信与显存优化。最值得关注的是FSDP通信终局方案（9.0分，涉及Copy Engine、RDMA与NVSwitch的布局感知集合通信）以及显存受限节点上的MoE负载重校准（8.0分）。普通读者可优先阅读这两篇精读，再结合Muon的MoE负载均衡问题理解训练稳定性。</p>
   </div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-deep-card">
@@ -78,12 +78,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">精读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">2 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch">The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch</span></li><li><span class="dpr-home-dashboard-paper-title" title="LRMoE: Demand-Side Load Re-Calibration for Efficient MoE Training on Memory-Constrained Nodes">LRMoE: Demand-Side Load Re-Calibration for Efficient MoE Training on Memory-Constrained Nodes</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>2</strong></span></div>
 </section>
 <section class="dpr-home-dashboard-card dpr-home-skim-card">
   <div class="dpr-home-dashboard-header">
@@ -91,12 +91,12 @@
       <span class="dpr-home-dashboard-kicker">今日累计</span>
       <h3 class="dpr-home-dashboard-title">速读推荐</h3>
     </div>
-    <strong class="dpr-home-dashboard-count">0 篇</strong>
+    <strong class="dpr-home-dashboard-count">4 篇</strong>
   </div>
   <div class="dpr-home-dashboard-body">
-<p class="dpr-home-dashboard-empty">今日暂无推荐。</p>
+<ul class="dpr-home-dashboard-paper-list"><li><span class="dpr-home-dashboard-paper-title" title="MCCL: Training Pytorch models across a fleet of Macs at Skywalker Sound">MCCL: Training Pytorch models across a fleet of Macs at Skywalker Sound</span></li><li><span class="dpr-home-dashboard-paper-title" title="Muon Makes the First Mixture-of-Experts Layer Harder to Balance">Muon Makes the First Mixture-of-Experts Layer Harder to Balance</span></li><li><span class="dpr-home-dashboard-paper-title" title="Dobb: Shard-Local Preconditioning in Block-Diagonal Eigenbases">Dobb: Shard-Local Preconditioning in Block-Diagonal Eigenbases</span></li></ul>
   </div>
-
+  <div class="dpr-home-dashboard-tags"><span class="dpr-home-dashboard-tag">ccl <strong>4</strong></span></div>
 </section>
 </div>
 

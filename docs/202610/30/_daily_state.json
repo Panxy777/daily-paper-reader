@@ -1,0 +1,105 @@
+{
+  "date": "20261030",
+  "date_label": "",
+  "generated_at": "2026-10-30 23:32:25 UTC",
+  "recommend_exists": true,
+  "run_count": 1,
+  "papers": [
+    {
+      "paper_id": "2610.38228v1",
+      "route": "202610/30/2610.38228v1-the-endgame-of-fsdp-communication-layout-aware-collectives-on-copy-engines-rdma-and-nvswitch",
+      "title": "The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 9.0,
+      "evidence": "面向 FSDP2 训练的零拷贝布局感知 AllGather/ReduceScatter 集合通信并与 GEMM 重叠",
+      "first_seen_at": "2026-10-30 23:32:25 UTC",
+      "updated_at": "2026-10-30 23:32:25 UTC"
+    },
+    {
+      "paper_id": "2610.37720v1",
+      "route": "202610/30/2610.37720v1-lrmoe-demand-side-load-re-calibration-for-efficient-moe-training-on-memory-constrained-nodes",
+      "title": "LRMoE: Demand-Side Load Re-Calibration for Efficient MoE Training on Memory-Constrained Nodes",
+      "section": "deep",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 8.0,
+      "evidence": "显存受限下联合专家放置与负载均衡的内存感知MoE训练系统",
+      "first_seen_at": "2026-10-30 23:32:25 UTC",
+      "updated_at": "2026-10-30 23:32:25 UTC"
+    },
+    {
+      "paper_id": "2610.39029v1",
+      "route": "202610/30/2610.39029v1-mccl-training-pytorch-models-across-a-fleet-of-macs-at-skywalker-sound",
+      "title": "MCCL: Training Pytorch models across a fleet of Macs at Skywalker Sound",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 7.0,
+      "evidence": "面向多节点训练的集合通信库并实现AllReduce",
+      "first_seen_at": "2026-10-30 23:32:25 UTC",
+      "updated_at": "2026-10-30 23:32:25 UTC"
+    },
+    {
+      "paper_id": "2610.37914v1",
+      "route": "202610/30/2610.37914v1-muon-makes-the-first-mixture-of-experts-layer-harder-to-balance",
+      "title": "Muon Makes the First Mixture-of-Experts Layer Harder to Balance",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "研究Muon优化器扩大路由偏置跨度、使首个MoE层更难负载均衡",
+      "first_seen_at": "2026-10-30 23:32:25 UTC",
+      "updated_at": "2026-10-30 23:32:25 UTC"
+    },
+    {
+      "paper_id": "2610.39412v1",
+      "route": "202610/30/2610.39412v1-dobb-shard-local-preconditioning-in-block-diagonal-eigenbases",
+      "title": "Dobb: Shard-Local Preconditioning in Block-Diagonal Eigenbases",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "分片本地优化器更新减少分布式LLM训练中的跨分片通信",
+      "first_seen_at": "2026-10-30 23:32:25 UTC",
+      "updated_at": "2026-10-30 23:32:25 UTC"
+    },
+    {
+      "paper_id": "2610.39564v1",
+      "route": "202610/30/2610.39564v1-constant-factor-approximation-for-non-splitting-coflow-scheduling-in-heterogeneous-parallel-networks-via-iterative-relaxation",
+      "title": "Constant-Factor Approximation for Non-Splitting Coflow Scheduling in Heterogeneous Parallel Networks via Iterative Relaxation",
+      "section": "quick",
+      "tags": [
+        {
+          "kind": "query",
+          "label": "ccl"
+        }
+      ],
+      "score": 6.0,
+      "evidence": "异构并行网络中集合通信Coflow的调度",
+      "first_seen_at": "2026-10-30 23:32:25 UTC",
+      "updated_at": "2026-10-30 23:32:25 UTC"
+    }
+  ]
+}

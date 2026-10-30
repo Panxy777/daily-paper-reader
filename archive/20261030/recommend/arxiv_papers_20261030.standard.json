@@ -1,0 +1,258 @@
+{
+  "mode": "standard",
+  "generated_at": "2026-10-30T23:29:35.887265+00:00",
+  "stats": {
+    "mode": "standard",
+    "tag_count": 1,
+    "deep_divecandidates": 2,
+    "deep_cap": 6,
+    "deep_selected": 2,
+    "quick_candidates": 4,
+    "quick_skim_target": 11,
+    "quick_selected": 4
+  },
+  "deep_dive": [
+    {
+      "id": "2610.38228v1",
+      "source": "arxiv",
+      "title": "The Endgame of FSDP Communication: Layout-Aware Collectives on Copy Engines, RDMA, and NVSwitch",
+      "abstract": "Fully Sharded Data Parallelism (FSDP2) maintains parameters and gradients as per-parameter tensors, whereas its collective path operates on flat, rank-major buffers. Converting between these layouts copies all-gather outputs into parameter storage and packs gradients into full-group fp32 buffers. Layout conversion alone accounts for 6.4% of step time in Llama-3.1 70B training at 8K tokens per GPU. Communication kernels impose a second cost: a default NCCL reduce-scatter can slow a concurrent GEMM that would otherwise complete in a single wave by 69%. We present TIDE, a set of zero-copy collectives built on public NCCL 2.31+ APIs. TIDE preserves FSDP2's per-parameter storage and compute kernels while folding layout placement into collective addressing. TIDE-AG delivers shards directly to parameter storage using NVSwitch multicast and paced recursive-doubling RDMA, with no SMs used for transport or placement. TIDE-RS consumes per-parameter bf16 gradients directly and reduces them into fp32 shards (a mixed-precision mode that NCCL does not provide) using copy engines and short-lived thread blocks (CTAs) for node-local accumulation and NVSwitch for cross-node reduction. A two-phase pipeline separates gradient reads from network progress; Slot-Reuse optionally stages gradients in vacated all-gather slots. On 64 GPUs, TIDE reduces step time by up to 27.1% relative to Stock FSDP2 and 6.0% relative to FSDP2+SymmMem across Llama-3.1 70B, Wan2.2, and Qwen3-30B-A3B. It reduces reduce-scatter SM time by factors of 12.5-14.5 and cuts interference with concurrent compute by up to an order of magnitude. Its reduce-scatter buffer remains nearly constant from 16 to 64 GPUs at a fixed per-GPU output size, and its peak memory is up to 4.7 GiB below FSDP2+SymmMem's and, with Slot-Reuse on Wan2.2, below Stock FSDP2's.",
+      "authors": [
+        "Zejian Wang",
+        "Yifan Zhao",
+        "Kaihui Ren",
+        "Xiaoling Zhou",
+        "Yubin Wang",
+        "Chenhao Guan",
+        "Lin Zhang",
+        "Yufeng Li",
+        "Zhikang Mo",
+        "Zhuoru Ma",
+        "Yingtong Xiong",
+        "Jihu Guo",
+        "Yiqiao Liao",
+        "Chengru Song"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG",
+        "cs.PF"
+      ],
+      "published": "2026-10-28T03:28:01+00:00",
+      "link": "https://arxiv.org/pdf/2610.38228v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 9.0,
+      "llm_evidence_en": "zero-copy layout-aware all-gather and reduce-scatter collectives that overlap with GEMM in FSDP2 training",
+      "llm_evidence_cn": "面向 FSDP2 训练的零拷贝布局感知 AllGather/ReduceScatter 集合通信并与 GEMM 重叠",
+      "llm_evidence": "面向 FSDP2 训练的零拷贝布局感知 AllGather/ReduceScatter 集合通信并与 GEMM 重叠",
+      "canonical_evidence": "面向 FSDP2 训练的零拷贝布局感知 AllGather/ReduceScatter 集合通信并与 GEMM 重叠",
+      "llm_tldr_en": "Shows FSDP2 layout conversion and default NCCL reduce-scatter waste step time, and proposes TIDE zero-copy layout-aware collectives on copy engines, RDMA and NVSwitch.",
+      "llm_tldr_cn": "FSDP2 以逐参数张量存储参数与梯度，而其集合通信路径使用扁平的 rank-major 缓冲区，布局转换与通信内核带来显著开销，默认 NCCL reduce-scatter 还会拖慢原本单波即可完成的并发 GEMM。作者提出 TIDE，基于 NCCL 2.31+ 公共接口实现零拷贝集合通信，把布局放置折叠进通信过程，同时保留原有存储与计算内核。实验显示该方案消除了布局转换开销并缓解通信对计算的干扰，为分布式大模型训练的集合通信系统优化提供了可直接落地的路径。",
+      "llm_tldr": "FSDP2 以逐参数张量存储参数与梯度，而其集合通信路径使用扁平的 rank-major 缓冲区，布局转换与通信内核带来显著开销，默认 NCCL reduce-scatter 还会拖慢原本单波即可完成的并发 GEMM。作者提出 TIDE，基于 NCCL 2.31+ 公共接口实现零拷贝集合通信，把布局放置折叠进通信过程，同时保留原有存储与计算内核。实验显示该方案消除了布局转换开销并缓解通信对计算的干扰，为分布式大模型训练的集合通信系统优化提供了可直接落地的路径。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to optimize collective communication for distributed LLM training and inference?",
+      "matched_requirement_id": "req-9",
+      "selection_source": "fresh_fetch"
+    },
+    {
+      "id": "2610.37720v1",
+      "source": "arxiv",
+      "title": "LRMoE: Demand-Side Load Re-Calibration for Efficient MoE Training on Memory-Constrained Nodes",
+      "abstract": "Sparse Mixture-of-Experts (MoE) models offer scalable capacity for Web applications, but uneven routing creates computation and communication bottlenecks. Existing placement and replication methods redistribute this workload, yet additional expert copies compete with token-related buffers for limited GPU memory. We present LRMoE, a memory-aware MoE training system that jointly recalibrates backward demand and balances the retained workload. During forward execution, it plans retention quotas and expert placement under resource constraints while preserving all routed computations. During backpropagation, a load recalibration metric estimates each token-expert pair's contribution to the expert update and selects pairs within these quotas. A capacity-aware routing algorithm distributes retained pairs among eligible instances of their original experts. Physical compaction then forms smaller communication payloads and variable-size grouped GEMMs, reducing backward traffic, computation, and execution-buffer demand. Experiments on Qwen3-30B-A3B and GLM4.5-106B-A12B show that LRMoE reduces cumulative MoE-layer training time to fixed-loss targets by 21.2-44.8% relative to SYMI.",
+      "authors": [
+        "Jiaming Hu",
+        "Zhida Jiang",
+        "Zhaolong Xing",
+        "Yu Li",
+        "Zhen Chen",
+        "Ke Zhang"
+      ],
+      "primary_category": "cs.AI",
+      "categories": [
+        "cs.AI",
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-10-27T09:41:17+00:00",
+      "link": "https://arxiv.org/pdf/2610.37720v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 8.0,
+      "llm_evidence_en": "Memory-aware MoE training system balancing retained workload with expert placement under GPU memory constraints",
+      "llm_evidence_cn": "显存受限下联合专家放置与负载均衡的内存感知MoE训练系统",
+      "llm_evidence": "显存受限下联合专家放置与负载均衡的内存感知MoE训练系统",
+      "canonical_evidence": "显存受限下联合专家放置与负载均衡的内存感知MoE训练系统",
+      "llm_tldr_en": "LRMoE is a memory-aware MoE training system that jointly recalibrates backward demand and balances retained workload, planning expert placement under GPU memory constraints while preserving all routed computations.",
+      "llm_tldr_cn": "稀疏MoE虽能扩展容量，但不均匀路由造成计算与通信瓶颈，而现有放置与复制方法新增的专家副本又会与token缓冲争抢有限显存。本文提出LRMoE，一种内存感知的MoE训练系统：前向阶段在资源约束下规划保留配额与专家放置，反向阶段用负载再校准指标估计每个token-专家对更新的贡献并据此选择保留对。该方法在保留全部路由计算的同时均衡了保留负载，缓解了显存受限节点上的计算与通信瓶颈，为MoE训练系统优化提供了兼顾放置与负载均衡的方案。",
+      "llm_tldr": "稀疏MoE虽能扩展容量，但不均匀路由造成计算与通信瓶颈，而现有放置与复制方法新增的专家副本又会与token缓冲争抢有限显存。本文提出LRMoE，一种内存感知的MoE训练系统：前向阶段在资源约束下规划保留配额与专家放置，反向阶段用负载再校准指标估计每个token-专家对更新的贡献并据此选择保留对。该方法在保留全部路由计算的同时均衡了保留负载，缓解了显存受限节点上的计算与通信瓶颈，为MoE训练系统优化提供了兼顾放置与负载均衡的方案。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to overlap communication with computation and optimize expert placement?",
+      "matched_requirement_id": "req-7",
+      "selection_source": "fresh_fetch"
+    }
+  ],
+  "quick_skim": [
+    {
+      "id": "2610.39029v1",
+      "source": "arxiv",
+      "title": "MCCL: Training Pytorch models across a fleet of Macs at Skywalker Sound",
+      "abstract": "Skywalker Sound, a premier audio post-production facility, operates more than 200 M4 Max Mac Studios on a 10Gb Ethernet network. When not in use by artists, these machines sit idle, representing massive untapped unified memory and compute capacity. While these fleets are excellent candidates for distributed machine learning alongside existing NVIDIA GPU clusters, PyTorch lacks an accelerated distributed backend for Apple's Metal Performance Shaders (MPS). To bridge this gap, we introduce the Metal Communication Collective Library (MCCL), the first open-source MPS backend for multi-node PyTorch training over switched Ethernet. We evaluate its performance and scalability across 24 nodes, demonstrating that large all-reduce operations reach 98-99.7% of TCP goodput. Training a 113.5M-parameter Vision Transformer (ViT) scales from 198 to 4,568 samples/s, achieving 95.9% parallel efficiency. Benchmarked against an NVIDIA A100 GPU, one M4 Max Mac equals roughly 1.7x the throughput of FP32 matrix multiplication, and 5.5 Macs match an A100 using TF32. Harnessing 100 idle Macs for 12 hours nightly offsets approximately $200,000 annually in equivalent cloud compute costs. Our results demonstrate that existing Mac infrastructure can be seamlessly repurposed for high performance distributed training without abandoning the standard PyTorch codebase.",
+      "authors": [
+        "Kevin Sasso",
+        "Chris Fiegel",
+        "Francis Aitken",
+        "Nicolas Tsingos",
+        "Nicholas Tong"
+      ],
+      "primary_category": "cs.DC",
+      "categories": [
+        "cs.DC",
+        "cs.LG"
+      ],
+      "published": "2026-10-28T23:02:26+00:00",
+      "link": "https://arxiv.org/pdf/2610.39029v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 7.0,
+      "llm_evidence_en": "collective communication library implementing all-reduce for multi-node training",
+      "llm_evidence_cn": "面向多节点训练的集合通信库并实现AllReduce",
+      "llm_evidence": "面向多节点训练的集合通信库并实现AllReduce",
+      "canonical_evidence": "面向多节点训练的集合通信库并实现AllReduce",
+      "llm_tldr_en": "MCCL introduces an open-source Metal collective communication backend for multi-node PyTorch training over switched Ethernet, enabling all-reduce across Macs and reaching 98-99.7% of theoretical bandwidth on 24 nodes.",
+      "llm_tldr_cn": "针对PyTorch在苹果MPS上缺乏多机分布式后端的问题，本文提出开源Metal集合通信库MCCL，在交换式以太网上实现多节点AllReduce等集合通信。作者在24个Mac节点上评估，显示大规模AllReduce可达理论带宽的98%至99.7%。该工作把闲置Mac集群转化为可用的分布式训练资源，并为非NVIDIA硬件上的集合通信提供了实践方案。",
+      "llm_tldr": "针对PyTorch在苹果MPS上缺乏多机分布式后端的问题，本文提出开源Metal集合通信库MCCL，在交换式以太网上实现多节点AllReduce等集合通信。作者在24个Mac节点上评估，显示大规模AllReduce可达理论带宽的98%至99.7%。该工作把闲置Mac集群转化为可用的分布式训练资源，并为非NVIDIA硬件上的集合通信提供了实践方案。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "7"
+    },
+    {
+      "id": "2610.37914v1",
+      "source": "arxiv",
+      "title": "Muon Makes the First Mixture-of-Experts Layer Harder to Balance",
+      "abstract": "Many open mixture-of-experts (MoE) language models train with Muon instead of AdamW. Most balance the load with a bias on each expert's routing score, adjusted after every step. Their recipes disagree on whether Muon should also train the router. In models with 55M and 108M active parameters, we measure how the optimizer changes the span of these biases, the largest minus the smallest in a layer. The span grows when all tokens favor the same experts, so it shows how hard a layer is to balance. At learning rates tuned on shorter runs, Muon raised the span of the first MoE layer at every seed, roughly doubling it on average, while the other layers changed much less. The rise came from Muon on the rest of the network, whichever optimizer trained the router. In those runs, the inputs to the first router shared a direction, and soon after the warmup its busiest expert averaged four to seven times its fair share. Over the first 3,000 steps, subtracting the batch mean from these inputs removed this overload while barely changing the loss. On the smaller model, halving Muon's learning rate removed most of the rise and slightly improved the loss. Moving only the router to AdamW made the loads shift more during the warmup and slightly raised the loss, so at this scale the results favor keeping the router on Muon.",
+      "authors": [
+        "Marcos Hernanz"
+      ],
+      "primary_category": "cs.LG",
+      "categories": [
+        "cs.LG",
+        "cs.CL"
+      ],
+      "published": "2026-10-27T19:56:56+00:00",
+      "link": "https://arxiv.org/pdf/2610.37914v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "Studies how Muon optimizer widens routing-bias span, making the first MoE layer harder to load balance",
+      "llm_evidence_cn": "研究Muon优化器扩大路由偏置跨度、使首个MoE层更难负载均衡",
+      "llm_evidence": "研究Muon优化器扩大路由偏置跨度、使首个MoE层更难负载均衡",
+      "canonical_evidence": "研究Muon优化器扩大路由偏置跨度、使首个MoE层更难负载均衡",
+      "llm_tldr_en": "The paper measures how using Muon instead of AdamW affects expert load balancing in MoE language models, finding that Muon roughly doubles the routing-bias span of the first MoE layer and thus makes that layer harder to balance.",
+      "llm_tldr_cn": "许多开源MoE语言模型用Muon而非AdamW训练，通常以逐步调整的路由偏置来均衡专家负载，但不同配方对是否用Muon训练路由器存在分歧。作者在55M与108M激活参数模型上，用层内偏置最大最小之差（跨度）衡量均衡难度，发现Muon在所有随机种子下都抬高了首个MoE层的跨度、平均约翻倍，而其他层变化很小。该上升源于网络中其余部分使用的Muon。工作揭示了优化器选择对专家负载均衡的影响，为MoE训练配方设计提供参考。",
+      "llm_tldr": "许多开源MoE语言模型用Muon而非AdamW训练，通常以逐步调整的路由偏置来均衡专家负载，但不同配方对是否用Muon训练路由器存在分歧。作者在55M与108M激活参数模型上，用层内偏置最大最小之差（跨度）衡量均衡难度，发现Muon在所有随机种子下都抬高了首个MoE层的跨度、平均约翻倍，而其他层变化很小。该上升源于网络中其余部分使用的Muon。工作揭示了优化器选择对专家负载均衡的影响，为MoE训练配方设计提供参考。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "expert load balancing",
+      "matched_requirement_id": "req-1",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.39412v1",
+      "source": "arxiv",
+      "title": "Dobb: Shard-Local Preconditioning in Block-Diagonal Eigenbases",
+      "abstract": "Training language models whose parameters and optimizer state exceed a single node's memory requires sharding these tensors across devices. Under tensor parallelism (TP) or fully sharded data parallelism (FSDP), matrix-aware optimizers such as Muon introduce communication to perform global matrix operations across shards. We propose Dobb (Distributed Optimizer with Block-diagonal Eigenbases), a matrix-aware optimizer designed to compute updates locally within parameter shards. Dobb approximates the input-activation second moment with diagonal blocks and tracks a complete basis within each block. It projects momentum into these bases, applies sign normalization to the coefficients, and reconstructs the update. When each block lies within one shard under TP or FSDP, Dobb applies its matrix update locally, requiring no communication beyond data-parallel synchronization of the activation second moments. We benchmark Dobb against Dion, a distributed matrix-aware optimizer designed to retain the benefits of orthonormalized updates while reducing communication. On GPT-2 XL (1.56B parameters), Dobb with 16 blocks reaches a validation loss of 2.476, compared with 2.511 for Dion at rank fraction 1/16. Under FSDP on 32 H100 GPUs, Dobb reduces the amortized optimizer-call time from 124.1 ms for Dion to 9.2 ms.",
+      "authors": [
+        "Shi-Yuk Fong",
+        "Shuhua Yu",
+        "Jiawei Zhang"
+      ],
+      "primary_category": "cs.LG",
+      "categories": [
+        "cs.LG",
+        "cs.DC",
+        "math.OC"
+      ],
+      "published": "2026-10-29T05:54:27+00:00",
+      "link": "https://arxiv.org/pdf/2610.39412v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "shard-local optimizer updates reduce cross-shard communication in distributed LLM training",
+      "llm_evidence_cn": "分片本地优化器更新减少分布式LLM训练中的跨分片通信",
+      "llm_evidence": "分片本地优化器更新减少分布式LLM训练中的跨分片通信",
+      "canonical_evidence": "分片本地优化器更新减少分布式LLM训练中的跨分片通信",
+      "llm_tldr_en": "Dobb is a matrix-aware distributed optimizer that computes updates locally within parameter shards under tensor or fully sharded data parallelism, avoiding global matrix operations and the associated cross-shard communication.",
+      "llm_tldr_cn": "针对张量并行或全分片数据并行下矩阵感知优化器需要跨分片全局运算并引入通信的问题，本文提出Dobb优化器。它用块对角特征基近似输入激活二阶矩，在每个参数分片内部完成动量投影、符号归一化和更新重构。该方法减少分布式LLM训练中的跨分片通信，为通信高效的训练优化器设计提供了思路。",
+      "llm_tldr": "针对张量并行或全分片数据并行下矩阵感知优化器需要跨分片全局运算并引入通信的问题，本文提出Dobb优化器。它用块对角特征基近似输入激活二阶矩，在每个参数分片内部完成动量投影、符号归一化和更新重构。该方法减少分布式LLM训练中的跨分片通信，为通信高效的训练优化器设计提供了思路。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "How to optimize collective communication for distributed LLM training and inference?",
+      "matched_requirement_id": "req-9",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    },
+    {
+      "id": "2610.39564v1",
+      "source": "arxiv",
+      "title": "Constant-Factor Approximation for Non-Splitting Coflow Scheduling in Heterogeneous Parallel Networks via Iterative Relaxation",
+      "abstract": "Coflows capture the collective communication requirements of data-parallel applications, and scheduling them well is essential to the performance of modern data centers. We study non-splitting coflow scheduling in a heterogeneous parallel network whose $m$ network cores may be Electronic Packet Switches (EPS), not-all-stop Optical Circuit Switches (OCS), or all-stop OCS, where every flow must be transmitted entirely through a single core. Previous approximation algorithms for this setting have guarantees that grow linearly with the number of cores $m$ or with the maximum flow degree $τ$ of a port, and therefore become weak as data centers deploy more cores. The source of this dependence is the rounding step: rounding each flow to the core holding its largest fractional value can inflate the load of a port by a factor of $m$. We replace this step with an iterative relaxation rounding scheme that handles the input-port and output-port capacity constraints simultaneously. For minimizing the makespan, this yields approximation ratios of $\\min\\{τ, 3\\}$, $2\\min\\{τ, 3\\}$, and $4\\min\\{τ, 3\\}$ for pure EPS, pure not-all-stop OCS, and pure all-stop OCS networks, respectively. For minimizing the total weighted coflow completion time, we obtain approximation ratios of $8\\min\\{τ, 4\\}$, $16\\min\\{τ, 4\\}$, and $32\\min\\{τ, 4\\}$ for the same three architectures. In a hybrid network, the guarantee is governed by the weakest architecture present, so the overall ratios are at most $4\\min\\{τ,3\\}\\le 12$ and $32\\min\\{τ,4\\}\\le 128$, respectively. Unlike all previous guarantees for non-splitting coflow scheduling in heterogeneous parallel networks, these bounds are absolute constants that do not grow with the number of cores $m$ or with the flow degree $τ$. We also show that the integrality gap of the underlying linear program is at least $2$.",
+      "authors": [
+        "Chi-Yeh Chen"
+      ],
+      "primary_category": "cs.DS",
+      "categories": [
+        "cs.DS"
+      ],
+      "published": "2026-10-29T08:03:42+00:00",
+      "link": "https://arxiv.org/pdf/2610.39564v1",
+      "tags": [
+        "keyword:CCL",
+        "query:CCL"
+      ],
+      "llm_score": 6.0,
+      "llm_evidence_en": "scheduling collective communication coflows in heterogeneous parallel networks",
+      "llm_evidence_cn": "异构并行网络中集合通信Coflow的调度",
+      "llm_evidence": "异构并行网络中集合通信Coflow的调度",
+      "canonical_evidence": "异构并行网络中集合通信Coflow的调度",
+      "llm_tldr_en": "This paper gives a constant-factor approximation for non-splitting coflow scheduling in heterogeneous parallel networks via iterative relaxation, removing dependence on core count.",
+      "llm_tldr_cn": "Coflow刻画数据并行应用的集合通信需求，其调度对现代数据中心性能至关重要。已有异构多核网络下的非拆分Coflow调度近似算法，其保证随网络核数m或端口最大流度线性增长，在多核部署下迅速变弱。作者提出基于迭代松弛的算法，使近似比不随这些参数恶化。该结果为大規模异构数据中心中的集合通信调度提供了可扩展的理论保证。",
+      "llm_tldr": "Coflow刻画数据并行应用的集合通信需求，其调度对现代数据中心性能至关重要。已有异构多核网络下的非拆分Coflow调度近似算法，其保证随网络核数m或端口最大流度线性增长，在多核部署下迅速变弱。作者提出基于迭代松弛的算法，使近似比不随这些参数恶化。该结果为大規模异构数据中心中的集合通信调度提供了可扩展的理论保证。",
+      "llm_tags": [
+        "query:ccl"
+      ],
+      "matched_query_tag": "query:ccl",
+      "matched_query_text": "collective communication",
+      "matched_requirement_id": "req-6",
+      "selection_source": "fresh_fetch",
+      "quick_tier": "6"
+    }
+  ]
+}

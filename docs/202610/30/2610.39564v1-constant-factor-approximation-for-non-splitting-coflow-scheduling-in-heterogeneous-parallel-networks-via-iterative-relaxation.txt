@@ -1,0 +1,1327 @@
+Title: Constant-Factor Approximation for Non-Splitting Coflow Scheduling in Heterogeneous Parallel Networks via Iterative Relaxation
+
+URL Source: https://arxiv.org/pdf/2610.39564v1
+
+Published Time: Fri, 30 Oct 2026 03:09:05 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Constant-Factor Approximation for Non-Splitting Coflow Scheduling in Heterogeneous Parallel Networks via Iterative Relaxation 
+
+Chi-Yeh Chen Department of Computer Science and Information Engineering, National Cheng Kung University, Taiwan, ROC. chency@csie.ncku.edu.tw. October 30, 2026 
+
+Abstract 
+
+Coflows capture the collective communication requirements of data-parallel applications, and scheduling them well is essential to the performance of modern data centers. We study non-splitting coflow scheduling in a heterogeneous parallel network whose m network cores may be Electronic Packet Switches (EPS), not-all-stop Optical Circuit Switches (OCS), or all-stop OCS, where every flow must be transmitted entirely through a single core. Previous approximation algorithms for this setting have guarantees that grow linearly with the number of cores m
+
+or with the maximum flow degree τ of a port, and therefore become weak as data centers deploy more cores. The source of this dependence is the rounding step: rounding each flow to the core holding its largest fractional value can inflate the load of a port by a factor of m.We replace this step with an iterative relaxation rounding scheme that handles the input-port and output-port capacity constraints simultaneously. For minimizing the makespan, this yields approximation ratios of min {τ, 3}, 2 min {τ, 3}, and 4 min {τ, 3} for pure EPS, pure not-all-stop OCS, and pure all-stop OCS networks, respectively. For minimizing the total weighted coflow completion time, we obtain approximation ratios of 8 min {τ, 4}, 16 min {τ, 4}, and 32 min {τ, 4}
+
+for the same three architectures. In a hybrid network, the guarantee is governed by the weakest architecture present, so the overall ratios are at most 4 min {τ, 3} ≤ 12 and 32 min {τ, 4} ≤ 128, respectively. Unlike all previous guarantees for non-splitting coflow scheduling in heterogeneous parallel networks, these bounds are absolute constants that do not grow with the number of cores m or with the flow degree τ . We also show that the integrality gap of the underlying linear program is at least 2. 
+
+Key words: Scheduling algorithms, approximation algorithms, coflow, iterative relaxation, datacenter network, heterogeneous parallel network. 
+
+# 1 Introduction 
+
+In data-parallel frameworks such as MapReduce [13], Hadoop [27, 3], Dryad [16], and Spark [32], a computation stage produces a large amount of intermediate data that must be shuffled between two groups of machines before the next stage can begin. The coflow abstraction [8] groups the parallel flows of such a communication stage into a single unit. Because the next stage cannot start until all of its input has arrived, the quantity that matters to the application is the completion time of 1arXiv:2610.39564v1 [cs.DS] 29 Oct 2026 the last flow of the coflow [8, 25], and a number of systems have shown that scheduling the network at the granularity of coflows yields substantial gains [11, 9, 34, 1]. The switching fabric of data centers is also becoming increasingly heterogeneous. An Electronic Packet Switch (EPS) multiplexes packets of many flows on a link and allows flows to be preempted. An Optical Circuit Switch (OCS) [35, 28, 21] offers much higher bandwidth at lower energy cost, but each of its ports can maintain only one circuit at any moment, and every change of the circuit configuration costs a reconfiguration delay [35]. Depending on how reconfiguration is carried out, an OCS is either all-stop, in which case all circuits pause during a reconfiguration, or not-all-stop, in which case only the ports being reconfigured are interrupted. A realistic data center therefore contains several network cores of different types and speeds, and a coflow scheduler must decide both which core carries each flow and when the flow is transmitted. We consider a set of coflows, each described by a demand matrix D(k) = ( dijk )Ni,j =1 , that must be transmitted through m heterogeneous network cores, where core q has link rate rq. Flows are not allowed to be split: every flow is carried entirely by one core, although different flows of the same coflow may use different cores. Splitting a flow across fabrics causes packet reordering and other overhead that is undesirable in practice [7]. We study two objectives: the makespan max k{Ck}
+
+and the total weighted coflow completion time P 
+
+> k
+
+wkCk, where Ck and wk denote the completion time and the weight of coflow k.Table 1: Comparison of related works (adapted and extended from [29, 30, 7]). Works EPS OCS No. of Performance Ratio independent 
+
+all-stop not-all-stop cores guarantee of m and τ
+
+[10, 11, 9, 34, 36] ✓ × × 1 × –[24, 18, 25, 20] ✓ × × 1 ✓ –[31] × ✓ × 1 × –[33, 28] × ✓ × 1 ✓ –[14, 35] × × ✓ 1 ✓ –[21, 17] ✓ × ✓ 2 × –[22] ✓ ✓ × 2 × –[29] ✓ ✓ × 2 ✓ –[30] ✓ ✓ ✓ 2 ✓ –[4, 6, 5, 15] ✓ × × m ✓ –[7] ✓ ✓ ✓ m ✓ ×
+
+This work ✓ ✓ ✓ m ✓ ✓
+
+1.1 Related Work 
+
+The coflow abstraction was introduced by Chowdhury and Stoica [8]. Since then, coflow scheduling has been studied mainly in two families of networks, namely EPS-based and OCS-based networks, and more recently in networks that mix both. Table 1 summarizes the works most closely related to ours; it extends the comparisons given in [29, 30, 7]. 
+
+1.1.1 EPS-based networks 
+
+For the total weighted coflow completion time on a single EPS core, a sequence of works [24, 2, 18, 25] improved the approximation ratio from 64 3 to 4 when all release times are zero, and from 76 3 to 5 for arbitrary release times. On identical parallel networks, Chen [6] obtained ratios of 6 − 2 
+
+> m
+
+and 5 − 2
+
+> m
+
+2for arbitrary and zero release times, and later extended the approach to coflows with precedence constraints, achieving an O(χ)-approximation [5], where χ is the number of coflows on the longest path of the precedence graph. On heterogeneous parallel networks, Huang et al. [15] gave an O(m)-approximation for the makespan of a single coflow, which Chen [4] improved to O
+
+ log m 
+
+> log log m
+
+
+
+; the same bound was also obtained for the total weighted completion time [4]. 
+
+1.1.2 OCS-based networks 
+
+For all-stop OCS, Tan et al. [28] designed Reco-Sin and obtained a 2-approximation for a single coflow and an 8 K-approximation for K coflows. Wang et al. [29] gave approximation guarantees for a hybrid-switched network consisting of one EPS and one all-stop OCS. For not-all-stop OCS, Huang et al. [14] proposed Sunflow, which is a constant-factor approximation for a single coflow, and Zhang et al. [35] gave a 4-approximation for multiple coflows. For hybrid electrical-optical fabrics, Li and Shen [21] and Jiang et al. [17] proposed heuristics, and the work in [30] provided guarantees for two cores including both types of OCS. All of the hybrid results with guarantees [29, 30] are restricted to m = 2 cores and rely on splitting flows across the fabrics. 
+
+1.1.3 Non-splitting scheduling on heterogeneous parallel networks 
+
+The work most closely related to ours is [7], which gave the first approximation algorithms with provable guarantees for non-splitting coflow scheduling in a hybrid network with an arbitrary num-ber m ≥ 2 of EPS, not-all-stop OCS, and all-stop OCS cores. The algorithms in [7] first solve a linear programming relaxation of the flow-to-core assignment and then round each flow to the core with the largest fractional value. Let τ be the maximum number of flows incident to a single port. For the makespan, the resulting ratios are min {τ, m }, 2 min {τ, m }, and 2 min {2τ − 1, m + τ − 1} in pure EPS, pure not-all-stop OCS, and pure all-stop OCS networks, respectively; for the total weighted coflow completion time, they are 8 min {τ, 2m}, 16 min {τ, 2m}, and 16 min {2τ − 1, 2m + τ − 1} [7]. In a hybrid network, the guarantee is determined by the weakest architecture present. Every one of these ratios grows linearly in m or τ , so they lose their meaning precisely when the number of cores is large. The reason is inherent to the rounding step. The largest of the m
+
+fractional values of a flow is only guaranteed to be at least 1 
+
+> m
+
+, and if many flows of a port are spread evenly over all cores by the linear program and then rounded onto the same core, the load of that port grows by a factor of m. Rounding methods based on bipartite matching [26] control the load of one side, but every assignment variable belongs to both an input-port constraint and an output-port constraint, so matching on the input side alone gives no control on the output side [7]. 
+
+The goal of this paper is to remove the factors m and τ from the approximation ratios of [7]. 
+
+1.2 Our Contributions 
+
+We keep the linear programming relaxations of [7] and replace their rounding step by an iterative relaxation scheme in the spirit of Lau, Ravi, and Singh [19]. Our contributions are as follows. 
+
+• Iterative relaxation rounding for two families of capacity constraints. In the as-signment linear program, each variable appears in exactly one assignment constraint and in exactly two capacity constraints, one for its input port and one for its output port. We show that every extreme point of the residual linear program either contains an integral variable or contains a capacity constraint whose total fractional deficiency is at most 2, and that dropping such a constraint costs at most twice the largest transmission time. Consequently, 3the load of every port on every core after rounding is at most min {τ, 3}T ∗, where T ∗ is the smallest value for which the relaxation is feasible. The previous bound was min {τ, m }T ∗ [7]. 
+
+• Makespan. We obtain approximation ratios of 
+
+– min {τ, 3} in a pure EPS network, 
+
+– 2 min {τ, 3} in a pure not-all-stop OCS network, and 
+
+– 4 min {τ, 3} in a pure all-stop OCS network. For all-stop OCS, we also remove the additive dependence on τ caused by the reconfiguration delays by bounding the number of reconfigurations at a port through the port load itself. 
+
+• Total weighted coflow completion time. Applying the new rounding inside each time interval of the interval-indexed relaxation of [7], we obtain approximation ratios of 
+
+– 8 min {τ, 4} in a pure EPS network, 
+
+– 16 min {τ, 4} in a pure not-all-stop OCS network, and 
+
+– 32 min {τ, 4} in a pure all-stop OCS network. 
+
+• Hybrid networks and limits of the relaxation. In a hybrid network, the overall guar-antee equals that of the weakest architecture present; hence the makespan ratio is at most 12 and the weighted completion time ratio is at most 128, independently of m and τ . We further show that the integrality gap of the makespan relaxation is at least 2, so any analysis based on this relaxation cannot bound the port loads by less than 2 T ∗.
+
+1.3 Organization 
+
+Section 2 describes the model and the notation. Section 3 presents the iterative relaxation rounding and the algorithm for minimizing the makespan. Section 4 extends the approach to the total weighted coflow completion time. Section 5 concludes the paper. For completeness, the Birkhoff-von Neumann based schedule for a single EPS core is reviewed in the appendix. 
+
+# 2 Notation and Preliminaries 
+
+We adopt the network and traffic model of [7]; Table 2 lists the notation used throughout the paper. 
+
+2.1 Network Model 
+
+The network consists of a set M of m non-blocking N ×N switches, called network cores, partitioned as M = Me ∪ M 1 
+
+> o
+
+∪ M 2 
+
+> o
+
+with m = me + m1 
+
+> o
+
++ m2
+
+> o
+
+, where Me contains me EPS cores, M1 
+
+> o
+
+contains 
+
+m1 
+
+> o
+
+all-stop OCS cores, and M2 
+
+> o
+
+contains m2 
+
+> o
+
+not-all-stop OCS cores. Every core has the same N
+
+input ports, attached to the source servers I = {1, . . . , N }, and the same N output ports, attached to the destination servers J = {1, . . . , N }; thus each source-destination pair is connected by m
+
+parallel links, one through each core, and each core can be viewed as a bipartite graph between I
+
+and J . All links of core q have rate rq.An EPS core multiplexes packets of different flows on a port. An OCS core is subject to the port constraint: at any time, each input port and each output port takes part in at most one circuit. Changing the circuit configuration of an OCS core q takes a fixed reconfiguration delay δq. In an all-stop OCS, all transmissions of the core are suspended during a reconfiguration; in a not-all-stop OCS, only the ports whose circuits change are interrupted. 4Table 2: Notation and terminology. 
+
+N Number of input ports (and of output ports) of each core. 
+
+M, m Set of network cores and its size. 
+
+Me, M1
+
+> o
+
+, M2 
+
+> o
+
+Sets of EPS cores, all-stop OCS cores, and not-all-stop OCS cores. 
+
+I, J Sets of source servers (input ports) and destination servers (output ports). 
+
+K Set of coflows. 
+
+n Number of flows. 
+
+D(k), dijk Demand matrix of coflow k; size of the flow of coflow k from input i
+
+to output j.
+
+F, Fi, Fj Set of all flows; flows with source i; flows with destination j.
+
+rq, δq Link rate of core q; reconfiguration delay of an OCS core q.
+
+pijkq Transmission time of flow ( i, j, k ) on core q.
+
+τ Maximum flow degree of a port, max {max i |F i|, max j |F j |} .
+
+rk, wk, Ck Release time, weight, and completion time of coflow k.
+
+Cijk Completion time of flow ( i, j, k ). 
+
+tl Interval end point tl = 2 l for l = 0 , 1, . . . , L .
+
+2.2 Traffic Model 
+
+Coflow k ∈ K is described by a demand matrix D(k) = ( dijk )Ni,j =1 , where dijk is the amount of data that coflow k sends from input i to output j. The triple ( i, j, k ) with dijk > 0 is called a flow, and as in [24] all flows of a coflow are released together at time rk. We write 
+
+• F = {(i, j, k ) | dijk > 0, i ∈ I , j ∈ J , k ∈ K} ,
+
+• Fi = {(i, j, k ) ∈ F | j ∈ J , k ∈ K} for i ∈ I , and 
+
+• Fj = {(i, j, k ) ∈ F | i ∈ I , k ∈ K} for j ∈ J ,and let n = |F| . Flows are indivisible: every flow must be transmitted entirely through one core, whereas different flows of the same coflow may use different cores. The transmission time of flow ( i, j, k ) ∈ F on core q is 
+
+pijkq =
+
+
+
+dijk 
+
+rq
+
+, if q ∈ M e,dijk 
+
+rq
+
++ δq, if q ∈ M 1 
+
+> o
+
+∪ M 2
+
+> o
+
+,
+
+that is, on an OCS core every flow is charged one reconfiguration delay for setting up its circuit. Without loss of generality, we scale time so that pijkq ≥ 1 for all flows and cores. For a set of flows assigned to core q, the load of a port on core q is the sum of the transmission times on core q of the assigned flows incident to that port. 
+
+2.3 Objectives 
+
+For the makespan, all coflows arrive at a common time tarr , and, with tFijk denoting the time at which flow ( i, j, k ) finishes, we minimize 
+
+Cmax = max 
+
+> (i,j,k )∈F
+
+ tFijk − tarr  .
+
+5For the second objective, coflow k is released at time rk ≥ 0, its completion time Ck is the completion time of its last flow, and we minimize P 
+
+> k∈K
+
+wkCk.
+
+# 3 Approximation Algorithm for Minimizing the Makespan 
+
+Like the algorithms of [7], our algorithm works in two stages. The first stage assigns every flow to a core by rounding a fractional solution of a linear program, and the second stage schedules, independently on each core, the flows that were assigned to it. The second stage is the same as in [7]; the novelty lies in the rounding of the first stage. 
+
+3.1 The Assignment Relaxation and the Bisection Procedure of [7] 
+
+For a flow ( i, j, k ) ∈ F and a core q ∈ M , let xijkq ∈ { 0, 1} indicate whether the flow is transmitted through core q. For a target makespan T , the following linear program, introduced in [7], relaxes the assignment problem: LP( T ): (1) 
+
+X
+
+> q∈M
+
+xijkq = 1 , ∀(i, j, k ) ∈ F , (1a) 
+
+X
+
+> (i,j,k )∈F i
+
+pijkq xijkq ≤ T, ∀i ∈ I , ∀q ∈ M , (1b) 
+
+X
+
+> (i,j,k )∈F j
+
+pijkq xijkq ≤ T, ∀j ∈ J , ∀q ∈ M , (1c) 
+
+xijkq ≥ 0, ∀(i, j, k ) ∈ F , ∀q ∈ M , (1d) 
+
+xijkq = 0 , ∀(i, j, k ) ∈ F , ∀q ∈ M with pijkq > T. (1e) Constraint (1a) assigns each flow to one core, constraints (1b) and (1c) limit the load of every input port and every output port on every core to T , and constraint (1e) forbids a core on which the flow alone would take longer than T . In any feasible non-splitting schedule with makespan T , the load of every port on every core is at most T and every flow is carried by a core on which it takes at most T time units, so the schedule induces an integral solution of LP( T ). Hence LP( T ) is feasible for T = OPT, the optimal makespan. Because constraint (1e) depends on T , the smallest feasible T is not computed by a single linear program. Following [7], we use bisection (Algorithm 1). The initial upper bound u is the largest port load obtained when every flow uses its slowest core, for which LP( u) is clearly feasible, and the initial lower bound l is the largest port demand divided by the total rate of all cores. In each step, the feasibility of LP( d) is tested for the midpoint d, and the interval is halved accordingly. We denote by T ∗ the value returned by the procedure. Since LP(OPT) is feasible, we have 
+
+T ∗ ≤ OPT . (2) A core q with δq ≥ T ∗ cannot carry any flow in LP( T ∗) and is discarded. Thus, we may assume 
+
+δq < T ∗ for every remaining OCS core. In [7], a fractional solution of LP( T ∗) is rounded by sending every flow to the core q∗ =arg max q xijkq . Since xijkq ∗ ≥ 1 
+
+> m
+
+, the load of a port grows by at most a factor of m, which gives the bound min {τ, m }T ∗. The example in which the flows of a port are spread evenly over the m cores and then all rounded onto one core shows that this analysis cannot be improved. We now describe a rounding procedure that avoids this loss. 6Algorithm 1 Bisection procedure [7]  
+
+> 1:
+
+u ← max 
+
+n
+
+max i∈I 
+
+P 
+
+> (i,j,k )∈F i
+
+max q pijkq , max j∈J 
+
+P 
+
+> (i,j,k )∈F j
+
+max q pijkq 
+
+o 
+
+> 2:
+
+ρ ← max 
+
+n
+
+max i
+
+P 
+
+> (i,j,k )∈F i
+
+dijk , max j
+
+P 
+
+> (i,j,k )∈F j
+
+dijk 
+
+o 
+
+> 3:
+
+l ← ρ/ P 
+
+> q∈M
+
+rq 
+
+> 4:
+
+while u̸ = l do  
+
+> 5:
+
+d ←  u+l
+
+> 2
+
+ 
+
+> 6:
+
+if LP( d) is feasible then  
+
+> 7:
+
+u ← d 
+
+> 8:
+
+else  
+
+> 9:
+
+l ← d + 1  
+
+> 10:
+
+end if  
+
+> 11:
+
+end while  
+
+> 12:
+
+return T ∗ ← u
+
+3.2 Iterative Relaxation Rounding 
+
+It is convenient to describe the rounding for a general assignment polytope, since the same procedure will be used again in Section 4. Let ¯F ⊆ F be a set of flows, let T > 0, and let S ⊆ ¯F × M be a set of admissible flow-core pairs such that 
+
+pijkq ≤ T for every (( i, j, k ), q ) ∈ S . (3) We call a pair e = (( i, j, k ), q ) ∈ S an edge , write pe = pijkq and xe = xijkq , and say that e belongs to flow ( i, j, k ). For every input port i and core q, there is a capacity constraint c = ( i, q ), and for every output port j and core q, there is a capacity constraint c = ( j, q ). An edge (( i, j, k ), q )belongs to exactly two capacity constraints, namely ( i, q ) and ( j, q ). Let C be the set of all 2 N m 
+
+capacity constraints. The polytope 
+
+P( ¯F, S, T ) = 
+
+x ∈ RS≥0
+
+X   
+
+> e∈S :ebelongs to f
+
+xe = 1 ∀f ∈ ¯F; X 
+
+> e∈S :e∈c
+
+pexe ≤ T ∀c ∈ C 
+
+ (4) is exactly the feasible region of LP( T ) when ¯F = F and S = {(( i, j, k ), q ) | pijkq ≤ T }.The procedure (Algorithm 2) maintains a set F′ of unassigned flows, a set S′ of edges still available to them, a set C′ ⊆ C of capacity constraints still enforced, and, for each c ∈ C ′, a residual capacity Tc, which equals T minus the load already placed on c. The residual linear program is RLP: X   
+
+> e∈S ′:ebelongs to f
+
+xe = 1 , ∀f ∈ F ′, (5a) 
+
+X 
+
+> e∈S ′:e∈c
+
+pexe ≤ Tc, ∀c ∈ C ′, (5b) 
+
+xe ≥ 0, ∀e ∈ S ′. (5c) For a constraint c ∈ C ′, let E(c) = {e ∈ S ′ | e ∈ c} and d(c) = |E(c)|. In each iteration, the algorithm computes an extreme point solution of RLP and deletes the edges whose value is zero. If some edge has value one, the corresponding flow is fixed to that core. Otherwise, the algorithm drops a capacity constraint whose total fractional deficiency P
+
+> e∈E(c)
+
+(1 −xe) is at most 2; Lemma 3.2 7below shows that such a constraint always exists. This mirrors the iterative relaxation technique for the generalized assignment problem [19], with the difference that each of our variables appears in two capacity constraints instead of one. 
+
+Algorithm 2 Iterative relaxation rounding 
+
+Input: ¯F, S, and T such that P( ¯F, S, T )̸ = ∅ and (3) holds  
+
+> 1:
+
+F′ ← ¯F, S′ ← S , C′ ← C , and Tc ← T for every c ∈ C  
+
+> 2:
+
+while F′̸ = ∅ do  
+
+> 3:
+
+Compute an extreme point solution x of RLP  
+
+> 4:
+
+S′ ← S ′ \ { e ∈ S ′ | xe = 0 } 
+
+> 5:
+
+if there is an edge e = (( i, j, k ), q ) ∈ S ′ with xe = 1 then  
+
+> 6:
+
+Assign flow ( i, j, k ) to core q, i.e., ˆ xijkq ← 1 
+
+> 7:
+
+F′ ← F ′ \ { (i, j, k )} and remove from S′ all edges of flow ( i, j, k ) 
+
+> 8:
+
+For each c ∈ { (i, q ), (j, q )} ∩ C ′, set Tc ← Tc − pijkq  
+
+> 9:
+
+else  
+
+> 10:
+
+Find c ∈ C ′ with d(c) ≥ 1 and P
+
+> e∈E(c)
+
+(1 − xe) ≤ 2 
+
+> 11:
+
+C′ ← C ′ \ { c} 
+
+> 12:
+
+end if  
+
+> 13:
+
+end while  
+
+> 14:
+
+return ˆx
+
+We first show that RLP remains feasible, so that every iteration is well defined. 
+
+Lemma 3.1. At the beginning of every iteration of Algorithm 2, RLP is feasible and bounded. Proof. Initially, RLP is the system defining P( ¯F, S, T ), which is nonempty by assumption. Suppose 
+
+x is the extreme point computed in some iteration. Deleting the edges with xe = 0 does not affect the feasibility of x. If an edge e = (( i, j, k ), q ) with xe = 1 is fixed, then all other edges of flow (i, j, k ) have value zero by (5a), and the restriction of x to the remaining edges satisfies (5a) for the remaining flows and (5b) with the reduced capacities Tc − pe. If a capacity constraint is dropped, x
+
+remains feasible. Hence RLP is feasible in the next iteration. It is bounded because (5a) and (5c) imply 0 ≤ xe ≤ 1 for every edge. The next lemma is the heart of the analysis. 
+
+Lemma 3.2. Let x be an extreme point solution of RLP with 0 < x e < 1 for every e ∈ S ′, and suppose F′̸ = ∅. Then there exists a constraint c ∈ C ′ with d(c) ≥ 1 and P
+
+> e∈E(c)
+
+(1 − xe) ≤ 2.Proof. Let V = |S ′| be the number of variables and let C+ = {c ∈ C ′ | d(c) ≥ 1}. Since no variable equals 1 and the variables of each flow in F′ sum to 1, every flow in F′ has at least two edges, and hence 
+
+V ≥ 2|F ′|. (6) By the rank lemma [19], an extreme point of RLP is the unique solution of V linearly independent constraints of RLP that are tight at x. No nonnegativity constraint is tight, and a capacity con-straint with d(c) = 0 has a zero left-hand side, so these V constraints are assignment constraints (5a) or capacity constraints in C+. Therefore, 
+
+V ≤ |F ′| + |C +|. (7) 8If C+ = ∅, then (6) and (7) give 2 |F ′| ≤ |F ′|, which contradicts F′̸ = ∅; thus C+̸ = ∅. Each edge belongs to at most two constraints of C+, and the values of the edges sum to |F ′| by (5a). Using (7), we obtain X
+
+> c∈C +
+
+X
+
+> e∈E(c)
+
+(1 − xe) ≤ 2 X
+
+> e∈S ′
+
+(1 − xe) = 2  V − |F ′| ≤ 2|C +|.
+
+Hence the average of P
+
+> e∈E(c)
+
+(1 − xe) over c ∈ C + is at most 2, and some c ∈ C + satisfies the claim. 
+
+Theorem 3.3. Suppose P( ¯F, S, T )̸ = ∅ and (3) holds. Then Algorithm 2 runs in polynomial time and assigns every flow of ¯F to exactly one core q with (( i, j, k ), q ) ∈ S . Moreover, let P = max e∈S pe,so that P ≤ T by (3). Then, for every core q, the load of every input port and every output port on q is at most T + 2 P ≤ 3T .Proof. By Lemma 3.1, every iteration computes an extreme point of a feasible and bounded linear program, which can be done in polynomial time. If no edge has value one, Lemma 3.2 guarantees that a constraint can be dropped. Hence each iteration either assigns a flow or drops a constraint, and the algorithm stops after at most | ¯F| + 2 N m iterations. Every flow is assigned through an edge of S, and once assigned, it is removed from F′, so it is assigned exactly once. Fix a capacity constraint c, and let Λ c denote the total transmission time of the flows assigned to c so far. As long as c ∈ C ′, we have Tc = T − Λc, and the feasibility of RLP implies Λ c ≤ T . If c is never dropped, its final load is at most T . Otherwise, consider the iteration in which c is dropped, with extreme point x and current load Λ c. Since edges are only deleted and never added, every flow that is assigned to c afterwards is assigned through an edge of the set E(c) at that moment. Hence the final load of c is at most Λ c + P 
+
+> e∈E(c)
+
+pe. We split this quantity into a fractional part and a deficiency part: Λc + X
+
+> e∈E(c)
+
+pe =
+
+Λc + X
+
+> e∈E(c)
+
+pexe
+
+ + X
+
+> e∈E(c)
+
+pe(1 − xe).
+
+Since c ∈ C ′ when x is computed, constraint (5b) gives P 
+
+> e∈E(c)
+
+pexe ≤ Tc = T −Λc, so the first part is at most T . Since 1 − xe > 0 and pe ≤ P for every e ∈ E(c), and since c satisfies the condition in Line 11, the second part is at most 
+
+X
+
+> e∈E(c)
+
+pe(1 − xe) ≤ P X
+
+> e∈E(c)
+
+(1 − xe) ≤ 2P. 
+
+Therefore the final load of c is at most T + 2 P , which is at most 3 T because P ≤ T .The bound T + 2 P separates the role of the capacity T from that of the largest transmission time P . For LP( T ∗), the two coincide up to P ≤ T ∗, and we obtain 3 T ∗. In Section 4, however, the capacity of a group will be twice as large as the transmission times allowed in it, and the finer bound will give a better constant. We now apply Algorithm 2 to LP( T ∗), that is, with ¯F = F, T = T ∗, and S = {(( i, j, k ), q ) |
+
+pijkq ≤ T ∗}. Let T ri and T rj denote the load of input port i and output port j on a core after rounding; the index of the core is omitted since the bound is the same for all cores. 
+
+Lemma 3.4. After applying Algorithm 2 to LP( T ∗), we have T ri , T rj ≤ min {τ, 3} T ∗ for every core, every i ∈ I , and every j ∈ J .
+
+9Proof. By the definition of the bisection procedure, LP( T ∗) is feasible, and (3) holds with T = T ∗
+
+by the choice of S. Theorem 3.3 gives T ri , T rj ≤ 3T ∗. In addition, at most τ flows are incident to any port, and each of them is assigned through an edge of S, so its transmission time on the chosen core is at most T ∗. Hence T ri , T rj ≤ τ T ∗ as well. Lemma 3.4 replaces the bound min {τ, m }T ∗ of [7] by a bound that does not depend on m.
+
+3.3 Scheduling on Each Core 
+
+After the assignment, each core schedules its own flows independently (Algorithm 3). As in [7], an EPS core uses the Birkhoff-von Neumann decomposition [23, 24], a not-all-stop OCS core uses Sunflow [14], and an all-stop OCS core uses Reco-Sin [28]. 
+
+Algorithm 3 Scheduling for minimizing the makespan  
+
+> 1:
+
+Run Algorithm 1 to obtain T ∗ 
+
+> 2:
+
+Run Algorithm 2 with ¯F = F, T = T ∗, and S = {(( i, j, k ), q ) | pijkq ≤ T ∗} to obtain ˆ x 
+
+> 3:
+
+for each q ∈ M in parallel do  
+
+> 4:
+
+if q ∈ M e then  
+
+> 5:
+
+Schedule the flows assigned to q by the Birkhoff-von Neumann decomposition [23, 24]  
+
+> 6:
+
+else if q ∈ M 2 
+
+> o
+
+then  
+
+> 7:
+
+Schedule the flows assigned to q by Sunflow [14]  
+
+> 8:
+
+else  
+
+> 9:
+
+Schedule the flows assigned to q by Reco-Sin [28]  
+
+> 10:
+
+end if  
+
+> 11:
+
+end for 
+
+3.4 Analysis 
+
+Let T s denote the makespan of the schedule produced by Algorithm 3, and let T sq be the time at which core q finishes its flows, so that T s = max q T sq . For a core q, let Lq be the largest load of a port on q after rounding. By Lemma 3.4, 
+
+Lq ≤ min {τ, 3}T ∗ for every q ∈ M . (8) 
+
+Lemma 3.5. If q ∈ M e, then T sq ≤ min {τ, 3}T ∗.Proof. By Theorem A.2 in the appendix, the Birkhoff-von Neumann based schedule finishes the flows of an EPS core within the largest port load of that core. Hence T sq = Lq, and the claim follows from (8). 
+
+Lemma 3.6. If q ∈ M 2
+
+> o
+
+, then T sq ≤ 2 min {τ, 3}T ∗.Proof. By the analysis of Sunflow [14] (see also [7]), the flow that finishes last on q, say from input i
+
+to output j, finishes no later than the sum of the loads of i and j on q. Hence T sq ≤ T ri + T rj ≤ 2Lq,and the claim follows from (8). For an all-stop OCS core, the schedule length consists of a transmission part and a reconfigu-ration part. For a core q ∈ M 1
+
+> o
+
+, let ρq be the largest amount of data that a single port of q has 10 to send or receive, and let ∆ q be the largest number of flows assigned to q that are incident to a single port. The analysis of Reco-Sin [28], as applied in [7], shows that 
+
+T sq ≤ 2
+
+ ρq
+
+rq
+
++ ∆ q δq
+
+
+
+, (9) that is, at most twice the data transmission time of the busiest port plus the reconfiguration delay multiplied by the largest number of flows at an input or output port. In [7], the second term was bounded by τ δ q < τ T ∗, which introduces an additive dependence on τ . The following lemma shows that both terms are dominated by the port loads. 
+
+Lemma 3.7. For every q ∈ M 1
+
+> o
+
+, we have ρq
+
+rq
+
+≤ Lq and ∆q δq ≤ Lq. Consequently, ρq
+
+rq
+
+, ∆q δq ≤
+
+min {τ, 3}T ∗.Proof. Let v be a port of q that sends or receives ρq units of data, and let Av be the set of flows assigned to q that are incident to v. Then 
+
+ρq
+
+rq
+
+= X
+
+> (i,j,k )∈Av
+
+dijk 
+
+rq
+
+≤ X
+
+> (i,j,k )∈Av
+
+ dijk 
+
+rq
+
++ δq
+
+
+
+= X
+
+> (i,j,k )∈Av
+
+pijkq ≤ Lq.
+
+Similarly, let v′ be a port of q with ∆ q incident flows assigned to q, and let Av′ be the set of these flows. Since every flow on an OCS core is charged one reconfiguration delay, ∆q δq = X
+
+> (i,j,k )∈Av′
+
+δq ≤ X
+
+> (i,j,k )∈Av′
+
+pijkq ≤ Lq.
+
+The last statement follows from (8). 
+
+Lemma 3.8. If q ∈ M 1
+
+> o
+
+, then T sq ≤ 4 min {τ, 3}T ∗.Proof. Combining (9) with Lemma 3.7 gives T sq ≤ 2( Lq + Lq) = 4 Lq ≤ 4 min {τ, 3}T ∗.Since T ∗ ≤ OPT by (2) and T s = max q T sq , Lemmas 3.5, 3.6, and 3.8 yield the following theorem. 
+
+Theorem 3.9. Algorithm 3 is a polynomial-time algorithm. Depending on the network architecture, its approximation ratio for the makespan is as follows: 
+
+• if all cores are EPS, the ratio is min {τ, 3};
+
+• if all cores are not-all-stop OCS, the ratio is 2 min {τ, 3};
+
+• if all cores are all-stop OCS, the ratio is 4 min {τ, 3}.In a hybrid network, the ratio is the largest of the ratios of the architectures that are present. In particular, it is 2 min {τ, 3} ≤ 6 when the network contains only EPS and not-all-stop OCS cores, and it is 4 min {τ, 3} ≤ 12 whenever at least one all-stop OCS core is present. 
+
+Remark 3.10. The bounds of Theorem 3.9 do not depend on m, whereas the bounds of [7] grow with m. The case τ = 1 is trivial: no two flows share a port, so sending every flow to a core on which its transmission time is smallest and starting all flows at time 0 yields an optimal makespan (on an all-stop OCS core, all circuits are set up in a single reconfiguration). For τ ≥ 2 and small 
+
+m or τ , the bounds of [7] can still be smaller. For example, when m = 2 and τ ≥ 3, the bounds of [7] are 2 and 4 for EPS and not-all-stop OCS, compared with our 3 and 6; and for all-stop OCS with m = 2 , the bound 2 min {2τ − 1, m + τ − 1} = 2 τ + 2 is smaller than 4 min {τ, 3} for 
+
+2 ≤ τ ≤ 4. Running both algorithms and returning the schedule with the smaller makespan achieves the minimum of the two guarantees in every architecture. 
+
+11 3.5 A Lower Bound on the Integrality Gap 
+
+The bound 3 T ∗ of Theorem 3.3 cannot be improved below 2 T ∗ by any rounding of LP( T ), as the following example shows. 
+
+Proposition 3.11. For every m ≥ 2, there is an instance with m EPS cores for which OPT /T ∗ ≥ 
+
+> 2mm+1
+
+. Hence the integrality gap of LP( T ) is at least 2.Proof. Consider m EPS cores of rate 1 and a single input port i with m + 1 flows of size m,each to a different output port. Setting xijkq = 1 
+
+> m
+
+for every flow and every core gives a load of (m + 1) · m · 1 
+
+> m
+
+= m + 1 at port i on every core, and every output port has load 1 on every core; hence LP( m + 1) is feasible and T ∗ ≤ m + 1. In any non-splitting assignment, two of the m + 1 flows share a core, so the load of port i on that core is at least 2 m, and therefore OPT ≥ 2m. The ratio 2mm+1 tends to 2 as m grows. 
+
+# 4 Approximation Algorithm for Minimizing the Total Weighted Completion Time 
+
+We now turn to the total weighted coflow completion time. We first review the interval-indexed approach of [7], which is inspired by Chudak and Shmoys [12], and then explain how the rounding inside each interval is replaced by Algorithm 2. 
+
+4.1 The Interval-Indexed Relaxation of [7] 
+
+As in [7], let L be an integer, polynomial in the input size, such that the horizon 2 L is long enough to contain an optimal schedule. The time horizon is divided into the geometrically increasing intervals [1 , 2] , (2 , 4] , . . . , (2 L−1, 2L], and we set tl = 2 l for l = 0 , 1, . . . , L . The variable xijkql indicates that flow ( i, j, k ) is transmitted through core q and completes within the l-th interval ( tl−1, t l]. The 12 relaxation of [7] is min X
+
+> k∈K
+
+wkCk (10) s.t. X
+
+> q∈M
+> L
+
+X
+
+> l=1
+
+xijkql = 1 , ∀(i, j, k ) ∈ F , (10a) 
+
+rk + X
+
+> q∈M
+
+pijkq LX
+
+> l=1
+
+xijkql ≤ Cijk , ∀(i, j, k ) ∈ F , (10b) 
+
+> l
+
+X
+
+> u=1
+
+X
+
+> (i,j,k )∈F i
+
+pijkq xijkqu ≤ tl, ∀i ∈ I , ∀q ∈ M , ∀l ∈ [1 , L ], (10c) 
+
+> l
+
+X
+
+> u=1
+
+X
+
+> (i,j,k )∈F j
+
+pijkq xijkqu ≤ tl, ∀j ∈ J , ∀q ∈ M , ∀l ∈ [1 , L ], (10d) 
+
+> L
+
+X
+
+> l=1
+
+tl−1
+
+X
+
+> q∈M
+
+xijkql ≤ Cijk , ∀(i, j, k ) ∈ F , (10e) 
+
+Cijk ≤ Ck, ∀(i, j, k ) ∈ F , (10f) 
+
+xijkql ≥ 0, ∀(i, j, k ) ∈ F , ∀q ∈ M , ∀l ∈ [1 , L ], (10g) 
+
+xijkql = 0 , if rk + pijkq > t l. (10h) Constraint (10a) assigns every flow to one core and one interval; (10b) and (10e) are two lower bounds on the completion time of a flow, namely its release time plus its transmission time and the left end point of its interval; (10c) and (10d) state that the flows completing by time tl load each port of each core by at most tl; (10f) says that a coflow completes no earlier than any of its flows; and (10h) excludes completions that are impossible because of the release time and the transmission time. Every non-splitting schedule induces a feasible solution with the same objective value [7], so the optimal value of (10) is a lower bound on the optimum. Throughout this section, (x, C) denotes an optimal solution of (10), and Cijk , Ck refer to its values. As in [7], every flow ( i, j, k ) is assigned to the group g(i, j, k ) = max {g1, g 2}, where 
+
+g1 = min 
+
+g
+
+> g
+
+X
+
+> l=1
+
+X
+
+> q∈M
+
+xijkql ≥ 12
+
+ and g2 = min {g | Cijk ≤ tg} .
+
+Let Gg = {(i, j, k ) ∈ F | g(i, j, k ) = g}. In [7], every flow is sent to the core that maximizes 
+
+Pg(i,j,k ) 
+
+> l=1
+
+xijkql ; since this maximum is only guaranteed to be a 1 
+
+> m
+
+fraction of the total, the port loads of a group were bounded by 2 m t g, which is the origin of the factor m in the ratios of [7]. We instead round each group by Algorithm 2. 
+
+4.2 Rounding Each Group by Iterative Relaxation 
+
+For a group g and a flow ( i, j, k ) ∈ G g, define 
+
+yijkq =
+
+Pgl=1 xijkql 
+
+P
+
+> q′∈M
+
+Pgl=1 xijkq ′l
+
+for q ∈ M , (11) and let Sg = {(( i, j, k ), q ) | (i, j, k ) ∈ G g, r k + pijkq ≤ tg}.13 Lemma 4.1. For every group g, the vector y restricted to Sg belongs to P(Gg, Sg, 2tg). Moreover, 
+
+pijkq ≤ tg ≤ 2tg for every (( i, j, k ), q ) ∈ S g.Proof. Fix ( i, j, k ) ∈ G g. Since g ≥ g1, the denominator in (11) is at least 12 , so y is well defined and P 
+
+> q
+
+yijkq = 1. If yijkq > 0, then xijkql > 0 for some l ≤ g, and (10h) gives rk + pijkq ≤ tl ≤ tg; hence 
+
+y is supported on Sg, and pijkq ≤ tg on Sg. Finally, for an input port i and a core q, constraint (10c) with l = g yields 
+
+X
+
+> (i,j,k )∈F i∩G g
+
+pijkq yijkq ≤ 2 X
+
+> (i,j,k )∈F i
+
+pijkq gX
+
+> l=1
+
+xijkql ≤ 2tg.
+
+The same argument with (10d) applies to every output port. For each group g, we run Algorithm 2 with ¯F = Gg, S = Sg, and T = 2 tg; by Lemma 4.1, the input requirements are satisfied. Let Aq,g be the set of flows of Gg that are assigned to core q. The overall procedure is summarized in Algorithm 4. The groups are processed one after another on every core, and group g is started on core q when both core q has finished group g − 1 and time tg
+
+has been reached. Since every flow in Gg is admissible only on cores with rk + pijkq ≤ tg, all flows of group g have been released when the group starts. 
+
+Algorithm 4 Scheduling for minimizing the total weighted completion time  
+
+> 1:
+
+Solve the linear program (10) to obtain ( x, C) 
+
+> 2:
+
+for each flow ( i, j, k ) ∈ F do  
+
+> 3:
+
+Compute g(i, j, k ) = max {g1, g 2} and add ( i, j, k ) to Gg(i,j,k ) 
+
+> 4:
+
+end for  
+
+> 5:
+
+for each group g = 1 , . . . , L with Gg̸ = ∅ do  
+
+> 6:
+
+Compute y by (11) and run Algorithm 2 with ¯F = Gg, S = Sg, and T = 2 tg 
+
+> 7:
+
+Let Aq,g be the flows of Gg assigned to core q, for each q ∈ M  
+
+> 8:
+
+end for  
+
+> 9:
+
+for each q ∈ M in parallel do  
+
+> 10:
+
+for g = 1 , . . . , L do  
+
+> 11:
+
+Wait until core q has finished Aq,g −1 and the current time is at least tg 
+
+> 12:
+
+if q ∈ M e then  
+
+> 13:
+
+Schedule Aq,g by the Birkhoff-von Neumann decomposition [23, 24]  
+
+> 14:
+
+else if q ∈ M 2 
+
+> o
+
+then  
+
+> 15:
+
+Schedule Aq,g by Sunflow [14]  
+
+> 16:
+
+else  
+
+> 17:
+
+Schedule Aq,g by Reco-Sin [28]  
+
+> 18:
+
+end if  
+
+> 19:
+
+end for  
+
+> 20:
+
+end for 
+
+4.3 Analysis 
+
+Let T gi and T gj denote the load of input port i and output port j on a core caused by the flows of group g assigned to that core; again, the index of the core is omitted. 
+
+Lemma 4.2. For every group g, every core, every i ∈ I , and every j ∈ J , we have T gi , T gj ≤
+
+min {τ, 4} tg.
+
+14 Proof. We present the argument for an input port i on a core q; the argument for an output port is identical. Fix a group g and let c = ( i, q ). 
+
+The bound 4tg. By Lemma 4.1, the restriction of y to Sg belongs to P(Gg, Sg, 2tg), so the input requirement of Algorithm 2 is met with T = 2 tg; condition (3) also holds since pe ≤ tg ≤ 2tg for every e ∈ S g. The quantity P of Theorem 3.3 therefore satisfies 
+
+P = max 
+
+> e∈S g
+
+pe ≤ tg.
+
+We stress that this bound on P is half of the capacity T = 2 tg: the capacity is doubled because each flow of Gg carries only a fraction of at least 12 of its assignment within the first g intervals, but an admissible edge must still satisfy rk + pijkq ≤ tg. Applying Theorem 3.3 to the run of Algorithm 2 for group g, the load of c caused by the flows of Gg is at most 
+
+T + 2 P ≤ 2tg + 2 tg = 4 tg.
+
+In more detail, if c is never dropped during the run for group g, its load is at most 2 tg. Otherwise, let x be the extreme point at the iteration in which c is dropped and Λ c the load of c at that moment. As in the proof of Theorem 3.3, 
+
+T gi ≤
+
+Λc + X
+
+> e∈E(c)
+
+pexe
+
+ + X
+
+> e∈E(c)
+
+pe(1 − xe) ≤ 2tg + tg
+
+X
+
+> e∈E(c)
+
+(1 − xe) ≤ 2tg + 2 tg = 4 tg,
+
+where the first part is bounded by the residual capacity constraint (5b) with right-hand side 2 tg −Λc,and the second part uses pe ≤ tg and P
+
+> e∈E(c)
+
+(1 − xe) ≤ 2. 
+
+The bound τ t g. At most τ flows are incident to port i. Each flow of Gg that is assigned to core 
+
+q is assigned through an edge of Sg, so its transmission time on q is at most tg. Hence T gi ≤ τ t g.Combining the two bounds gives T gi ≤ min {τ, 4}tg.Note that applying only the coarser bound 3 T of Theorem 3.3 with T = 2 tg would give 6 tg;the improvement to 4 tg comes from the fact that the deficiency part is charged at the transmission time P ≤ tg rather than at the capacity 2 tg.Let Cg 
+
+> max
+
+denote the largest time that a core spends on the flows of group g, measured from the moment the group is started on that core. For a core q, let Lgq be the largest load of a port on 
+
+q caused by the flows of Aq,g . By Lemma 4.2, 
+
+Lgq ≤ min {τ, 4}tg for every q ∈ M . (12) 
+
+Lemma 4.3. For every group g,
+
+• if the cores are EPS, then Cg 
+
+> max
+
+≤ min {τ, 4} tg;
+
+• if the cores are not-all-stop OCS, then Cg 
+
+> max
+
+≤ 2 min {τ, 4} tg;
+
+• if the cores are all-stop OCS, then Cg 
+
+> max
+
+≤ 4 min {τ, 4} tg.Proof. Fix a group g and a core q. Once group g is started on q, the core schedules exactly the flows of Aq,g , all of which have been released (Algorithm 4), and no flow of another group is transmitted on q until Aq,g is finished. Hence the time spent on group g is the makespan of the schedule computed for the flow set Aq,g alone, and we may apply the single-core analyses of Section 3 to this flow set, with Lq replaced by Lgq .15 EPS cores. By Theorem A.2, the Birkhoff-von Neumann based schedule completes Aq,g within the largest port load, so the time spent is at most Lgq ≤ min {τ, 4}tg by (12). 
+
+Not-all-stop OCS cores. By the analysis of Sunflow [14], the last flow of Aq,g , say from input i
+
+to output j, finishes no later than the sum of the loads of i and j caused by Aq,g . Hence the time spent is at most T gi + T gj ≤ 2Lgq ≤ 2 min {τ, 4}tg.
+
+All-stop OCS cores. Let ρgq be the largest amount of data that a port of q sends or receives in 
+
+Aq,g , and let ∆ gq be the largest number of flows of Aq,g incident to one port. By (9) applied to Aq,g ,the time spent is at most 2 
+
+ ρgq 
+
+> rq
+
++ ∆ gq δq
+
+
+
+. The proof of Lemma 3.7 applies verbatim to the flow set 
+
+Aq,g : if v is a port that sends or receives ρgq units of data and Av is the set of flows of Aq,g incident to v, then 
+
+ρgq
+
+rq
+
+= X
+
+> (i,j,k )∈Av
+
+dijk 
+
+rq
+
+≤ X
+
+> (i,j,k )∈Av
+
+pijkq ≤ Lgq ,
+
+and if v′ is a port with ∆ gq incident flows of Aq,g , forming the set Av′ , then, since each of these flows is charged one reconfiguration delay, ∆gq δq = X
+
+> (i,j,k )∈Av′
+
+δq ≤ X
+
+> (i,j,k )∈Av′
+
+pijkq ≤ Lgq .
+
+Therefore the time spent is at most 2( Lgq + Lgq ) = 4 Lgq ≤ 4 min {τ, 4}tg.Taking the maximum over all cores of the respective type proves the lemma. Let R be the factor appearing in Lemma 4.3, i.e., R = min {τ, 4}, R = 2 min {τ, 4}, and R =4 min {τ, 4} for EPS, not-all-stop OCS, and all-stop OCS, respectively. Note that R ≥ 1. 
+
+Lemma 4.4. On every core, all flows of groups 1, . . . , g are completed by time 2R t g.Proof. Let Eg be the time at which the core finishes group g, with E0 = 0. By Algorithm 4 and Lemma 4.3, Eg ≤ max {tg, E g−1} + R t g. We show Eg ≤ 2R t g by induction on g. For 
+
+g = 1, E1 ≤ t1 + R t 1 ≤ 2R t 1 because R ≥ 1. For g ≥ 2, the induction hypothesis gives 
+
+Eg−1 ≤ 2R t g−1 = R t g, so max {tg, E g−1} ≤ R t g and Eg ≤ 2R t g.Let ˆCk denote the completion time of coflow k in the schedule produced by Algorithm 4. 
+
+Theorem 4.5. Algorithm 4 is a polynomial-time algorithm, and for every coflow k,
+
+• if all cores are EPS, then ˆCk ≤ 8 min {τ, 4} Ck;
+
+• if all cores are not-all-stop OCS, then ˆCk ≤ 16 min {τ, 4} Ck;
+
+• if all cores are all-stop OCS, then ˆCk ≤ 32 min {τ, 4} Ck.Consequently, the approximation ratio for the total weighted coflow completion time is 8 min {τ, 4},
+
+16 min {τ, 4}, and 32 min {τ, 4} in these three architectures, respectively. In a hybrid network, the ratio is the largest of the ratios of the architectures that are present, and hence at most 
+
+32 min {τ, 4} ≤ 128 .Proof. The linear program (10) has polynomially many variables and constraints, since L is poly-nomial in the input size, and Algorithm 2 runs in polynomial time by Theorem 3.3. Fix a coflow k, and let ( i, j, k ) be a flow of k with the largest group index g = g(i, j, k ). By Lemma 4.4, every flow of k is completed by time 2 R t g, so ˆCk ≤ 2R t g. We now show tg ≤ 4Cijk 
+
+and distinguish two cases. 16 Case 1: g = g2. If g = 1, then tg = 2 ≤ 2Cijk , since Cijk ≥ rk + min q pijkq ≥ 1 by (10a) and (10b). Otherwise, the minimality of g2 gives tg−1 < C ijk , and hence tg = 2 tg−1 < 2Cijk .
+
+Case 2: g = g1. By the minimality of g1, Pg−1
+
+> l=1
+
+P 
+
+> q
+
+xijkql < 12 , and therefore PLl=g
+
+P 
+
+> q
+
+xijkql > 12
+
+by (10a). Using (10e), we obtain 
+
+tg−1
+
+2 ≤ tg−1
+
+> L
+
+X
+
+> l=g
+
+X
+
+> q∈M
+
+xijkql ≤
+
+> L
+
+X
+
+> l=g
+
+X
+
+> q∈M
+
+tl−1 xijkql ≤
+
+> L
+
+X
+
+> l=1
+
+X
+
+> q∈M
+
+tl−1 xijkql ≤ Cijk ,
+
+so tg = 2 tg−1 ≤ 4Cijk .In both cases tg ≤ 4Cijk ≤ 4Ck by (10f), and thus ˆCk ≤ 8R C k. Substituting the three values of R proves the per-coflow bounds. Multiplying by wk and summing over k gives P 
+
+> k
+
+wk ˆCk ≤
+
+8R P 
+
+> k
+
+wkCk, and the right-hand side is at most 8 R times the optimum, because (10) is a relaxation. In a hybrid network, each core satisfies Lemma 4.3 with the factor of its own architecture; taking 
+
+R as the largest factor among the architectures present, Lemma 4.4 and the argument above hold verbatim. As in Remark 3.10, the guarantees of Theorem 4.5 and those of [7] can be combined by com-puting both schedules and keeping the one with the smaller total weighted completion time. 
+
+# 5 Concluding Remarks 
+
+This paper revisited non-splitting coflow scheduling in heterogeneous parallel networks composed of EPS, not-all-stop OCS, and all-stop OCS cores. The previous algorithms for this problem [7] have approximation ratios that grow linearly with the number of cores m or with the maximum flow degree τ , because rounding each flow to its largest fractional core may multiply the load of a port by m. We replaced this step by an iterative relaxation rounding that controls the input-port and the output-port capacity constraints at the same time, and we proved that the load of every port on every core is at most min {τ, 3}T ∗. For all-stop OCS, we additionally showed that the number of reconfigurations at a port is controlled by its load, which removes the additive τ
+
+term caused by reconfiguration delays. For minimizing the makespan, the resulting approximation ratios are min {τ, 3}, 2 min {τ, 3}, and 4 min {τ, 3} for pure EPS, pure not-all-stop OCS, and pure all-stop OCS networks. For minimizing the total weighted coflow completion time, applying the same rounding within every interval of the interval-indexed relaxation yields approximation ratios of 8 min {τ, 4}, 16 min {τ, 4}, and 32 min {τ, 4}. In a hybrid network, the guarantee is determined by the weakest architecture present, so the overall ratios are at most 12 and 128, respectively. To the best of our knowledge, these are the first approximation ratios for non-splitting coflow scheduling in heterogeneous parallel networks that do not depend on the number of network cores. Several questions remain open. First, Proposition 3.11 shows that the integrality gap of LP( T ) is at least 2, while our rounding achieves a port-load bound of 3 T ∗; closing this gap, for example with a refined rule for dropping constraints or with a strengthened relaxation, would directly improve all of our ratios. Second, the constants for the total weighted completion time come from several sources, including the group threshold 12 , the geometric interval length, and the factor 2 in the capacity of each group, and it would be interesting to reduce them, for example by randomizing the interval boundaries. Third, the schedules on individual OCS cores lose a factor of 2 or 4 relative to the port loads; designing assignment and scheduling procedures that are analyzed jointly may reduce this loss. Finally, extending the results to online settings and to coflows with precedence constraints is a natural direction for future work. 17 Appendix: Birkhoff-von Neumann Decomposition 
+
+This appendix recalls why the flows assigned to a single EPS core can be completed within the largest port load of that core. Since only one core is involved, we drop the core index and describe the assigned flows by an N × N matrix D = ( di,j )Ni,j =1 of transmission times, and we define its load as 
+
+ρ(D) = max 
+
+max 
+
+> iN
+
+X
+
+> j′=1
+
+di,j ′ , max 
+
+> jN
+
+X
+
+> i′=1
+
+di′,j 
+
+ .
+
+The procedure relies on the classical theorem of Birkhoff and von Neumann [23]. 
+
+Theorem A.1. [23] (Birkhoff-von Neumann) Every doubly stochastic matrix A ∈ RN ×N can be written as A = Phi=1 ciPi, where each Pi is a permutation matrix, ci ∈ (0 , 1] , Phi=1 ci = 1 , and 
+
+h ≤ N 2 − 2N + 2 .
+
+Algorithm 5, due to Qiu et al. [24], works in two phases. The first phase repeatedly increases an entry lying in a row and a column whose sums are below ρ(D), until every row sum and every column sum of the resulting matrix eD ≥ D equals ρ(D). Then eD/ρ (D) is doubly stochastic, and by Theorem A.1, eD = P 
+
+> u
+
+quΠu for permutation matrices Π u and positive coefficients with P 
+
+> u
+
+qu = ρ(D). The second phase extracts these permutation matrices one at a time: it finds a perfect matching in the bipartite graph formed by the positive entries of eD, transmits along the matched input-output pairs for the smallest matched entry q time units, and subtracts q times the matching from eD.
+
+Algorithm 5 Birkhoff-von Neumann based schedule [24]  
+
+> 1:
+
+eD ← D 
+
+> 2:
+
+while some row sum or column sum of eD is smaller than ρ(D) do  
+
+> 3:
+
+Let i∗ be a row with the smallest row sum and j∗ a column with the smallest column sum of 
+
+eD 
+
+> 4:
+
+p ← ρ(D) − max 
+
+nP 
+
+> j′
+
+edi∗,j ′ , P 
+
+> i′
+
+edi′,j ∗
+
+o 
+
+> 5:
+
+edi∗,j ∗ ← edi∗,j ∗ + p 
+
+> 6:
+
+end while  
+
+> 7:
+
+while eD̸ = 0 do  
+
+> 8:
+
+Find a perfect matching M in the bipartite graph with an edge ( i, j ) whenever edi,j > 0 
+
+> 9:
+
+q ← min { edi,j | (i, j ) ∈ M } 
+
+> 10:
+
+Transmit from i to j for q time units for every ( i, j ) ∈ M with remaining demand  
+
+> 11:
+
+edi,j ← edi,j − q for every ( i, j ) ∈ M 
+
+> 12:
+
+end while 
+
+In each iteration of the first loop, at least one row or column reaches the sum ρ(D), and in each iteration of the second loop, at least one positive entry becomes zero; hence both loops terminate after polynomially many iterations. The total transmission time equals P 
+
+> u
+
+qu = ρ(D), which gives the following theorem. 
+
+Theorem A.2. Algorithm 5 runs in polynomial time and completes all flows described by D within 
+
+ρ(D) time units. 
+
+18 References 
+
+[1] S. Agarwal, S. Rajakrishnan, A. Narayan, R. Agarwal, D. Shmoys, and A. Vahdat, “Sincronia: Near-optimal network design for coflows,” in Proceedings of the 2018 ACM Conference on SIGCOMM , ser. SIGCOMM ’18. New York, NY, USA: Association for Computing Machinery, 2018, p. 16–29. [2] S. Ahmadi, S. Khuller, M. Purohit, and S. Yang, “On scheduling coflows,” Algorithmica ,vol. 82, no. 12, pp. 3604–3629, 2020. [3] D. Borthakur, “The hadoop distributed file system: Architecture and design,” Hadoop Project Website , vol. 11, no. 2007, p. 21, 2007. [4] C.-Y. Chen, “Scheduling coflows for minimizing the total weighted completion time in hetero-geneous parallel networks,” Journal of Parallel and Distributed Computing , vol. 182, p. 104752, 2023. [5] C.-Y. Chen, “Efficient approximation algorithms for scheduling coflows with precedence con-straints in identical parallel networks to minimize weighted completion time,” IEEE Transac-tions on Services Computing , 2024. [6] C.-Y. Chen, “Efficient approximation algorithms for scheduling coflows with total weighted completion time in identical parallel networks,” IEEE Transactions on Cloud Computing ,2024. [7] C.-Y. Chen, “Non-splitting coflow scheduling with provable guarantees in heteroge-neous parallel networks,” arXiv preprint arXiv:2501.09293, 2025. [Online]. Available: https://arxiv.org/abs/2501.09293 [8] M. Chowdhury and I. Stoica, “Coflow: A networking abstraction for cluster applications,” in 
+
+Proceedings of the 11th ACM Workshop on Hot Topics in Networks , ser. HotNets-XI. New York, NY, USA: Association for Computing Machinery, 2012, p. 31–36. [9] M. Chowdhury and I. Stoica, “Efficient coflow scheduling without prior knowledge,” in Pro-ceedings of the 2015 ACM Conference on SIGCOMM , ser. SIGCOMM ’15. New York, NY, USA: Association for Computing Machinery, 2015, p. 393–406. [10] M. Chowdhury, M. Zaharia, J. Ma, M. I. Jordan, and I. Stoica, “Managing data transfers in computer clusters with orchestra,” ACM SIGCOMM computer communication review , vol. 41, no. 4, pp. 98–109, 2011. [11] M. Chowdhury, Y. Zhong, and I. Stoica, “Efficient coflow scheduling with varys,” in Proceedings of the 2014 ACM Conference on SIGCOMM , ser. SIGCOMM ’14. New York, NY, USA: Association for Computing Machinery, 2014, p. 443–454. [12] F. A. Chudak and D. B. Shmoys, “Approximation algorithms for precedence-constrained scheduling problems on parallel machines that run at different speeds,” Journal of Algorithms ,vol. 30, no. 2, pp. 323–343, 1999. [13] J. Dean and S. Ghemawat, “Mapreduce: Simplified data processing on large clusters,” Com-munications of the ACM , vol. 51, no. 1, p. 107–113, jan 2008. 19 [14] X. S. Huang, X. S. Sun, and T. E. Ng, “Sunflow: Efficient optical circuit scheduling for coflows,” in Proceedings of the 12th International on Conference on emerging Networking Experiments and Technologies , 2016, pp. 297–311. [15] X. S. Huang, Y. Xia, and T. S. E. Ng, “Weaver: Efficient coflow scheduling in heterogeneous parallel networks,” in 2020 IEEE International Parallel and Distributed Processing Symposium (IPDPS) , 2020, pp. 1071–1081. [16] M. Isard, M. Budiu, Y. Yu, A. Birrell, and D. Fetterly, “Dryad: distributed data-parallel programs from sequential building blocks,” in Proceedings of the 2nd ACM SIGOPS/EuroSys European Conference on Computer Systems 2007 , 2007, pp. 59–72. [17] R. Jiang, T. Zhang, and C. Yi, “Effective coflow scheduling in hybrid circuit and packet switching networks,” in 2023 IEEE Symposium on Computers and Communications (ISCC) ,2023, pp. 1156–1161. [18] S. Khuller and M. Purohit, “Brief announcement: Improved approximation algorithms for scheduling co-flows,” in Proceedings of the 28th ACM Symposium on Parallelism in Algorithms and Architectures , 2016, pp. 239–240. [19] L. C. Lau, R. Ravi, and M. Singh, Iterative Methods in Combinatorial Optimization . Cam-bridge, U.K.: Cambridge University Press, 2011. [20] Y. Li, S. H.-C. Jiang, H. Tan, C. Zhang, G. Chen, J. Zhou, and F. C. M. Lau, “Efficient online coflow routing and scheduling,” in Proceedings of the 17th ACM International Symposium on Mobile Ad Hoc Networking and Computing , ser. MobiHoc ’16. New York, NY, USA: Association for Computing Machinery, 2016, p. 161–170. [21] Z. Li and H. Shen, “Co-scheduler: A coflow-aware data-parallel job scheduler in hybrid elec-trical/optical datacenter networks,” IEEE/ACM Transactions on Networking , vol. 30, no. 4, pp. 1599–1612, 2022. [22] H. Liu, M. K. Mukerjee, C. Li, N. Feltman, G. Papen, S. Savage, S. Seshan, G. M. Voelker, D. G. Andersen, M. Kaminsky, G. Porter, and A. C. Snoeren, “Scheduling techniques for hybrid circuit/packet networks,” in Proceedings of the 11th ACM Conference on Emerging Networking Experiments and Technologies , ser. CoNEXT ’15. New York, NY, USA: Association for Computing Machinery, 2015. [23] M. Marcus and R. Ree, “Diagonals of doubly stochastic matrices,” TheQuarterly Journal of Mathematics , vol. 10, no. 1, p. 296–302, 1959. [24] Z. Qiu, C. Stein, and Y. Zhong, “Minimizing the total weighted completion time of coflows in datacenter networks,” in Proceedings of the 27th ACM Symposium on Parallelism in Algorithms and Architectures , ser. SPAA ’15. New York, NY, USA: Association for Computing Machinery, 2015, p. 294–303. [25] M. Shafiee and J. Ghaderi, “An improved bound for minimizing the total weighted completion time of coflows in datacenters,” IEEE/ACM Transactions on Networking , vol. 26, no. 4, pp. 1674–1687, 2018. [26] D. B. Shmoys and ´E. Tardos, “An approximation algorithm for the generalized assignment problem,” Mathematical programming , vol. 62, no. 1, pp. 461–474, 1993. 20 [27] K. Shvachko, H. Kuang, S. Radia, and R. Chansler, “The hadoop distributed file system,” in 
+
+2010 IEEE 26th Symposium on Mass Storage Systems and Technologies (MSST) , 2010, pp. 1–10. [28] H. Tan, C. Zhang, C. Xu, Y. Li, Z. Han, and X.-Y. Li, “Regularization-based coflow scheduling in optical circuit switches,” IEEE/ACM Transactions on Networking , vol. 29, no. 3, pp. 1280– 1293, 2021. [29] X. Wang, H. Shen, and H. Tian, “Scheduling coflows in hybrid optical-circuit and electrical-packet switches with performance guarantee,” IEEE/ACM Transactions on Networking ,vol. 32, no. 3, pp. 2299–2314, 2024. [30] X. Wang, H. Shen, and H. Tian, “Optimal partitioning of traffic demand for coflow scheduling in hybrid switches,” IEEE Transactions on Network and Service Management , vol. 22, no. 6, pp. 5972–5986, 2025. [31] C. Xu, H. Tan, J. Hou, C. Zhang, and X.-Y. Li, “Omco: Online multiple coflow scheduling in optical circuit switch,” in 2018 IEEE International Conference on Communications (ICC) ,2018, pp. 1–6. [32] M. Zaharia, M. Chowdhury, M. J. Franklin, S. Shenker, and I. Stoica, “Spark: Cluster com-puting with working sets,” in 2nd USENIX Workshop on Hot Topics in Cloud Computing (HotCloud 10) , 2010. [33] C. Zhang, H. Tan, C. Xu, X.-Y. Li, S. Tang, and Y. Li, “Reco: Efficient regularization-based coflow scheduling in optical circuit switches,” in 2019 IEEE 39th International Conference on Distributed Computing Systems (ICDCS) , 2019, pp. 111–121. [34] H. Zhang, L. Chen, B. Yi, K. Chen, M. Chowdhury, and Y. Geng, “Coda: Toward auto-matically identifying and scheduling coflows in the dark,” in Proceedings of the 2016 ACM Conference on SIGCOMM , ser. SIGCOMM ’16. New York, NY, USA: Association for Com-puting Machinery, 2016, p. 160–173. [35] T. Zhang, F. Ren, J. Bao, R. Shu, and W. Cheng, “Minimizing coflow completion time in optical circuit switched networks,” IEEE Transactions on Parallel and Distributed Systems ,vol. 32, no. 2, pp. 457–469, 2021. [36] Y. Zhao, K. Chen, W. Bai, M. Yu, C. Tian, Y. Geng, Y. Zhang, D. Li, and S. Wang, “Rapier: Integrating routing and scheduling for coflow-aware data center networks,” in 2015 IEEE Conference on Computer Communications (INFOCOM) . IEEE, 2015, pp. 424–432. 21
